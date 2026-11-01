@@ -1,0 +1,18 @@
+{
+  "name": "sabotage-stack",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Sabotage Stack multiplayer server and single-file client",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "check:single-player": "node agent-work/sabotage-stack-check.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "8.22.1"
+  }
+}
