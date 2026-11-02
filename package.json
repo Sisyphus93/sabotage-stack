@@ -5,9 +5,7 @@
   "description": "Sabotage Stack multiplayer server and single-file client",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "test": "node --test test/*.test.js",
-    "check:single-player": "node agent-work/sabotage-stack-check.js"
+    "start": "node server.js"
   },
   "engines": {
     "node": ">=20"

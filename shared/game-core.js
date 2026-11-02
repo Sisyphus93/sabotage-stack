@@ -13,7 +13,7 @@
   const PERFECT_WINDOW = 3;
   const SABOTAGE_CATEGORIES = Object.freeze({
     kinetic: Object.freeze(['turbo', 'drunk', 'slowmo', 'magnet']),
-    trajectory: Object.freeze(['portal', 'rollercoaster', 'gale', 'pisa']),
+    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa']),
     optical: Object.freeze(['spotlight', 'peekaboo', 'zoom', 'double']),
     geometry: Object.freeze(['accordion', 'crumble', 'superglue', 'calipers'])
   });
@@ -22,11 +22,17 @@
   ));
   const SABOTAGE_IDS = Object.freeze(Object.values(SABOTAGE_CATEGORIES).flat());
   const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue'));
-  const DROP_COUNTED_IDS = Object.freeze(['crumble', 'gale', 'superglue', 'portal', 'calipers']);
+  // Effects held back until the tower is tall enough for them to matter (tune in play).
+  const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
+  const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
   const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo']);
   const REDUCED_MOTION_SAFE_IDS = Object.freeze(['zoom', 'superglue', 'calipers']);
   const PALETTE = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F']);
 
+  function sabotageAvailableAtHeight(id, height) {
+    const minimum = SABOTAGE_MIN_HEIGHT[id] || 0;
+    return (Number.isFinite(Number(height)) ? Number(height) : 0) >= minimum;
+  }
   function speedForHeight(placedBlocks) {
     return Math.min(300, 140 + Math.max(0, placedBlocks) * 5);
   }
@@ -146,9 +152,9 @@
       decoy: true
     };
   }
-  function dropDrift(moving, effectId, options = {}) {
-    if (!moving) return 0;
-    if (effectId === 'gale') return (Number(options.windDirection) < 0 ? -1 : 1) * 20;
+  function dropDrift() {
+    // No sabotage moves a block after release now that Gale Force is gone. Kept so
+    // landingMover's drift field and the DEV lab keep working unchanged.
     return 0;
   }
   function caliperBounds(below, moving, margin = 38) {
@@ -328,8 +334,8 @@
   return Object.freeze({
     WIDTH, HEIGHT, BLOCK_H, BASELINE, MIN_WIDTH, PERFECT_WINDOW,
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
-    HARSH_SABOTAGE_IDS, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
-    speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
+    HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
+    sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
     resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner

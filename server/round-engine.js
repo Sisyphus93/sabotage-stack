@@ -264,7 +264,6 @@ class RoundEngine {
     const duration = dropCounted ? DROP_EFFECT_SECONDS : EFFECT_SECONDS;
     const effect = { id, targetPlayerId, startedAt: now, expiresAt: now + duration * 1000, duration };
     if (dropCounted) effect.dropsRemaining = 3;
-    if (id === 'gale') effect.windDirection = this.random() < 0.5 ? -1 : 1;
     if (id === 'pisa') effect.tiltDirection = this.random() < 0.5 ? -1 : 1;
     if (id === 'spotlight') effect.spotlightSide = this.random() < 0.5 ? -1 : 1;
     if (id === 'portal') {
@@ -311,7 +310,8 @@ class RoundEngine {
 
   votePool() {
     const reduced = this.motionReductionEnabled();
-    return reduced ? SABOTAGE_IDS.filter(id => !Core.REDUCED_MOTION_EXCLUDED_IDS.includes(id)) : SABOTAGE_IDS.slice();
+    const height = this.currentHeight();
+    return SABOTAGE_IDS.filter(id => Core.sabotageAvailableAtHeight(id, height) && !(reduced && Core.REDUCED_MOTION_EXCLUDED_IDS.includes(id)));
   }
 
   currentHeight() {
@@ -463,10 +463,7 @@ class RoundEngine {
     if (message.sequence != null && Number(message.sequence) < player.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: team.moving.left };
     const below = team.stack[team.stack.length - 1];
     const speed = this.effectiveSpeedAt(team.stack, team, playerId, now);
-    const landingEffect = this.effectFor('gale', playerId, now);
-    let placedMover = Core.landingMover(team.moving, landingEffect ? 'gale' : '', {
-      speed, windDirection: landingEffect && landingEffect.windDirection
-    });
+    let placedMover = Core.landingMover(team.moving, '', { speed });
     if (this.hasEffect('portal', playerId, now)) placedMover = Core.portalLandingMover(below, placedMover || team.moving);
     const superglue = this.hasEffect('superglue', playerId, now);
     const outcome = Core.placeDrop(below, placedMover || team.moving, {
@@ -511,10 +508,7 @@ class RoundEngine {
     if (message.sequence != null && Number(message.sequence) < competitor.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: competitor.moving.left };
     const below = competitor.stack[competitor.stack.length - 1];
     const speed = this.effectiveSpeedAt(competitor.stack, competitor, playerId, now);
-    const landingEffect = this.effectFor('gale', playerId, now);
-    let placedMover = Core.landingMover(competitor.moving, landingEffect ? 'gale' : '', {
-      speed, windDirection: landingEffect && landingEffect.windDirection
-    });
+    let placedMover = Core.landingMover(competitor.moving, '', { speed });
     if (this.hasEffect('portal', playerId, now)) placedMover = Core.portalLandingMover(below, placedMover || competitor.moving);
     const superglue = this.hasEffect('superglue', playerId, now);
     const outcome = Core.placeDrop(below, placedMover || competitor.moving, {
@@ -803,7 +797,6 @@ class RoundEngine {
         elapsed: Math.max(0, (now - effect.startedAt) / 1000),
         remaining: Math.max(0, (effect.expiresAt - now) / 1000),
         ...(Number.isInteger(effect.dropsRemaining) ? { dropsRemaining: effect.dropsRemaining } : {}),
-        ...(Number.isFinite(effect.windDirection) ? { windDirection: effect.windDirection } : {}),
         ...(Number.isFinite(effect.tiltDirection) ? { tiltDirection: effect.tiltDirection } : {}),
         ...(Number.isFinite(effect.spotlightSide) ? { spotlightSide: effect.spotlightSide } : {})
       })),

@@ -531,13 +531,6 @@ canvas { display: block; width: 100%; height: 100%; }
         <path d="m6 7-1-2m6-1V2m10 3 1-2m4 5 2-1" stroke="#2F8478"/>
       </g>
     </symbol>
-    <symbol id="sabotage-symbol-gale" viewBox="0 0 32 32">
-      <g fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 8h13c4 0 4-5 1-5-2 0-3 1-3 2M3 14h19c4 0 4 6 0 6-2 0-3-1-3-2M3 22h11" stroke="#2F8478" stroke-width="2"/>
-        <path d="m16 24 3-9 8 3-3 9z" fill="#E3A33B"/><path d="m16 24 8 3m-3-12 3-3" stroke="#D5472F"/>
-        <path d="m25 7 1-2 1 2 2 1-2 1-1 2-1-2-2-1z" fill="#7FA6BD" stroke="#7FA6BD"/>
-      </g>
-    </symbol>
     <symbol id="sabotage-symbol-pisa" viewBox="0 0 32 32">
       <g fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
         <path d="m11 4 15 3-4 20-15-3z" fill="#E7DCC5"/><path d="m9 9 14 3m-15 2 13 3m-14 2 12 3" stroke="#D5472F"/>
@@ -600,7 +593,7 @@ canvas { display: block; width: 100%; height: 100%; }
             <div class="primary-row">
               <button id="start-button" class="button button-primary" type="button">Play solo <span class="arrow" aria-hidden="true">↗</span></button>
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
-              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 16 active sabotages">DEV lab <span class="soon">Test all 16</span></button>
+              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 15 active sabotages">DEV lab <span class="soon">Test all 15</span></button>
             </div>
             <div class="mode-row" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
@@ -781,13 +774,13 @@ canvas { display: block; width: 100%; height: 100%; }
     <div class="dialog-inner">
       <div class="dialog-header"><div><div class="eyebrow">The very short version</div><h2 id="how-title">How to play</h2></div><button id="close-how" class="icon-button" type="button" aria-label="Close how to play">×</button></div>
       <ol class="how-steps">
-        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button.</span></li>
+        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. In solo, a block that waits longer than 3.5 seconds drops itself.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during each 5-second vote. Most sabotages last 5 seconds; Crumble, Gale, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during each 5-second vote. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <details class="sabotage-guide">
-        <summary>Meet all 16 active sabotages</summary>
+        <summary>Meet all 15 active sabotages</summary>
         <ul id="sabotage-list" class="sabotage-list"></ul>
       </details>
     </div>
@@ -828,6 +821,10 @@ canvas { display: block; width: 100%; height: 100%; }
     const BASELINE = 480;
     const MIN_WIDTH = 30;
     const PERFECT_WINDOW = 3;
+    // Solo only: each block auto-drops after this long, so a 5-second sabotage cannot be waited out.
+    // Keep it at 3 s or more or Slow-to-Dart's creep stops paying off.
+    const SOLO_AUTO_DROP_SECONDS = 3.5;
+    const SOLO_AUTO_DROP_RING_AFTER = 1;
     const PALETTE = ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F'];
     const ROASTS = [
       'That block has commitment issues.',
@@ -846,7 +843,6 @@ canvas { display: block; width: 100%; height: 100%; }
       { id: 'magnet', name: 'Gravity Slingshot', category: 'kinetic', caption: 'The stack centre is a launch point.', effect: 'The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.' },
       { id: 'portal', name: 'Portal Walls', category: 'trajectory', caption: 'The edges are not the end of the road.', effect: 'For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.' },
       { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.' },
-      { id: 'gale', name: 'Gale Force', category: 'trajectory', caption: 'A crosswind is sweeping across the stage.', effect: 'The next 3 drops (up to 8 seconds) drift 20 px with the wind; a marker shows the gust direction.' },
       { id: 'pisa', name: 'The Pisa Tilt', category: 'trajectory', caption: 'Architecture is subjective, really.', effect: 'The view eases into a gentle sway of up to 16° for 5 seconds.' },
       { id: 'spotlight', name: 'Spotlight', category: 'optical', caption: 'One corner of the stage is under observation.', effect: 'Darkens the field by 93%, leaving a narrow, steady beam on one edge of the tower.' },
       { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
@@ -881,7 +877,7 @@ canvas { display: block; width: 100%; height: 100%; }
   const PERFECT_WINDOW = 3;
   const SABOTAGE_CATEGORIES = Object.freeze({
     kinetic: Object.freeze(['turbo', 'drunk', 'slowmo', 'magnet']),
-    trajectory: Object.freeze(['portal', 'rollercoaster', 'gale', 'pisa']),
+    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa']),
     optical: Object.freeze(['spotlight', 'peekaboo', 'zoom', 'double']),
     geometry: Object.freeze(['accordion', 'crumble', 'superglue', 'calipers'])
   });
@@ -890,11 +886,17 @@ canvas { display: block; width: 100%; height: 100%; }
   ));
   const SABOTAGE_IDS = Object.freeze(Object.values(SABOTAGE_CATEGORIES).flat());
   const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue'));
-  const DROP_COUNTED_IDS = Object.freeze(['crumble', 'gale', 'superglue', 'portal', 'calipers']);
+  // Effects held back until the tower is tall enough for them to matter (tune in play).
+  const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
+  const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
   const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo']);
   const REDUCED_MOTION_SAFE_IDS = Object.freeze(['zoom', 'superglue', 'calipers']);
   const PALETTE = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F']);
 
+  function sabotageAvailableAtHeight(id, height) {
+    const minimum = SABOTAGE_MIN_HEIGHT[id] || 0;
+    return (Number.isFinite(Number(height)) ? Number(height) : 0) >= minimum;
+  }
   function speedForHeight(placedBlocks) {
     return Math.min(300, 140 + Math.max(0, placedBlocks) * 5);
   }
@@ -1014,9 +1016,9 @@ canvas { display: block; width: 100%; height: 100%; }
       decoy: true
     };
   }
-  function dropDrift(moving, effectId, options = {}) {
-    if (!moving) return 0;
-    if (effectId === 'gale') return (Number(options.windDirection) < 0 ? -1 : 1) * 20;
+  function dropDrift() {
+    // No sabotage moves a block after release now that Gale Force is gone. Kept so
+    // landingMover's drift field and the DEV lab keep working unchanged.
     return 0;
   }
   function caliperBounds(below, moving, margin = 38) {
@@ -1196,8 +1198,8 @@ canvas { display: block; width: 100%; height: 100%; }
   return Object.freeze({
     WIDTH, HEIGHT, BLOCK_H, BASELINE, MIN_WIDTH, PERFECT_WINDOW,
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
-    HARSH_SABOTAGE_IDS, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
-    speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
+    HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
+    sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
     resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
@@ -2087,6 +2089,7 @@ canvas { display: block; width: 100%; height: 100%; }
       }
       game.moving = moving;
       game.moving.vx = gameSpeed();
+      game.blockClock = 0;
     }
 
     function weightChatVote(options) {
@@ -2111,7 +2114,8 @@ canvas { display: block; width: 100%; height: 100%; }
       })).sort((a, b) => a.at - b.at);
     }
     function availableVoteOptions(prefersReducedMotion = reducedMotion) {
-      return SABOTAGES.filter(item => !(prefersReducedMotion && Core.REDUCED_MOTION_EXCLUDED_IDS.includes(item.id))).map(item => item.id);
+      const height = game ? heightOf(game) : 0;
+      return SABOTAGES.filter(item => !(prefersReducedMotion && Core.REDUCED_MOTION_EXCLUDED_IDS.includes(item.id)) && Core.sabotageAvailableAtHeight(item.id, height)).map(item => item.id);
     }
     function startVote() {
       if (!game || game.phase !== 'playing' || game.vote) return;
@@ -2168,7 +2172,6 @@ canvas { display: block; width: 100%; height: 100%; }
       const duration = game.devMode ? 3600 : dropCounted ? 8 : 5;
       game.activeEffect = { id: sabotage.id, remaining: duration, duration, elapsed: 0 };
       if (dropCounted) game.activeEffect.dropsRemaining = 3;
-      if (id === 'gale') game.activeEffect.windDirection = game.devMode ? 1 : Math.random() < .5 ? -1 : 1;
       if (id === 'pisa') game.activeEffect.tiltDirection = game.devMode ? 1 : Math.random() < .5 ? -1 : 1;
       if (id === 'spotlight') game.activeEffect.spotlightSide = game.devMode ? 1 : Math.random() < .5 ? -1 : 1;
       game.statusMessage = `${sabotage.name} is active. ${sabotage.caption}`;
@@ -2354,12 +2357,11 @@ canvas { display: block; width: 100%; height: 100%; }
       if (!game || game.phase !== 'playing' || !game.moving) return;
       const level = game.stack.length;
       const below = game.stack[game.stack.length - 1];
-      const landingEffectId = ['gale', 'rollercoaster'].find(id => effectActive(id)) || '';
+      const landingEffectId = effectActive('rollercoaster') ? 'rollercoaster' : '';
       const verticalOffset = landingEffectId === 'rollercoaster' && !reducedMotion
         ? Core.rollercoasterOffset(Number(game.activeEffect.elapsed) || 0, game.moving.rollerPhase || 0) : 0;
       const landingOptions = {
         speed: speedAtLanding(), verticalOffset,
-        windDirection: game.activeEffect && game.activeEffect.windDirection,
         dropsRemaining: game.activeEffect && game.activeEffect.dropsRemaining
       };
       const driftedMover = Core.landingMover(game.moving, landingEffectId, landingOptions);
@@ -2626,6 +2628,10 @@ canvas { display: block; width: 100%; height: 100%; }
           if (decoyNext) { game.moving.decoy.left = decoyNext.left; game.moving.decoy.direction = decoyNext.direction; }
         } else if (game.moving.decoy) delete game.moving.decoy;
         game.moving.vx = speed;
+        if (!game.devMode && !game.multiplayer) {
+          game.blockClock = (Number(game.blockClock) || 0) + dt;
+          if (game.blockClock >= SOLO_AUTO_DROP_SECONDS) completeDrop();
+        }
       }
       updateFallingActors(dt);
     }
@@ -2647,6 +2653,21 @@ canvas { display: block; width: 100%; height: 100%; }
         ctx.fillStyle = '#2A2520';
         drawStar(ctx, x + width / 2, y + height / 2, 4, 2, 5);
       }
+      ctx.restore();
+    }
+    function drawAutoDropRing(ctx) {
+      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving) return;
+      const elapsed = Number(game.blockClock) || 0;
+      if (elapsed < SOLO_AUTO_DROP_RING_AFTER) return;
+      const left = Math.max(0, SOLO_AUTO_DROP_SECONDS - elapsed);
+      const fraction = Math.min(1, left / SOLO_AUTO_DROP_SECONDS);
+      const x = WIDTH - 24; const y = 82; const radius = 11;
+      ctx.save();
+      ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(42,37,32,.16)';
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = left <= 1 ? '#D5472F' : '#E3A33B';
+      ctx.beginPath(); ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fraction); ctx.stroke();
       ctx.restore();
     }
     function drawStar(ctx, cx, cy, outer, inner, points) {
@@ -2705,21 +2726,6 @@ canvas { display: block; width: 100%; height: 100%; }
       ctx.beginPath(); ctx.arc(beamX, beamY, radius, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
     }
-    function drawWindStreaks(ctx, elapsed, direction = 1) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(47,132,120,.62)';
-      ctx.lineWidth = 1.8;
-      ctx.lineCap = 'round';
-      for (let index = 0; index < 11; index += 1) {
-        const length = 14 + (index % 3) * 6;
-        const span = WIDTH + length + 30;
-        const travel = ((elapsed * 150 * direction + index * 67) % span + span) % span;
-        const x = direction > 0 ? travel - length - 15 : WIDTH - travel + 15;
-        const y = 70 + ((index * 47) % 330);
-        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + direction * length, y - 4); ctx.stroke();
-      }
-      ctx.restore();
-    }
     function drawPortalWalls(ctx, elapsed, direction = 1, viewport = { x: 0, y: 58, width: WIDTH, height: HEIGHT - 66 }, animated = !reducedMotion) {
       const scaleX = viewport.width / WIDTH;
       const leftGate = viewport.x + 5 * scaleX;
@@ -2769,6 +2775,27 @@ canvas { display: block; width: 100%; height: 100%; }
       }
       ctx.restore();
     }
+    function drawCrumbleCue(ctx, block, baseline = BASELINE, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
+      if (!block) return;
+      const x = origin + block.left * scaleX;
+      const width = (block.right - block.left) * scaleX;
+      const y = baseline - ((block.level || 0) + 1) * BLOCK_H * scaleY + cameraOffset;
+      const height = (BLOCK_H - 1) * scaleY;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(42,37,32,.78)'; ctx.lineWidth = Math.max(.9, 1.1 * scaleX); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const [fraction, lean] of [[.24, 1], [.68, -1]]) {
+        const cx = x + width * fraction;
+        ctx.beginPath();
+        ctx.moveTo(cx, y + 1 * scaleY);
+        ctx.lineTo(cx + lean * 2.6 * scaleX, y + height * .34);
+        ctx.lineTo(cx - lean * 2 * scaleX, y + height * .62);
+        ctx.lineTo(cx + lean * 1.4 * scaleX, y + height - 1 * scaleY);
+        ctx.moveTo(cx + lean * 2.6 * scaleX, y + height * .34);
+        ctx.lineTo(cx + lean * 6.5 * scaleX, y + height * .5);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
     function drawGlueCue(ctx, block, baseline = BASELINE, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
       if (!block) return;
       const x = origin + block.left * scaleX;
@@ -2781,25 +2808,6 @@ canvas { display: block; width: 100%; height: 100%; }
       ctx.beginPath(); ctx.ellipse(x + width / 2, y + 3 * scaleY, Math.max(2.1, Math.min(4.2, width * .035)), 2.2 * scaleY, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = 'rgba(244,237,223,.9)';
       ctx.beginPath(); ctx.arc(x + width / 2 - 1 * scaleX, y + 2.3 * scaleY, .8 * scaleX, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-    function drawGaleGuide(ctx, moving, below, movingY, direction = 1, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!moving || !below) return;
-      const drift = Core.dropDrift(moving, 'gale', { windDirection: direction });
-      const maxLeft = Math.max(0, WIDTH - moving.width);
-      const landingLeft = Math.max(0, Math.min(maxLeft, moving.left + drift));
-      const x = origin + (landingLeft + moving.width / 2) * scaleX;
-      const fromX = origin + (moving.left + moving.width / 2) * scaleX;
-      const seamY = movingY + BLOCK_H * scaleY + 2;
-      const guideHeight = Math.max(2, (BLOCK_H - 2) * scaleY);
-      ctx.save();
-      ctx.globalAlpha = .62;
-      ctx.strokeStyle = '#2F8478'; ctx.fillStyle = 'rgba(47,132,120,.12)'; ctx.lineWidth = Math.max(.8, 1.2 * scaleX);
-      ctx.setLineDash([4 * scaleX, 3 * scaleX]);
-      ctx.beginPath(); ctx.rect(origin + landingLeft * scaleX, seamY, moving.width * scaleX, guideHeight); ctx.fill(); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(fromX, seamY - 3 * scaleY); ctx.lineTo(x, seamY - 3 * scaleY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(x - Math.sign(drift || direction) * 4 * scaleX, seamY - 6 * scaleY); ctx.lineTo(x, seamY - 3 * scaleY); ctx.lineTo(x - Math.sign(drift || direction) * 4 * scaleX, seamY); ctx.stroke();
       ctx.restore();
     }
     function drawMagneticArcs(ctx, moving, below, movingY, origin = 0, scaleX = 1, scaleY = 1) {
@@ -2869,6 +2877,7 @@ canvas { display: block; width: 100%; height: 100%; }
           drawRoundedBlock(ctx, x, y, Math.max(1, width * horizontalScale), Math.max(1.5, BLOCK_H * verticalScale - .5), block.color || player.color, 1, Boolean(block.perfect));
         }
         if (effect && effect.id === 'superglue') drawGlueCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
+        if (effect && effect.id === 'crumble') drawCrumbleCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'calipers' && player.moving) drawCaliperGuides(ctx, topBlock, player.moving, baseline, 0, columnLeft, horizontalScale, verticalScale);
         const moving = player.moving;
         if (!player.ended && !player.collapsed && moving) {
@@ -2877,7 +2886,6 @@ canvas { display: block; width: 100%; height: 100%; }
             ? Core.rollercoasterOffset(effectElapsed, Number(moving.rollerPhase) || 0) * verticalScale : 0;
           const y = baseline - (moving.level + 1) * BLOCK_H * verticalScale + vertical;
           if (effect && effect.id === 'magnet') drawMagneticArcs(ctx, moving, topBlock, y, columnLeft, horizontalScale, verticalScale);
-          if (effect && effect.id === 'gale') drawGaleGuide(ctx, moving, topBlock, y, Number(effect.windDirection) < 0 ? -1 : 1, columnLeft, horizontalScale, verticalScale);
           if (alpha > 0.01) {
             if (effect && effect.id === 'double' && moving.decoy) {
               drawWorldBlock(ctx, moving.decoy.left, y, moving.decoy.width, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.decoy.color || player.color, false, columnLeft, horizontalScale, alpha);
@@ -2903,11 +2911,6 @@ canvas { display: block; width: 100%; height: 100%; }
             const beamY = baseline - ((topBlock.level || 0) + 1) * BLOCK_H * verticalScale + BLOCK_H * verticalScale / 2;
             spotlight(ctx, beamX, beamY, { x: columnLeft, y: 60, width: columnWidth, height: HEIGHT - 66 }, Math.max(9, 52 * horizontalScale));
           }
-        }
-        if (effect && effect.id === 'gale') {
-          ctx.save(); ctx.beginPath(); ctx.rect(columnLeft, 58, columnWidth, HEIGHT - 66); ctx.clip();
-          ctx.translate(columnLeft, 0); ctx.scale(horizontalScale, Math.max(.45, verticalScale));
-          drawWindStreaks(ctx, reducedMotion ? 0 : effectElapsed, Number(effect.windDirection) < 0 ? -1 : 1); ctx.restore();
         }
         ctx.restore();
         ctx.fillStyle = 'rgba(47,132,120,.22)'; ctx.fillRect(center - columnWidth / 2 + 1, baseline, columnWidth - 2, 2);
@@ -2991,6 +2994,7 @@ canvas { display: block; width: 100%; height: 100%; }
       }
       const below = game.stack[game.stack.length - 1] || Core.makeBase();
       if (effectId === 'superglue') drawGlueCue(ctx, below, BASELINE, cameraOffset);
+      if (effectId === 'crumble') drawCrumbleCue(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'calipers' && moving) drawCaliperGuides(ctx, below, moving, BASELINE, cameraOffset);
       for (const actor of game.fallingActors) {
         if (actor.collapseActor && !actor.started) continue;
@@ -3003,7 +3007,6 @@ canvas { display: block; width: 100%; height: 100%; }
         movingY += verticalOffset;
         const alpha = reducedMotion || effectId !== 'peekaboo' ? 1 : Core.peekabooOpacity(effectElapsed);
         if (effectId === 'magnet') drawMagneticArcs(ctx, moving, below, movingY);
-        if (effectId === 'gale') drawGaleGuide(ctx, moving, below, movingY, Number(game.activeEffect.windDirection) < 0 ? -1 : 1);
         if (alpha > 0.01) {
           if (effectId === 'double' && moving.decoy) {
             drawWorldBlock(ctx, moving.decoy.left, movingY, moving.decoy.width, BLOCK_H - 1, moving.decoy.color || moving.color, false, 0, 1, alpha);
@@ -3028,7 +3031,7 @@ canvas { display: block; width: 100%; height: 100%; }
         spotlight(ctx, beamX, beamY);
       }
       ctx.restore();
-      if (effectId === 'gale') drawWindStreaks(ctx, reducedMotion ? 0 : effectElapsed, Number(game.activeEffect.windDirection) < 0 ? -1 : 1);
+      drawAutoDropRing(ctx);
       if (game.toastTime > 0 && game.toastText) {
         if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText;
         elements.toast.classList.add('is-visible');
@@ -3689,12 +3692,11 @@ canvas { display: block; width: 100%; height: 100%; }
       const sabotage = effectById(id);
       const effectName = id === 'normal' ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'DEV sample';
       const below = game.stack[game.stack.length - 1];
-      const landingEffectId = ['gale', 'rollercoaster'].find(effectActive) || '';
+      const landingEffectId = effectActive('rollercoaster') ? 'rollercoaster' : '';
       const verticalOffset = landingEffectId === 'rollercoaster' && !reducedMotion
         ? Core.rollercoasterOffset(Number(game.activeEffect.elapsed) || 0, game.moving.rollerPhase || 0) : 0;
       const drift = Core.dropDrift(game.moving, landingEffectId, {
-        speed: speedAtLanding(), verticalOffset,
-        windDirection: game.activeEffect && game.activeEffect.windDirection
+        speed: speedAtLanding(), verticalOffset
       });
       const testOffset = id === 'superglue' ? 10 : id === 'crumble' ? 8 : 0;
       const desiredCentre = (below.left + below.right) / 2 + testOffset;
