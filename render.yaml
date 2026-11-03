@@ -1,0 +1,17 @@
+# Exported from Render on 2026-11-03T20:39:08Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: sabotage-stack
+      runtime: node
+      repo: https://github.com/Sisyphus93/sabotage-stack
+      plan: free
+      region: frankfurt
+      buildCommand: npm ci
+      startCommand: npm start
+      healthCheckPath: /healthz
+      autoDeployTrigger: commit
