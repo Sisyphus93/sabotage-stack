@@ -835,6 +835,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <path d="m6 7-1-2m6-1V2m10 3 1-2m4 5 2-1" stroke="#2F8478"/>
       </g>
     </symbol>
+    <symbol id="sabotage-symbol-earthquake" viewBox="0 0 32 32">
+      <path d="M3 25h8l3-5 4 9 3-4h8M5 18l-3-3 3-3M27 12l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M9 6h14v5H9zM8 12h14v5H8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    </symbol>
     <symbol id="sabotage-symbol-pisa" viewBox="0 0 32 32">
       <g fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
         <path d="m11 4 15 3-4 20-15-3z" fill="#E7DCC5"/><path d="m9 9 14 3m-15 2 13 3m-14 2 12 3" stroke="#D5472F"/>
@@ -898,7 +902,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div class="primary-row">
               <button id="start-button" class="button button-primary" type="button">Play solo <span class="arrow" aria-hidden="true">↗</span></button>
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
-              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 15 active sabotages">DEV lab <span class="soon">Test all 15</span></button>
+              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 16 active sabotages">DEV lab <span class="soon">Test all 16</span></button>
             </div>
             <div class="mode-row" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
@@ -1085,7 +1089,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <details class="sabotage-guide">
-        <summary>Meet all 15 active sabotages</summary>
+        <summary>Meet all 16 active sabotages</summary>
         <ul id="sabotage-list" class="sabotage-list"></ul>
       </details>
     </div>
@@ -1233,6 +1237,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'magnet', name: 'Gravity Slingshot', category: 'kinetic', caption: 'The stack centre is a launch point.', effect: 'The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.' },
       { id: 'portal', name: 'Portal Walls', category: 'trajectory', caption: 'The edges are not the end of the road.', effect: 'For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.' },
       { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.' },
+      { id: 'earthquake', name: 'Earthquake', category: 'trajectory', caption: 'The foundations have a few objections.', effect: 'The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.' },
       { id: 'pisa', name: 'The Pisa Tilt', category: 'trajectory', caption: 'Architecture is subjective, really.', effect: 'The view eases into a gentle sway of up to 16° for 5 seconds.' },
       { id: 'spotlight', name: 'Spotlight', category: 'optical', caption: 'One corner of the stage is under observation.', effect: 'Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.' },
       { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
@@ -1267,7 +1272,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   const PERFECT_WINDOW = 3;
   const SABOTAGE_CATEGORIES = Object.freeze({
     kinetic: Object.freeze(['turbo', 'drunk', 'slowmo', 'magnet']),
-    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa']),
+    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa', 'earthquake']),
     optical: Object.freeze(['spotlight', 'peekaboo', 'zoom', 'double']),
     geometry: Object.freeze(['accordion', 'crumble', 'superglue', 'calipers'])
   });
@@ -1279,7 +1284,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   // Effects held back until the tower is tall enough for them to matter (tune in play).
   const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
   const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
-  const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo']);
+  const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo', 'earthquake']);
   const REDUCED_MOTION_SAFE_IDS = Object.freeze(['zoom', 'superglue', 'calipers']);
   const PALETTE = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F']);
 
@@ -1393,6 +1398,18 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const envelope = Math.min(1, time / 0.15, left / 0.15);
     const sway = Math.sin(time / 2.5 * Math.PI * 2) * (16 * Math.PI / 180);
     return (Number(direction) < 0 ? -1 : 1) * sway * envelope;
+  }
+  // Camera-only tremor: deterministic across clients, with soft starts/stops.
+  // Never feed this offset into landing calculations.
+  function earthquakeOffset(elapsed, remaining, reducedMotion = false) {
+    const time = Number.isFinite(Number(elapsed)) ? Math.max(0, Number(elapsed)) : 0;
+    const left = Number.isFinite(Number(remaining)) ? Math.max(0, Number(remaining)) : 0;
+    const envelope = reducedMotion ? 0 : Math.min(1, time / 0.2, left / 0.2);
+    if (envelope === 0) return { x: 0, y: 0 };
+    return {
+      x: envelope * (Math.sin(time * 43) * 5 + Math.sin(time * 71) * 3),
+      y: envelope * (Math.sin(time * 53) * 2 + Math.sin(time * 89) * 1)
+    };
   }
   function createShellDecoy(moving) {
     if (!moving || !Number.isFinite(Number(moving.left)) || !Number.isFinite(Number(moving.width)) || Number(moving.width) <= 0) return null;
@@ -1590,7 +1607,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
   });
@@ -3369,6 +3386,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         ctx.fillText(`${player.height || 0} high`, center, 51);
         ctx.save();
         const topBlock = (player.blocks || []).slice(-1)[0] || Core.makeBase();
+        if (effect && effect.id === 'earthquake') {
+          const tremor = Core.earthquakeOffset(effectElapsed, effect.remaining, reducedMotion);
+          ctx.translate(tremor.x * horizontalScale, tremor.y * verticalScale);
+        }
         if (effect && effect.id === 'pisa') {
           const pivotY = baseline - ((player.height || 0) + 1) * BLOCK_H * verticalScale + BLOCK_H * verticalScale / 2;
           const angle = Core.pisaAngle(effectElapsed, effect.remaining, effect.tiltDirection, reducedMotion);
@@ -3466,6 +3487,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const focusX = (topBlock.left + topBlock.right) / 2;
         const focusY = BASELINE - game.stack.length * BLOCK_H + cameraOffset + BLOCK_H / 2;
         ctx.translate(focusX, focusY); ctx.scale(zoomScale, zoomScale); ctx.translate(-focusX, -focusY);
+      }
+      if (effectId === 'earthquake') {
+        const tremor = Core.earthquakeOffset(effectElapsed, game.activeEffect.remaining, reducedMotion);
+        ctx.translate(tremor.x, tremor.y);
       }
       if (effectId === 'pisa') {
         const topBlock = game.stack[game.stack.length - 1] || Core.makeBase();
