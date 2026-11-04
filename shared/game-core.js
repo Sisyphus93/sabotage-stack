@@ -13,7 +13,7 @@
   const PERFECT_WINDOW = 3;
   const SABOTAGE_CATEGORIES = Object.freeze({
     kinetic: Object.freeze(['turbo', 'drunk', 'slowmo', 'magnet']),
-    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa']),
+    trajectory: Object.freeze(['portal', 'rollercoaster', 'pisa', 'earthquake']),
     optical: Object.freeze(['spotlight', 'peekaboo', 'zoom', 'double']),
     geometry: Object.freeze(['accordion', 'crumble', 'superglue', 'calipers'])
   });
@@ -25,7 +25,7 @@
   // Effects held back until the tower is tall enough for them to matter (tune in play).
   const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
   const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
-  const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo']);
+  const REDUCED_MOTION_EXCLUDED_IDS = Object.freeze(['accordion', 'pisa', 'rollercoaster', 'peekaboo', 'earthquake']);
   const REDUCED_MOTION_SAFE_IDS = Object.freeze(['zoom', 'superglue', 'calipers']);
   const PALETTE = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F']);
 
@@ -139,6 +139,18 @@
     const envelope = Math.min(1, time / 0.15, left / 0.15);
     const sway = Math.sin(time / 2.5 * Math.PI * 2) * (16 * Math.PI / 180);
     return (Number(direction) < 0 ? -1 : 1) * sway * envelope;
+  }
+  // Camera-only tremor: deterministic across clients, with soft starts/stops.
+  // Never feed this offset into landing calculations.
+  function earthquakeOffset(elapsed, remaining, reducedMotion = false) {
+    const time = Number.isFinite(Number(elapsed)) ? Math.max(0, Number(elapsed)) : 0;
+    const left = Number.isFinite(Number(remaining)) ? Math.max(0, Number(remaining)) : 0;
+    const envelope = reducedMotion ? 0 : Math.min(1, time / 0.2, left / 0.2);
+    if (envelope === 0) return { x: 0, y: 0 };
+    return {
+      x: envelope * (Math.sin(time * 43) * 5 + Math.sin(time * 71) * 3),
+      y: envelope * (Math.sin(time * 53) * 2 + Math.sin(time * 89) * 1)
+    };
   }
   function createShellDecoy(moving) {
     if (!moving || !Number.isFinite(Number(moving.left)) || !Number.isFinite(Number(moving.width)) || Number(moving.width) <= 0) return null;
@@ -336,7 +348,7 @@
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
   });
