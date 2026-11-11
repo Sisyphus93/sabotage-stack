@@ -4975,7 +4975,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     });
     elements.drop.addEventListener('pointerdown', event => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
-      event.preventDefault();
       requestDrop();
     });
     elements.drop.addEventListener('click', event => {
@@ -4988,11 +4987,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       requestDrop();
     });
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
-    document.querySelectorAll('button').forEach(button => button.addEventListener('contextmenu', event => event.preventDefault()));
     [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
-    window.addEventListener('contextmenu', event => {
-      if (event.target === elements.gameCanvas || event.target === elements.drop) event.preventDefault();
-    });
     function isGamePlaying() {
       return Boolean(game && game.phase === 'playing' && document.body.dataset.screen === 'game');
     }

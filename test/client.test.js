@@ -714,3 +714,21 @@ describe('Sunset motion chip (A-07)', () => {
     assert.match(rule[1], /font-size:\s*15px/); assert.match(rule[1], /text-overflow:\s*ellipsis/);
   });
 });
+
+describe('Button context menus (A-10)', skipReason ? { skip: skipReason } : {}, () => {
+  test('buttons allow context menus while the game canvas retains its own suppression', async () => {
+    const page = await boot(HTML);
+    try {
+      const d = page.document;
+      for (const selector of ['#start-button', '#drop-button', '#menu-button', '.vote-option']) {
+        const event = new page.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        d.querySelector(selector).dispatchEvent(event);
+        assert.equal(event.defaultPrevented, false, selector);
+      }
+      const canvasEvent = new page.window.MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+      d.getElementById('game-canvas').dispatchEvent(canvasEvent);
+      assert.equal(canvasEvent.defaultPrevented, true);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
