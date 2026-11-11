@@ -1326,7 +1326,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'slowmo', name: 'Slow-to-Dart', category: 'kinetic', caption: 'Easy… easy… now!', effect: 'Creeps at ×0.3 for 0.78 seconds, then lunges at ×2.5 on a 1.4-second cycle.' },
       { id: 'magnet', name: 'Gravity Slingshot', category: 'kinetic', caption: 'The stack centre is a launch point.', effect: 'The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.' },
       { id: 'portal', name: 'Portal Walls', category: 'trajectory', caption: 'The edges are not the end of the road.', effect: 'For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.' },
-      { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.' },
+      { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs up to 45 px above the landing line and speeds up to ×1.6 as it rises; no hidden sideways drift.' },
       { id: 'earthquake', name: 'Earthquake', category: 'trajectory', caption: 'The foundations have a few objections.', effect: 'The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.' },
       { id: 'pisa', name: 'The Pisa Tilt', category: 'trajectory', caption: 'Architecture is subjective, really.', effect: 'The view eases into a gentle sway of up to 16° for 5 seconds.' },
       { id: 'spotlight', name: 'Spotlight', category: 'optical', caption: 'One corner of the stage is under observation.', effect: 'Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.' },
@@ -1343,12 +1343,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const VOTE_EFFECT_HINTS = Object.freeze({
       turbo: 'The mover speeds up.', drunk: 'The mover alternates between stumbles and lurches.',
       slowmo: 'The mover creeps, then darts.', magnet: 'The mover accelerates over the tower centre.',
-      portal: 'The mover wraps through the side walls.', rollercoaster: 'The mover bobs above the landing line.',
+      portal: 'The mover wraps through the side walls.', rollercoaster: 'The mover bobs and speeds up as it rises.',
       earthquake: 'The view shakes; block physics stay the same.', pisa: 'The view tilts and sways.',
       spotlight: 'Most of the field is hidden outside a narrow beam.', peekaboo: 'The mover repeatedly disappears.',
       zoom: 'The view zooms in on the tower.', double: 'A decoy moves opposite the real block.',
       accordion: 'The mover repeatedly changes width.', crumble: 'Imperfect landings lose extra width.',
-      superglue: 'The perfect landing window becomes wider.', calipers: 'Rebounds stay closer to the tower.'
+      superglue: 'The perfect landing window becomes wider.', calipers: 'Helpful: rebounds stay closer to the tower.'
     });
     const STAGE_VOTE_SHORT_NAMES = Object.freeze({
       turbo: 'Turbo', drunk: 'Drunk', slowmo: 'Slow', magnet: 'Gravity', portal: 'Portal', rollercoaster: 'Roller',
@@ -1386,7 +1386,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     Object.entries(SABOTAGE_CATEGORIES).flatMap(([category, ids]) => ids.map(id => [id, category]))
   ));
   const SABOTAGE_IDS = Object.freeze(Object.values(SABOTAGE_CATEGORIES).flat());
-  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue'));
+  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue' && id !== 'calipers'));
   // Effects held back until the tower is tall enough for them to matter (tune in play).
   const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
   const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
@@ -1496,6 +1496,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const time = Number.isFinite(Number(elapsed)) ? Math.max(0, Number(elapsed)) : 0;
     const phaseTurns = Number.isFinite(Number(phase)) ? Number(phase) : 0;
     return -22.5 * (1 + Math.sin((time / 1.2 + phaseTurns) * Math.PI * 2));
+  }
+  function rollercoasterSpeedMultiplier(elapsed, phase = 0) {
+    return 1 + (-rollercoasterOffset(elapsed, phase) / 45) * 0.6;
   }
   function pisaAngle(elapsed, remaining, direction = 1, reducedMotion = false) {
     if (reducedMotion) return 0;
@@ -1713,7 +1716,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, rollercoasterSpeedMultiplier, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
   });
@@ -3180,6 +3183,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game) return 140;
       const base = Core.speedForHeight(heightOf(game));
       if (effectActive('turbo')) return base * 1.7;
+      if (effectActive('rollercoaster') && !reducedMotion) return base * Core.rollercoasterSpeedMultiplier(Number(game.activeEffect.elapsed) || 0, game.moving && game.moving.rollerPhase);
       if (effectActive('slowmo')) return base * Core.slowToDartMultiplier(Number(game.activeEffect.elapsed) || 0);
       if (effectActive('drunk')) return base * game.drunkMultiplier;
       return base;
@@ -3654,10 +3658,23 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    function drawKineticCue(ctx, id, x, y, width, height) {
+      if (!['turbo', 'drunk', 'slowmo'].includes(id)) return;
+      ctx.save(); ctx.strokeStyle = canvasTheme().inkDeep || canvasTheme().ink;
+      ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.beginPath();
+      if (id === 'turbo') {
+        for (let i = 0; i < 3; i += 1) { const yy = y + height * (.25 + i * .25); ctx.moveTo(x + width * .2, yy); ctx.lineTo(x + width * .8, yy); }
+      } else if (id === 'drunk') {
+        ctx.moveTo(x + width * .2, y + height * .65); ctx.lineTo(x + width * .35, y + height * .35); ctx.lineTo(x + width * .5, y + height * .65); ctx.lineTo(x + width * .65, y + height * .35); ctx.lineTo(x + width * .8, y + height * .65);
+      } else {
+        ctx.moveTo(x + width * .4, y + height * .22); ctx.lineTo(x + width * .6, y + height * .78); ctx.moveTo(x + width * .6, y + height * .22); ctx.lineTo(x + width * .4, y + height * .78);
+      }
+      ctx.stroke(); ctx.restore();
+    }
     function drawShellCrack(ctx, x, y, width) {
       ctx.save();
       ctx.strokeStyle = canvasTheme().crack;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x + width * .53, y + 4);
@@ -3736,6 +3753,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             } else {
               drawWorldBlock(ctx, drawnLeft, y, drawnWidth, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.color || player.color, Boolean(effect && effect.id === 'portal'), columnLeft, horizontalScale, alpha);
             }
+            if (effect) drawKineticCue(ctx, effect.id, screenLeft, y, screenWidth, Math.max(1.5, BLOCK_H * verticalScale - .5));
             if (effect && effect.id === 'double') drawShellCrack(ctx, screenLeft, y, screenWidth);
           }
           if (effect && effect.id === 'spotlight') {
@@ -3865,6 +3883,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           } else {
             drawWorldBlock(ctx, drawnLeft, movingY, drawnWidth, BLOCK_H - 1, moving.color, effectId === 'portal', 0, 1, alpha);
           }
+          drawKineticCue(ctx, effectId, drawnLeft, movingY, drawnWidth, BLOCK_H - 1);
           if (effectId === 'double') drawShellCrack(ctx, drawnLeft, movingY, drawnWidth);
         }
       }

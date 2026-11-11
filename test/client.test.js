@@ -237,7 +237,6 @@ describe('Mobile vote and touch access (F-004)', skipReason ? { skip: skipReason
         assert.equal(chip.getAttribute('aria-label'), fullOption.getAttribute('aria-label'));
       }
 
-      const pickedName = chips[1].querySelector('.stage-vote-name').textContent;
       const before = chips.map(button => Number(button.querySelector('.stage-vote-count').textContent));
       chips[1].click();
       const after = chips.map(button => Number(button.querySelector('.stage-vote-count').textContent));
@@ -246,10 +245,16 @@ describe('Mobile vote and touch access (F-004)', skipReason ? { skip: skipReason
       assert.equal(after[2], before[2]);
       assert.deepEqual(after, fullVoteButtons.map(button => Number(button.querySelector('.vote-count').textContent)));
 
-      page.advanceAnimation(5200);
+      let leaders = [];
+      for (let frame = 0; frame < 110 && !strip.hidden; frame += 1) {
+        const counts = chips.map(button => Number(button.querySelector('.stage-vote-count').textContent));
+        const high = Math.max(...counts);
+        leaders = chips.filter((button, index) => counts[index] === high).map(button => button.querySelector('.stage-vote-name').textContent);
+        page.advanceAnimation(50);
+      }
       assert.equal(strip.hidden, true, 'the strip disappears when voting closes');
       assert.equal(document.getElementById('canvas-hint').hidden, false, 'the normal stage hint returns after the vote');
-      assert.ok(motion.textContent.startsWith(pickedName), `the active effect is shown on the stage: ${motion.textContent}`);
+      assert.ok(leaders.some(name => motion.textContent.startsWith(name)), `the winning effect is shown on the stage: ${motion.textContent}`);
       assert.match(motion.textContent, /\u00b7 \d+s left$/, 'the stage status includes the active effect timer');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }

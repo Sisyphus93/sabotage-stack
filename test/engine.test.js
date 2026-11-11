@@ -524,3 +524,28 @@ describe('Competitive host ballot (F-014)', () => {
     assert.equal(engine.snapshot().vote.totalVotes, 0);
   });
 });
+
+describe('Effect rebalance (F-019)', () => {
+  test('helpful Calipers and Superglue are not harsh, while the roster stays intact', () => {
+    assert.equal(Core.SABOTAGE_IDS.length, 16);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('calipers'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('superglue'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('rollercoaster'), true);
+  });
+  test('Rollercoaster accelerates as it rises, including on the authoritative server', () => {
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.3) - 1.6) < 1e-9);
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.9) - 1) < 1e-9);
+    for (const mode of ['teamwork', 'competitive']) {
+      const { engine, clock } = makeEngine(mode);
+      const actor = mode === 'teamwork' ? engine.game.team : engine.game.competitors[0];
+      const id = mode === 'teamwork' ? actor.currentPlayerId : actor.playerId;
+      actor.moving.rollerPhase = 0;
+      engine.addEffect('rollercoaster', id, clock.t);
+      const base = Core.speedForHeight(actor.stack.length - 1);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 300) - base * 1.6) < 1e-9);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 900) - base) < 1e-9);
+      engine.motionPrefersReduced = true;
+      assert.equal(engine.movementSpeed(actor.stack, actor, id, clock.t + 300), base);
+    }
+  });
+});

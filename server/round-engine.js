@@ -150,6 +150,8 @@ class RoundEngine {
   movementSpeed(stack, actor, playerId, now) {
     const base = Core.speedForHeight(Math.max(0, stack.length - 1));
     if (this.hasEffect('turbo', playerId, now)) return base * 1.7;
+    const roller = this.effectFor('rollercoaster', playerId, now);
+    if (roller && !this.motionReductionEnabled()) return base * Core.rollercoasterSpeedMultiplier(this.effectElapsed(roller, now), actor.moving && actor.moving.rollerPhase);
     const slowToDart = this.effectFor('slowmo', playerId, now);
     if (slowToDart) return base * Core.slowToDartMultiplier(this.effectElapsed(slowToDart, now));
     const drunk = this.effectFor('drunk', playerId, now);
