@@ -41,7 +41,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-027 | P3 | quick |  | The sound setting is forgotten on reload | fixed, awaiting your check | fix(F-027), single commit on this branch | |
 | F-028 | P3 | quick |  | axe: one contrast miss, no h1 outside the title screen, labels on role-less elements | fixed, awaiting your check | fix(F-028), single commit on this branch | |
 | F-029 | P3 | larger |  | Vote adapter seam (not wired to a live source): no voter namespacing or caps, and it shares ids with the host's clicks | fixed, awaiting your check | fix(F-029), single commit on this branch | |
-| F-030 | P3 | quick |  | package.json allows Node 20, but the tests need Node 22.22.2 or newer and fail misleadingly on 20 | todo | | |
+| F-030 | P3 | quick |  | package.json allows Node 20, but the tests need Node 22.22.2 or newer and fail misleadingly on 20 | fixed, awaiting your check | fix(F-030), single commit on this branch | |
 
 ## Appendix items
 
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-030, Node:** package engines now match jsdom’s supported Node ranges, `.nvmrc` selects 22.22.2, and the test runner gives an explicit version diagnostic before loading suites. Harness failure messages include the actual error rather than asserting dependencies are missing. Node 22.22.3: `npm ci` succeeded and `npm test` passed 118/118; the server itself previously worked on Node 20, but the package now declares the test-compatible minimum.
 
 - **F-029, chat seam:** with owner approval for the note-only finding, chat identities are namespaced by platform, IDs are limited to 128 characters, and each ballot allows at most 1,000 distinct chat voters and 20 submissions per voter. Host and Teamwork ballots stay separate. Legacy calls use a dedicated namespace; any future integration must supply trusted platform IDs and authenticate its payload before calling the adapter. Node 22.22.3: `npm test` passed 117/117.
 

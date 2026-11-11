@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 let boot = null; let skipReason = null;
-try { ({ boot } = require('./helpers/client-harness')); } catch (error) { skipReason = `jsdom / @napi-rs/canvas not installed (run npm install): ${error.message}`; }
+try { ({ boot } = require('./helpers/client-harness')); } catch (error) { skipReason = `Client harness failed to load on Node ${process.version}: ${error.message} (run npm ci if dependencies are missing)`; }
 const HTML = path.join(__dirname, '..', 'sabotage-stack.html');
 const INK = '42,37,32,255';
 
