@@ -23,7 +23,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | fixed | F-009 commit | |
 | F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | fixed, awaiting your check | fix(F-010), single commit on this branch | |
 | F-011 | P1 | quick |  | Screen-reader users hear almost nothing during play, and in multiplayer a whole list is re-announced on every drop | fixed, awaiting your check | fix(F-011), single commit on this branch | |
-| F-012 | P2 | quick |  | Space always drops, so it cannot activate a focused vote option or the Menu button during play | todo | | |
+| F-012 | P2 | quick |  | Space always drops, so it cannot activate a focused vote option or the Menu button during play | fixed, awaiting your check | fix(F-012), single commit on this branch | |
 | F-013 | P2 | quick |  | The vote card shows three names with no explanation, never marks your pick, and applies the ×4 weight silently | todo | | |
 | F-014 | P2 | quick | yes | Host voting: every click adds another vote and cannot be changed, while the help text says one choice per person | todo | | |
 | F-015 | P2 | larger |  | When the host leaves, players are not told; votes resolve at random and nobody can rematch | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-012, Space key:** Space drops only on the body, canvas, or Drop control, leaving other focused controls and open dialogs to their native behavior. Held-key repeats do not cause extra drops; releasing on a different control is not suppressed. F-003 digit shortcuts are unchanged. jsdom tests verify event cancellation and simulate native button clicks because jsdom does not synthesize keyboard activation. Node 22.22.3: `npm test` passed 87/87.
 
 - **F-011, game announcements:** a polite, serialized status region announces vote options and winner descriptions, effect end, repeated perfect drops, collapse, Teamwork turn changes and a timely three-second warning. Removed live announcements from roster lists and the visual toast to prevent repeated roster/duplicate toast speech. The existing Competitive target announcement remains separate. Verified DOM updates in client and multiplayer tests; an actual screen reader was not tested. A-04 remains out of scope: these announcements do not encode mover position or make the game playable by sound alone.
 

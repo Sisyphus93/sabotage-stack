@@ -1740,6 +1740,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     let resultShownAt = 0;
     let soloVoteNumber = 0;
     let spaceDropKeyHeld = false;
+    let spaceDropTarget = null;
     let camera = 0;
     let frameDt = 0;
     let zoomScale = 1;
@@ -4672,6 +4673,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       return Boolean(target && (target.isContentEditable || (target.closest && target.closest('input, textarea, select, [contenteditable="true"]'))));
     }
     function isSpaceKey(event) { return event.code === 'Space' || event.key === ' '; }
+    function isSpaceDropTarget(target) {
+      if (document.querySelector('dialog[open]')) return false;
+      return target === window || target === document || target === document.body || target === document.documentElement
+        || target === elements.gameCanvas || target === elements.drop || elements.drop.contains(target);
+    }
     window.addEventListener('keydown', event => {
       const target = event.target;
       if (game && game.devMode && event.key === 'Escape') {
@@ -4679,10 +4685,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         stopDevMode();
         return;
       }
-      if (isSpaceKey(event) && isGamePlaying() && !isTypingTarget(target)) {
+      if (isSpaceKey(event) && isGamePlaying() && isSpaceDropTarget(target)) {
         event.preventDefault();
-        spaceDropKeyHeld = true;
-        if (!event.repeat) requestDrop();
+        if (!event.repeat) {
+          spaceDropKeyHeld = true;
+          spaceDropTarget = target;
+          requestDrop();
+        }
         return;
       }
       if ((event.code === 'Enter' || event.key === 'Enter') && target === elements.gameCanvas && isGamePlaying() && !event.repeat) {
@@ -4697,8 +4706,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     });
     window.addEventListener('keyup', event => {
       if (isSpaceKey(event) && spaceDropKeyHeld) {
-        event.preventDefault();
+        if (event.target === spaceDropTarget) event.preventDefault();
         spaceDropKeyHeld = false;
+        spaceDropTarget = null;
       }
     });
     document.addEventListener('visibilitychange', () => { lastFrame = 0; });
