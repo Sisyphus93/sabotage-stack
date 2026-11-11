@@ -1,7 +1,7 @@
 'use strict';
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { RoundEngine } = require('../server/round-engine');
+const { RoundEngine, COMPETITIVE_DISCONNECT_GRACE_MS } = require('../server/round-engine');
 const Core = require('../shared/game-core');
 const { rng } = require('./helpers/rng');
 
@@ -58,6 +58,105 @@ describe('one sabotage at a time', () => {
       assert.ok(maxHeight >= 26, `bot only reached height ${maxHeight}; need >= 25 to exercise the faster vote cadence`);
     });
   }
+});
+
+describe('Teamwork voting (F-008)', () => {
+  function openBetweenTurns(engine, now) {
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+    engine.game.team.turnExpiresAt = null;
+    engine.game.team.awaitingAutoDrop = false;
+    engine.game.team.autoDropDeadlineAt = null;
+    return engine.openVote(now);
+  }
+
+  test('each connected player off-turn has one changeable vote; the on-turn and disconnected players cannot vote', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 21, 3);
+    engine.openVote(clock.t);
+    const options = engine.game.vote.options;
+
+    assert.equal(engine.castTeamworkPlayerVote('a', options[0]).code, 'PLAYER_ON_TURN');
+    assert.equal(engine.castTeamworkPlayerVote('b', options[0]).ok, true);
+    assert.equal(engine.castTeamworkPlayerVote('b', options[1]).ok, true, 'the same player can change their ballot');
+    assert.equal(engine.game.vote.votes.size, 1, 'a changed vote replaces the earlier ballot');
+    assert.deepEqual([...engine.game.vote.votes.entries()], [['teamwork-player:b', options[1]]]);
+    players[2].connected = false;
+    assert.equal(engine.castTeamworkPlayerVote('c', options[0]).code, 'PLAYER_INACTIVE');
+    assert.equal(engine.snapshot().vote.totalVotes, 1);
+
+    const competitive = makeEngine('competitive', 22, 2).engine;
+    competitive.openVote(competitive.now());
+    assert.equal(competitive.castTeamworkPlayerVote('a', competitive.game.vote.options[0]).code, 'PLAYER_VOTING_DISABLED');
+  });
+
+  test('host tie-break resolves a player tie, including zero votes, but cannot overturn a clear winner', () => {
+    const tied = makeEngine('teamwork', 23, 3);
+    openBetweenTurns(tied.engine, tied.clock.t);
+    const [first, second] = tied.engine.game.vote.options;
+    assert.equal(tied.engine.castTeamworkPlayerVote('a', first).ok, true);
+    assert.equal(tied.engine.castTeamworkPlayerVote('b', second).ok, true);
+    assert.equal(tied.engine.castHostTiebreak(second).ok, true);
+    assert.equal(tied.engine.snapshot().vote.hostTiebreak, second);
+    assert.equal(tied.engine.game.vote.duration, 5, 'the existing vote window remains five seconds');
+    const cadence = tied.engine.game.elapsed + 10;
+    assert.equal(tied.engine.game.nextVoteAt, cadence, 'the existing vote cadence remains unchanged');
+    tied.engine.resolveVote(tied.clock.t);
+    assert.equal(tied.engine.game.lastVote.winner, second);
+    assert.equal(tied.engine.game.lastVote.tiebreak, 'host');
+
+    const noVotes = makeEngine('teamwork', 24, 2);
+    openBetweenTurns(noVotes.engine, noVotes.clock.t);
+    const chosenWithoutBallots = noVotes.engine.game.vote.options[2];
+    assert.equal(noVotes.engine.castHostTiebreak(chosenWithoutBallots).ok, true);
+    noVotes.engine.resolveVote(noVotes.clock.t);
+    assert.equal(noVotes.engine.game.lastVote.winner, chosenWithoutBallots, 'the host decides a zero-vote tie');
+    assert.equal(noVotes.engine.game.lastVote.totalVotes, 0);
+    assert.equal(noVotes.engine.game.lastVote.tiebreak, 'host');
+
+    const clear = makeEngine('teamwork', 25, 3);
+    openBetweenTurns(clear.engine, clear.clock.t);
+    const [leader, runnerUp] = clear.engine.game.vote.options;
+    clear.engine.castTeamworkPlayerVote('a', leader);
+    clear.engine.castTeamworkPlayerVote('b', leader);
+    clear.engine.castTeamworkPlayerVote('c', runnerUp);
+    clear.engine.castHostTiebreak(runnerUp);
+    clear.engine.resolveVote(clear.clock.t);
+    assert.equal(clear.engine.game.lastVote.winner, leader, 'a host preference cannot overturn the player-vote leader');
+    assert.equal(clear.engine.game.lastVote.tiebreak, undefined);
+  });
+
+  test('the host cannot use a Teamwork tie-break as an extra Competitive ballot', () => {
+    const { engine, clock } = makeEngine('competitive', 26, 2);
+    engine.openVote(clock.t);
+    const option = engine.game.vote.options[0];
+    assert.equal(engine.castHostTiebreak(option).code, 'HOST_TIEBREAK_DISABLED');
+    assert.equal(engine.castManualVote(option).ok, true);
+    assert.equal(engine.game.vote.votes.size, 1);
+    assert.equal(Object.hasOwn(engine.snapshot().vote, 'hostTiebreak'), false);
+  });
+});
+
+describe('Competitive sabotage targeting (F-007)', () => {
+  test('every connected, unfinished competitor gets the full effect, not only the leader', () => {
+    const { engine, clock, players } = makeEngine('competitive', 17, 4);
+    const [leader, trailing, offline, finished] = engine.game.competitors;
+    leader.stack.push({ ...leader.stack[0] }, { ...leader.stack[0] }, { ...leader.stack[0] });
+    players[2].connected = false;
+    offline.disconnected = true;
+    players[3].ended = true;
+    finished.ended = true;
+
+    engine.game.pendingSabotage = 'turbo';
+    engine.applyCompetitiveSabotage(clock.t);
+
+    const effects = engine.game.activeEffects.filter(effect => effect.id === 'turbo');
+    assert.deepEqual(effects.map(effect => effect.targetPlayerId), ['a', 'b'], 'the leader and every other connected, unfinished competitor are targeted');
+    assert.ok(effects.every(effect => effect.duration === 5 && effect.expiresAt === clock.t + 5000), 'each target receives the normal full duration');
+    assert.deepEqual([leader.sabotageCount, trailing.sabotageCount, offline.sabotageCount, finished.sabotageCount], [1, 1, 0, 0]);
+    assert.deepEqual(engine.snapshot().lastSabotage, {
+      id: 'turbo', sequence: 1, targetPlayerIds: ['a', 'b']
+    }, 'the snapshot identifies all players who were hit');
+  });
 });
 
 describe('landing is what the player saw, independent of network timing', () => {
@@ -138,6 +237,79 @@ describe('pause and resume', () => {
   });
 });
 
+describe('Competitive disconnect grace (F-006)', () => {
+  const GRACE_MS = COMPETITIVE_DISCONNECT_GRACE_MS;
+
+  test('a reconnect within ten seconds restores the frozen mover', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const competitor = engine.game.competitors.find(item => item.playerId === 'a');
+    const initialLeft = competitor.moving.left;
+
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    assert.equal(competitor.ended, false, 'a temporary disconnect must not end the stack');
+    assert.equal(competitor.disconnected, true, 'other players can see that the stack is offline');
+    assert.equal(players[0].ended, false);
+    assert.equal(competitor.disconnectDeadline, clock.t + GRACE_MS);
+
+    clock.t += 1_000;
+    engine.tick(clock.t);
+    assert.equal(competitor.moving.left, initialLeft, 'the disconnected mover is frozen during the grace period');
+    assert.equal(engine.game.phase, 'playing');
+
+    players[0].connected = true;
+    engine.playerReconnected('a', clock.t);
+    assert.equal(competitor.ended, false);
+    assert.equal(competitor.disconnected, false);
+    assert.equal(competitor.disconnectDeadline, null);
+    clock.t += 50;
+    engine.tick(clock.t);
+    assert.notEqual(competitor.moving.left, initialLeft, 'the mover resumes after reconnection');
+  });
+
+  test('a reconnect processed after the deadline is forfeited even before the next engine tick', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const competitor = engine.game.competitors.find(item => item.playerId === 'a');
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    clock.t += GRACE_MS;
+    players[0].connected = true;
+    engine.playerReconnected('a', clock.t);
+
+    assert.equal(competitor.ended, true);
+    assert.equal(competitor.disconnected, true);
+    assert.equal(competitor.disconnectDeadline, null);
+    assert.equal(players[0].ended, true);
+    assert.equal(engine.connectedPlayer('a'), null, 'the expired player can only watch the live round');
+  });
+
+  test('an unresumed stack ends only at the grace deadline, even if every other stack has ended', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const disconnected = engine.game.competitors.find(item => item.playerId === 'a');
+    const finished = engine.game.competitors.find(item => item.playerId === 'b');
+    finished.ended = true;
+    finished.collapsed = true;
+    players[1].ended = true;
+
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    assert.equal(engine.game.phase, 'playing', 'a stack in its grace period keeps the round alive');
+    clock.t += GRACE_MS - 1;
+    engine.tick(clock.t);
+    assert.equal(disconnected.ended, false);
+    assert.equal(engine.game.phase, 'playing', 'the player can still reconnect just before the deadline');
+
+    clock.t += 1;
+    engine.tick(clock.t);
+    assert.equal(disconnected.ended, true);
+    assert.equal(disconnected.disconnected, true);
+    assert.equal(disconnected.disconnectDeadline, null);
+    assert.equal(players[0].ended, true);
+    assert.equal(engine.game.phase, 'results');
+    assert.equal(engine.game.results.players.find(player => player.id === 'a').disconnected, true);
+  });
+});
+
 describe('robustness under random play', () => {
   for (const mode of ['teamwork', 'competitive']) {
     test(`${mode}: 300 random games never throw or produce invalid geometry`, () => {
@@ -199,5 +371,224 @@ describe('shared core invariants', () => {
       if (out.status === 'placed') assert.ok(out.placed.right > out.placed.left && Number.isFinite(out.placed.width));
       for (const f of out.fallen) assert.ok(f.right > f.left);
     }
+  });
+});
+
+describe('Teamwork drop-based sabotage (F-009)', () => {
+  test('regular effects survive time and forfeits, then end on the affected landing', () => {
+    const { engine, clock } = makeEngine('teamwork', 101);
+    const team = engine.game.team;
+    const target = team.currentPlayerId;
+    engine.addEffect('turbo', target, clock.t);
+    clock.t += 11000;
+    engine.tick(clock.t);
+    assert.ok(engine.hasEffect('turbo', target, clock.t));
+    assert.equal(engine.snapshot().activeEffects[0].untilDrop, true);
+    clock.t += 2000; engine.tick(clock.t);
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.notEqual(team.currentPlayerId, target);
+    assert.ok(engine.hasEffect('turbo', target, clock.t), 'forfeit did not consume it');
+    engine.consumeDropEffects(team.currentPlayerId, clock.t);
+    assert.ok(engine.hasEffect('turbo', target, clock.t), 'another player cannot consume it');
+    assert.equal(engine.teamReady(target, clock.t).ok, true);
+    engine.forfeitTeamTurn(clock.t);
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.equal(team.currentPlayerId, target);
+    const result = engine.drop(target, { turnId: team.turnId, x: team.moving.left });
+    assert.equal(result.ok, true);
+    assert.equal(engine.hasEffect('turbo', target, clock.t), false);
+  });
+
+  for (const id of ['crumble', 'superglue', 'portal', 'calipers']) {
+    test(`${id} lasts three affected drops without a time cap`, () => {
+      const { engine, clock } = makeEngine('teamwork', 102);
+      const target = id === 'crumble' ? null : 'a';
+      engine.addEffect(id, target, clock.t);
+      clock.t += 30000;
+      assert.ok(engine.hasEffect(id, 'a', clock.t));
+      for (let n = 2; n >= 0; n--) {
+        engine.consumeDropEffects('a', clock.t);
+        assert.equal(engine.game.activeEffects[0]?.dropsRemaining || 0, n);
+      }
+    });
+  }
+
+  test('new votes queue instead of replacing an unconsumed effect', () => {
+    const { engine, clock } = makeEngine('teamwork', 103);
+    const team = engine.game.team;
+    engine.addEffect('portal', team.currentPlayerId, clock.t);
+    engine.forfeitTeamTurn(clock.t);
+    engine.game.pendingSabotage = 'turbo';
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(engine.game.activeEffects[0].id, 'portal');
+    assert.deepEqual(engine.game.teamSabotageQueue, ['turbo']);
+    for (let i = 0; i < 3; i++) engine.consumeDropEffects(team.currentPlayerId, clock.t);
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(engine.game.activeEffects[0].id, 'turbo');
+  });
+
+  test('Competitive effects retain their normal time caps', () => {
+    const { engine, clock } = makeEngine('competitive', 104);
+    engine.addEffect('turbo', 'a', clock.t);
+    assert.equal(engine.hasEffect('turbo', 'a', clock.t + 5000), false);
+    engine.addEffect('portal', 'a', clock.t);
+    assert.equal(engine.hasEffect('portal', 'a', clock.t + 8000), false);
+  });
+});
+
+describe('Teamwork idle turns (F-010)', () => {
+  test('timeout forfeits without a drop and skips that player until ready', () => {
+    const { engine, clock } = makeEngine('teamwork', 151);
+    const team = engine.game.team;
+    const first = team.currentPlayerId;
+    const initialStack = structuredClone(team.stack);
+    engine.addEffect('turbo', first, clock.t);
+    clock.t += 10000;
+    assert.equal(engine.drop(first, { turnId: team.turnId, x: team.moving.left }).code, 'TURN_EXPIRED');
+    engine.tick(clock.t);
+    assert.deepEqual(team.stack, initialStack);
+    assert.equal(engine.player(first).teamIdle, true);
+    assert.ok(engine.hasEffect('turbo', first, clock.t));
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.notEqual(team.currentPlayerId, first);
+    engine.forfeitTeamTurn(clock.t);
+    assert.notEqual(team.currentPlayerId, first);
+    assert.equal(engine.teamReady(first, clock.t).ok, true);
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(team.currentPlayerId, first);
+  });
+
+  test('all idle pauses until explicit ready, including across disconnects', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 152);
+    engine.game.nextVoteAt = Infinity;
+    clock.t += 10000; engine.tick(clock.t);
+    clock.t += 10000; engine.tick(clock.t);
+    assert.equal(engine.game.paused, true);
+    assert.equal(engine.snapshot().pauseReason, 'all-players-idle');
+    const frozen = engine.game.elapsed;
+    clock.t += 60000; engine.tick(clock.t);
+    assert.equal(engine.game.elapsed, frozen);
+    players[0].connected = false; engine.playerDisconnected(players[0].id, clock.t);
+    players[0].connected = true; engine.playerReconnected(players[0].id, clock.t);
+    assert.equal(engine.game.paused, true, 'reconnection alone does not make an idle player ready');
+    assert.equal(engine.teamReady(players[0].id, clock.t).ok, true);
+    assert.equal(engine.game.paused, false);
+    assert.equal(engine.game.team.currentPlayerId, players[0].id);
+    assert.equal(engine.game.team.turnExpiresAt, clock.t + 10000);
+  });
+
+  test('a vote pauses if the only non-idle player disconnects', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 154);
+    players[0].teamIdle = true;
+    engine.openVote(clock.t);
+    players[1].connected = false;
+    engine.playerDisconnected(players[1].id, clock.t);
+    assert.equal(engine.game.paused, true);
+    assert.equal(engine.game.pauseReason, 'all-players-idle');
+    const voteDeadline = engine.game.vote.closesAt;
+    clock.t += 30000;
+    engine.teamReady(players[0].id, clock.t);
+    assert.equal(engine.game.paused, false);
+    assert.equal(engine.game.vote.closesAt, voteDeadline + 30000);
+  });
+
+  test('host skip is turn-specific and never consumes the effect or marks the player idle', () => {
+    const { engine, clock } = makeEngine('teamwork', 153);
+    const team = engine.game.team, player = team.currentPlayerId, turn = team.turnId;
+    engine.addEffect('portal', player, clock.t);
+    assert.equal(engine.hostSkipTeamTurn(turn, clock.t).ok, true);
+    assert.equal(engine.hostSkipTeamTurn(turn, clock.t).ok, false);
+    assert.equal(engine.player(player).teamIdle, false);
+    assert.equal(engine.effectFor('portal', player, clock.t).dropsRemaining, 3);
+    assert.equal(team.stack.length, 1);
+  });
+});
+
+describe('Competitive host ballot (F-014)', () => {
+  test('host changes one ballot without affecting chat, invalid choices, or later votes', () => {
+    const { engine, clock } = makeEngine('competitive', 160);
+    engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ voterId: 'chat-1', option: first }).ok, true);
+    assert.equal(engine.castManualVote(second).ok, true);
+    assert.equal(engine.castManualVote('not-an-option').code, 'INVALID_OPTION');
+    assert.equal(engine.snapshot().vote.totalVotes, 2);
+    assert.equal(engine.snapshot().vote.counts[first], 1);
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    assert.equal(engine.snapshot().vote.hostChoice, second);
+    engine.resolveVote(clock.t);
+    engine.openVote(clock.t);
+    assert.equal(engine.snapshot().vote.hostChoice, null);
+    assert.equal(engine.snapshot().vote.totalVotes, 0);
+  });
+});
+
+describe('Effect rebalance (F-019)', () => {
+  test('helpful Calipers and Superglue are not harsh, while the roster stays intact', () => {
+    assert.equal(Core.SABOTAGE_IDS.length, 16);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('calipers'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('superglue'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('rollercoaster'), true);
+  });
+  test('Rollercoaster accelerates as it rises, including on the authoritative server', () => {
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.3) - 1.6) < 1e-9);
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.9) - 1) < 1e-9);
+    for (const mode of ['teamwork', 'competitive']) {
+      const { engine, clock } = makeEngine(mode);
+      const actor = mode === 'teamwork' ? engine.game.team : engine.game.competitors[0];
+      const id = mode === 'teamwork' ? actor.currentPlayerId : actor.playerId;
+      actor.moving.rollerPhase = 0;
+      engine.addEffect('rollercoaster', id, clock.t);
+      const base = Core.speedForHeight(actor.stack.length - 1);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 300) - base * 1.6) < 1e-9);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 900) - base) < 1e-9);
+      engine.motionPrefersReduced = true;
+      assert.equal(engine.movementSpeed(actor.stack, actor, id, clock.t + 300), base);
+    }
+  });
+});
+
+describe('Peekaboo opacity (F-025)', () => {
+  test('fades once and stays hidden until the next cycle', () => {
+    assert.equal(Core.peekabooOpacity(.30), 1);
+    assert.ok(Math.abs(Core.peekabooOpacity(.33) - .5) < 1e-9);
+    for (const time of [.35, .37, .385, .39, .55, .699]) assert.equal(Core.peekabooOpacity(time), 0, `time ${time}`);
+    assert.equal(Core.peekabooOpacity(.7), 1);
+    let prior = 1;
+    for (let time = .31; time < .7; time += .001) {
+      const opacity = Core.peekabooOpacity(time);
+      assert.ok(opacity <= prior + 1e-9, `unexpected flash at ${time}`);
+      prior = opacity;
+    }
+  });
+});
+
+describe('Chat adapter bounds and namespaces (F-029)', () => {
+  test('platform and host identities cannot collide, and chat voters can change their vote', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'Twitch', voterId: 'competitive-host', option: second }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'youtube', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.game.vote.votes.size, 3);
+    assert.equal(engine.snapshot().vote.hostChoice, first);
+    assert.equal(engine.game.vote.votes.get('chat:twitch:competitive-host'), first);
+  });
+  test('rejects invalid identities and limits distinct voters and repeated updates per ballot', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const option = engine.game.vote.options[0];
+    for (const voterId of ['', 'x'.repeat(129), 123]) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId, option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'bad:platform', voterId: 'a', option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: 'bad' }).code, 'INVALID_OPTION');
+    for (let i = 0; i < 20; i++) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).code, 'CHAT_VOTE_LIMIT');
+    for (let i = 1; i < 1000; i++) engine.game.vote.chatVoteUpdates.set(`chat:twitch:v${i}`, 1);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'new', option }).code, 'CHAT_VOTER_LIMIT');
+    assert.equal(engine.castManualVote(option).ok, true, 'chat limits do not block the host');
+    engine.game.vote = null; engine.openVote(clock.t);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: engine.game.vote.options[0] }).ok, true);
   });
 });

@@ -1,0 +1,7 @@
+
+> sabotage-stack@2.0.0 start
+> node server.js
+
+Sabotage Stack listening on 0.0.0.0:3100
+LAN: http://169.254.0.21:3100
+Received SIGTERM; closing rooms and stopping server.

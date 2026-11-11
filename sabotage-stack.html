@@ -54,9 +54,9 @@ body::after {
 }
 button { color: inherit; font: inherit; }
 button, [role="button"] {
-  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y;
 }
-button:focus-visible, [tabindex="0"]:focus-visible, summary:focus-visible {
+button:focus-visible, select:focus-visible, [tabindex="0"]:focus-visible, summary:focus-visible {
   outline: 3px solid var(--vermilion); outline-offset: 3px;
 }
 .app-shell {
@@ -119,11 +119,19 @@ h1 span { display: block; color: var(--vermilion); }
 .sound-toggle[aria-pressed="true"] { background: var(--amber); }
 .sound-toggle svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .theme-picker { display: flex; align-items: center; gap: 7px; }
+.motion-select { width: 105px; }
+@media (max-width: 450px) { html:is([data-theme]) .brand-word { display: none; } html:is([data-theme]) .theme-select { width: 90px; } html:is([data-theme]) .motion-select { width: 82px; } }
 .theme-picker-label { color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .theme-select { min-height: 44px; max-width: 190px; padding: 0 9px; border: 1.5px solid var(--ink); border-radius: 11px; color: var(--ink); background: var(--paper-deep); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
+.solo-assist-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: -7px 0 5px; }
+.solo-assist-setting label { color: var(--ink); font-size: 13px; font-weight: 700; }
+.solo-assist-select { min-height: 44px; max-width: min(100%, 260px); padding: 0 10px; border: 1.5px solid var(--ink); border-radius: 11px; color: var(--ink); background: var(--paper-deep); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
+.solo-assist-help { margin: 0 0 17px; color: var(--soft-ink); font-size: 12px; line-height: 1.45; }
 @media (max-width: 700px) {
   .theme-picker-label { display: none; }
   .theme-select { max-width: 128px; padding: 0 6px; font-size: 12px; }
+  .solo-assist-setting { gap: 7px; }
+  .solo-assist-select { width: auto; max-width: 100%; padding-inline: 8px; font-size: 12px; }
   .top-tools { min-width: 0; }
 }
 .mode-row { display: flex; flex-wrap: wrap; gap: 9px; }
@@ -166,24 +174,29 @@ h1 span { display: block; color: var(--vermilion); }
   min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px;
 }
 .screen-heading h2 { margin: 0; color: var(--ink); font: 650 clamp(23px, 2.7vw, 32px)/1.05 var(--font-head); }
-.heading-actions { display: flex; align-items: center; gap: 10px; }
+.heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .game-live { display: inline-flex; align-items: center; gap: 8px; color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
 .game-layout {
   min-height: calc(100dvh - 144px); display: grid; grid-template-columns: minmax(330px, 1fr) minmax(300px, 350px);
-  align-items: center; gap: clamp(16px, 2.5vw, 30px);
+  align-items: start; gap: clamp(16px, 2.5vw, 30px);
 }
 .play-card {
   min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: clamp(12px, 2vw, 20px); border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep);
+  padding: clamp(12px, 2vw, 20px); border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); touch-action: pan-y;
 }
 .game-stage {
-  position: relative; width: min(100%, 420px, calc((100dvh - 212px) * .6923077)); aspect-ratio: 360 / 520;
+  /* Board = largest 360:520 box that leaves room for the chrome above it and the Drop row below it.
+     240px wide (≈347px tall) is the floor: below that the page scrolls instead of shrinking further. */
+  position: relative; width: min(100%, 420px, max(calc(100dvh - 264px), 240px) * .6923077); aspect-ratio: 360 / 520;
   overflow: hidden; border: 1.5px solid var(--ink); border-radius: 12px; background: var(--paper);
-  box-shadow: 3px 3px 0 var(--paper-deep); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  box-shadow: 3px 3px 0 var(--paper-deep); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 canvas { display: block; width: 100%; height: 100%; }
 #game-canvas { touch-action: none; cursor: crosshair; }
 .canvas-hud { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.game-stage.competitive-host .height-chip, .game-stage.competitive-host .motion-chip { display: none; }
+/* Non-playing Competitive viewers get a wider board without stretching its artwork. */
+.game-stage.competitive-host { width: min(100%, max(calc(100dvh - 264px), 240px) * 1.3846154); aspect-ratio: 720 / 520; }
 .height-chip {
   position: absolute; top: 12px; left: 12px; min-width: 70px; display: flex; flex-direction: column; gap: 1px;
   padding: 6px 9px 7px; border: 1.5px solid var(--ink); border-radius: 9px; color: var(--ink); background: var(--paper);
@@ -204,13 +217,28 @@ canvas { display: block; width: 100%; height: 100%; }
 .canvas-message.is-visible { opacity: 1; }
 #perfect-banner { top: 151px; border-color: var(--vermilion); color: var(--vermilion); font: 700 25px/1 var(--font-note); }
 .chat-flavor-pop {
-  position: absolute; right: 11px; bottom: 51px; max-width: 48%; padding: 7px 10px;
+  display: none; padding: 7px 10px;
   border: 1.5px solid var(--ink); border-radius: 9px; color: var(--ink); background: var(--paper-deep);
   font: 700 15px/1.1 var(--font-note); opacity: 0; transition: opacity .2s ease;
 }
-.chat-flavor-pop.is-visible { opacity: 1; }
-.canvas-hint { position: absolute; bottom: 11px; left: 50%; transform: translateX(-50%); color: var(--soft-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.control-row { width: min(100%, 420px); display: flex; align-items: center; gap: 12px; padding-top: 13px; }
+.chat-flavor-pop.is-visible { display: block; opacity: 1; }
+.canvas-hint { margin-top: 6px; color: var(--soft-ink); font-size: 11px; font-weight: 600; text-align: center; }
+.stage-vote-strip {
+  position: absolute; inset: auto 4px 4px; z-index: 5; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
+  padding: 3px; border: 1.5px solid var(--ink); border-radius: 8px; color: var(--ink); background: var(--paper); box-shadow: 2px 2px 0 var(--paper-deep);
+  pointer-events: auto; touch-action: pan-y;
+}
+.stage-vote-chip {
+  min-width: 0; min-height: 46px; display: grid; grid-template-rows: 14px minmax(0, 1fr) 11px; justify-items: center; align-content: center; gap: 1px;
+  padding: 2px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--paper-deep);
+  font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; touch-action: pan-y;
+}
+.stage-vote-chip:hover:not(:disabled) { border-color: var(--ink); background: var(--paper); }
+.stage-vote-chip:disabled { cursor: default; opacity: .78; }
+.stage-vote-icon { width: 14px; height: 14px; display: block; }
+.stage-vote-name { display: block; width: 100%; overflow: hidden; color: var(--ink); font-size: 11px; line-height: 1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.stage-vote-count { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1; }
+.control-row { width: 100%; max-width: 420px; display: flex; align-items: center; gap: 12px; padding-top: 13px; touch-action: pan-y; }
 .drop-button {
   min-width: 160px; min-height: 54px; border: 1.5px solid var(--ink); border-radius: 11px;
   display: flex; align-items: center; justify-content: center; gap: 13px; color: var(--paper); background: var(--ink);
@@ -221,9 +249,9 @@ canvas { display: block; width: 100%; height: 100%; }
 .drop-button:active:not(:disabled) { transform: translateY(0); }
 .drop-button:disabled { cursor: not-allowed; opacity: .56; }
 .drop-button kbd { padding: 3px 6px; border: 1px solid rgba(244,237,223,.6); border-radius: 5px; color: var(--paper); background: transparent; font: 600 11px var(--font-ui); letter-spacing: .03em; }
-.control-help { color: var(--ink); font-size: 12px; line-height: 1.4; }
-.side-stack { width: 100%; display: flex; flex-direction: column; gap: 12px; }
-.side-card { min-width: 0; padding: 15px; border: 1.5px solid var(--ink); border-radius: 13px; background: var(--paper); }
+.control-help { color: var(--ink); font-size: 12px; line-height: 1.4; touch-action: pan-y; }
+.side-stack { width: 100%; display: flex; flex-direction: column; gap: 12px; touch-action: pan-y; }
+.side-card { min-width: 0; padding: 15px; border: 1.5px solid var(--ink); border-radius: 13px; background: var(--paper); touch-action: pan-y; }
 .side-card h3 { margin: 0; color: var(--ink); font: 600 18px/1.15 var(--font-head); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .timer-label { color: var(--ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -237,6 +265,13 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 .vote-option:hover:not(:disabled) { border-color: var(--ink); background: var(--paper-deep); }
 .vote-option:disabled { cursor: default; }
+.vote-description { display: block; margin: 4px 0 3px 32px; color: var(--ink); font-size: 12px; line-height: 1.3; }
+.vote-pick { display: inline-block; margin: 2px 0 3px 32px; color: var(--ink); font-size: 12px; font-weight: 800; }
+.vote-pick[hidden] { display: none; }
+.vote-option.is-your-pick, .stage-vote-chip.is-your-pick { outline: 3px solid var(--amber); outline-offset: -3px; }
+.stage-vote-chip.is-your-pick { position: relative; }
+.stage-vote-chip.is-your-pick::after { content: '✓'; position: absolute; top: 2px; right: 3px; color: var(--ink); background: var(--amber); font-size: 12px; line-height: 1; }
+html[data-theme="primetime"] .vote-description, html[data-theme="primetime"] .vote-pick { color: #fff; font-size: 16px; }
 .vote-line { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .vote-icon { position: relative; width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--line-light); border-radius: 8px; color: var(--ink); background: var(--paper-deep); }
 .vote-icon::after { content: ""; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border: 1px solid var(--paper); border-radius: 50%; background: var(--sabotage-accent, var(--amber)); }
@@ -260,6 +295,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .stat-box span { display: block; margin-bottom: 4px; color: var(--ink); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .stat-box strong { display: block; color: var(--ink); font: 650 19px/1 var(--font-head); font-variant-numeric: tabular-nums; }
 .effect-card { border-left: 5px solid var(--vermilion); background: var(--paper-deep); }
+html:not([data-theme]) #effect-label, html[data-theme="paper"] #effect-label { color: #5B5145; }
 .effect-headline { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .effect-icon { position: relative; width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; border: 1.5px solid var(--ink); border-radius: 12px; color: var(--ink); background: var(--paper); }
 .effect-icon::after { content: ""; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border: 1.5px solid var(--paper-deep); border-radius: 50%; background: var(--vermilion); }
@@ -335,12 +371,13 @@ canvas { display: block; width: 100%; height: 100%; }
   .home-aside { display: none; }
   .primary-row { margin: 20px 0 15px; }
   .home-bottom { padding: 10px 0; font-size: 12px; }
-  .screen-heading { min-height: 42px; margin-bottom: 9px; }
+  .screen-heading { min-height: 42px; margin-bottom: 9px; flex-wrap: wrap; }
   .screen-heading h2 { font-size: 22px; }
   .game-layout { min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
   .play-card { padding: 8px; border-radius: 13px; }
-  .game-stage { width: min(100%, calc((100dvh - 276px) * .6923077)); border-radius: 10px; }
-  .control-row { width: min(100%, calc((100dvh - 276px) * .6923077)); padding-top: 8px; gap: 8px; }
+  .game-stage { width: min(100%, max(calc(100dvh - 276px), 240px) * .6923077); border-radius: 10px; }
+  .stage-vote-strip { display: grid; }
+  .control-row { width: 100%; max-width: 420px; padding-top: 8px; gap: 8px; }
   .drop-button { min-width: 145px; min-height: 48px; }
   .control-help { font-size: 11px; }
   .side-stack { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); gap: 8px; }
@@ -383,8 +420,8 @@ canvas { display: block; width: 100%; height: 100%; }
   .brand-word { font-size: 16px; }
   .home-bottom { font-size: 11px; }
   .mode-pill { padding-left: 10px; padding-right: 9px; font-size: 11px; }
-  .game-stage { width: min(100%, calc((100dvh - 266px) * .6923077)); }
-  .control-row { width: min(100%, calc((100dvh - 266px) * .6923077)); }
+  .game-stage { width: min(100%, max(calc(100dvh - 266px), 240px) * .6923077); }
+  .control-row { width: 100%; }
   .side-stack { grid-template-columns: minmax(0,1fr) minmax(0,.72fr); }
   .drop-button { min-width: 130px; }
 }
@@ -392,10 +429,14 @@ canvas { display: block; width: 100%; height: 100%; }
   .app-shell { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .topbar { min-height: 40px; margin-bottom: 8px; }
   .game-layout, .result-layout { min-height: calc(100dvh - 105px); }
-  .game-stage { width: min(100%, calc((100dvh - 150px) * .6923077)); }
+  .game-stage { width: min(100%, max(calc(100dvh - 240px), 240px) * .6923077); }
+  .stage-vote-strip { display: grid; }
   .results-frame { width: min(100%, calc((100dvh - 150px) * .6923077)); }
   .side-card { padding: 10px; }
 }
+@media (max-width: 700px) { .game-stage.competitive-host { width: min(100%, max(calc(100dvh - 276px), 240px) * 1.3846154); } }
+@media (max-width: 380px) { .game-stage.competitive-host { width: min(100%, max(calc(100dvh - 266px), 240px) * 1.3846154); } }
+@media (max-height: 620px) and (min-width: 701px) { .game-stage.competitive-host { width: min(100%, max(calc(100dvh - 240px), 240px) * 1.3846154); } }
 .mode-pill:not(:disabled) { cursor: pointer; transition: background-color .16s ease, transform .16s ease; }
 .mode-pill:not(:disabled):hover { color: var(--ink); background: var(--paper-deep); transform: translateY(-1px); }
 .room-lobby-layout { display: grid; grid-template-columns: minmax(220px,.8fr) minmax(320px,1.2fr); gap: 16px; max-width: 920px; margin: 18px auto 0; align-items: start; }
@@ -411,6 +452,8 @@ canvas { display: block; width: 100%; height: 100%; }
 .room-actions .button-primary { background: var(--ink); color: var(--paper); }
 .room-actions .button-primary:disabled { opacity: .5; }
 .multiplayer-card[hidden], .multiplayer-results[hidden] { display: none !important; }
+.mp-sabotage-announcement { margin: 0 0 10px; padding: 8px 9px; border-left: 3px solid var(--vermilion); border-radius: 6px; color: var(--ink); background: var(--paper-deep); font-size: 13px; font-weight: 700; line-height: 1.35; }
+.mp-sabotage-announcement[hidden] { display: none !important; }
 .turn-timer-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-top: 1px solid var(--line-light); color: var(--soft-ink); font-size: 12px; }
 .turn-timer-row strong { color: var(--ink); font: 700 21px/1 var(--font-head); font-variant-numeric: tabular-nums; }
 .compact-player-list { gap: 4px; }
@@ -421,6 +464,9 @@ canvas { display: block; width: 100%; height: 100%; }
 .multiplayer-result-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 10px; }
 .teamwork-result-canvas { display: block; width: min(100%,360px); height: auto; margin: 8px auto 12px; border: 1px solid var(--line-light); border-radius: 8px; background: var(--paper); }
 .teamwork-result-legend { max-width: 620px; margin-inline: auto; }
+.teamwork-placements { max-width: 620px; margin: 12px auto; color: var(--ink); font-size: 14px; }
+.teamwork-placements summary { cursor: pointer; font-weight: 700; }
+.teamwork-placements li { margin: 5px 0; }
 .multiplayer-result-card { min-width: 0; padding: 10px; border: 1.5px solid var(--ink); border-radius: 10px; background: var(--paper-deep); }
 .multiplayer-result-card.is-winner { box-shadow: 3px 3px 0 var(--amber); }
 .multiplayer-result-card h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; color: var(--ink); font: 650 17px/1.1 var(--font-head); overflow-wrap: anywhere; }
@@ -456,6 +502,7 @@ canvas { display: block; width: 100%; height: 100%; }
   .dev-effect-groups { max-height: none; overflow: visible; }
   .dev-effect-button { min-height: 44px; font-size: 11px; }
 }
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
@@ -506,7 +553,7 @@ html[data-theme="sunset"] .dev-effect-button, html[data-theme="sunset"] .dev-fee
 html[data-theme="sunset"] .topbar { border-bottom: 3px solid var(--amber); }
 html[data-theme="sunset"] .brand-mark { border: 2px solid var(--ink); background: var(--paper-deep); color: var(--amber); box-shadow: 4px 4px 0 var(--vermilion); }
 html[data-theme="sunset"] .brand-word { font-size: 13px; line-height: 1.5; letter-spacing: 0; text-shadow: 2px 2px 0 var(--vermilion); }
-html[data-theme="sunset"] .theme-select { border: 2px solid var(--ink); background: #170B33; box-shadow: 3px 3px 0 var(--vermilion); font-size: 17px; }
+html[data-theme="sunset"] .theme-select, html[data-theme="sunset"] .solo-assist-select { border: 2px solid var(--ink); background: #170B33; box-shadow: 3px 3px 0 var(--vermilion); font-size: 17px; }
 html[data-theme="sunset"] .live-dot { border-color: #170B33; box-shadow: 0 0 7px var(--teal); }
 html[data-theme="sunset"] h1 { font-size: clamp(25px, 4.4vw, 50px); line-height: 1.45; letter-spacing: 0; text-shadow: 3px 3px 0 #6D28C4, 6px 6px 0 rgba(255,107,53,.65); }
 html[data-theme="sunset"] h1 span { color: var(--vermilion); text-shadow: 3px 3px 0 rgba(23,11,51,.85); }
@@ -515,6 +562,11 @@ html[data-theme="sunset"] .hero-description { font-size: 21px; }
 html[data-theme="sunset"] .button { border-width: 2px; font-size: 19px; box-shadow: 4px 4px 0 #170B33; }
 html[data-theme="sunset"] .button-primary, html[data-theme="sunset"] .room-actions .button-primary {
   border-color: #170B33; background: #FF6B35; color: #2A1200; box-shadow: 5px 5px 0 var(--amber);
+}
+/* Keep disabled lobby actions legible without resembling an enabled orange action. */
+html[data-theme="sunset"] .room-actions .button-primary:disabled {
+  opacity: 1; background: #2A1450; color: #DEC7F2; border-color: #DEC7F2;
+  border-style: dashed; box-shadow: none;
 }
 html[data-theme="sunset"] .button-primary:hover:not(:disabled), html[data-theme="sunset"] .room-actions .button-primary:hover:not(:disabled) { background: var(--amber); color: #2A1200; }
 html[data-theme="sunset"] .sound-toggle[aria-pressed="true"] { color: #2A1200; }
@@ -528,10 +580,11 @@ html[data-theme="sunset"] .mini-caption { font-size: 25px; }
 html[data-theme="sunset"] .screen-heading h2 { font-size: clamp(15px, 2.3vw, 22px); line-height: 1.55; }
 html[data-theme="sunset"] .play-card { border: 3px solid var(--ink); background: #24104A; box-shadow: 8px 8px 0 var(--vermilion); }
 html[data-theme="sunset"] .game-stage { border: 3px solid var(--amber); background: #170B33; box-shadow: 0 0 0 3px #170B33, 0 0 18px rgba(255,107,53,.55); }
+html[data-theme="sunset"] .stage-vote-strip, html[data-theme="sunset"] .stage-vote-chip { border-radius: 0; }
 html[data-theme="sunset"] .height-chip, html[data-theme="sunset"] .motion-chip, html[data-theme="sunset"] .canvas-message, html[data-theme="sunset"] .chat-flavor-pop { border-width: 2px; background: #170B33; }
 html[data-theme="sunset"] .height-chip strong { font-size: 17px; }
 html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
-html[data-theme="sunset"] .motion-chip { font-size: 17px; }
+html[data-theme="sunset"] .motion-chip { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html[data-theme="sunset"] #perfect-banner { font-size: 26px; }
 html[data-theme="sunset"] .drop-button { border: 3px solid var(--amber); background: #FF6B35; color: #24102E; box-shadow: 6px 6px 0 #170B33; font-family: var(--font-head); font-size: 13px; }
 html[data-theme="sunset"] .drop-button kbd { border-color: rgba(36,16,46,.65); color: #24102E; font-family: var(--font-ui); font-size: 16px; }
@@ -621,7 +674,7 @@ html[data-theme="primetime"] .topbar::after {
 }
 html[data-theme="primetime"] .brand-word { color: var(--amber); font-size: 22px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 2px 2px 0 #061238; }
 html[data-theme="primetime"] .brand-mark { border: 2px solid var(--amber); border-radius: 10px; color: var(--amber); background: #0A1A55; box-shadow: 0 0 12px rgba(255,200,61,.55); }
-html[data-theme="primetime"] .theme-select { min-height: 44px; border: 2px solid var(--amber); border-radius: 12px; background: #0A1A55; color: #fff; font-size: 17px; }
+html[data-theme="primetime"] .theme-select, html[data-theme="primetime"] .solo-assist-select { min-height: 44px; border: 2px solid var(--amber); border-radius: 12px; background: #0A1A55; color: #fff; font-size: 17px; }
 html[data-theme="primetime"] h1 { font: 400 clamp(28px, 4.4vw, 56px)/1.08 var(--font-head); letter-spacing: .01em; text-shadow: 0 4px 0 #061238; }
 html[data-theme="primetime"] h1 span { color: var(--amber); }
 html[data-theme="primetime"] .eyebrow { color: var(--amber); font-size: 16px; letter-spacing: .16em; }
@@ -652,6 +705,9 @@ html[data-theme="primetime"] .mini-block:nth-child(3n+2) { background: #35D0E8; 
 html[data-theme="primetime"] .mini-block:nth-child(3n) { background: #F2F5FF; }
 html[data-theme="primetime"] .mini-mover { border: 2px solid #061238; }
 html[data-theme="primetime"] .vote-option { border: 3px solid rgba(255,255,255,.7); border-radius: 12px; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-strip { border: 2px solid var(--amber); border-radius: 10px; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-chip { border: 2px solid rgba(255,255,255,.7); border-radius: 7px; color: #fff; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-name, html[data-theme="primetime"] .stage-vote-count { color: #fff; }
 html[data-theme="primetime"] .vote-option:hover:not(:disabled) { border-color: var(--amber); background: #0E2574; }
 html[data-theme="primetime"] .vote-key { border: 0; border-radius: 50%; background: var(--amber); color: #1A1200; font: 400 16px/1 var(--font-head); }
 html[data-theme="primetime"] .vote-track { height: 6px; background: rgba(255,255,255,.15); }
@@ -689,6 +745,7 @@ html[data-theme="primetime"] .dev-actions .button { min-height: 52px; font-size:
 html[data-theme="primetime"] .dev-actions .button-primary { font-size: 15px; line-height: 1.15; }
 html[data-theme="primetime"] .dev-feedback { font-size: 18px; line-height: 1.3; }
 html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live, html[data-theme="primetime"] .theme-picker-label, html[data-theme="primetime"] .footer-note, html[data-theme="primetime"] .home-bottom { font-size: 16px; }
+.vote-option.is-host-tiebreak, .stage-vote-chip.is-host-tiebreak { outline: 2px solid var(--vermilion); outline-offset: -4px; }
 @media (max-width: 700px) {
   html[data-theme="primetime"] .brand-word { font-size: 18px; }
   html[data-theme="primetime"] .side-card h3 { font-size: 20px; }
@@ -718,6 +775,8 @@ html:is([data-theme]) .effect-meter { height: 8px; }
   html:is([data-theme]) .top-tools { flex: 0 0 auto; }
   html:is([data-theme]) .brand { flex: 1 1 0; min-width: 0; }
   html:is([data-theme]) .theme-select { width: 108px; max-width: 100%; }
+  html:is([data-theme]) .motion-select { width: 85px; }
+  @media (max-width: 450px) { html:is([data-theme]) .brand-word { display: none; } html:is([data-theme]) .theme-select { width: 90px; } html:is([data-theme]) .motion-select { width: 82px; } }
   html[data-theme="primetime"] .brand-word { font-size: 16px; }
   /* Same rule as desktop: border + padding is constant, so thicker borders never change card or stage size. */
   html:is([data-theme]) .play-card { padding: calc(9px - var(--bw)); }
@@ -746,6 +805,24 @@ html:is([data-theme]) .stat-box { box-sizing: border-box; height: 60px; display:
 html:is([data-theme]) .vote-option { min-height: 50px; }
 html:is([data-theme]) .dev-effect-button { min-height: 48px; }
 html:is([data-theme]) .dev-actions .button { min-height: 50px; }
+/* F-022: decision-critical phone text must remain legible in every theme. */
+@media (max-width: 700px) {
+  html:is([data-theme]) .vote-name { font-size: max(14px, 1em); white-space: normal; overflow-wrap: anywhere; }
+  html[data-theme="sunset"] .vote-name { font-size: 17px; }
+  html[data-theme="primetime"] .vote-name { font-size: 21px; }
+  html:is([data-theme]) .stage-vote-name, html:is([data-theme]) .stage-vote-count { font-size: 12px; }
+  html:is([data-theme]) .stage-vote-chip { grid-template-rows: 14px minmax(12px, auto) 12px; }
+  html:is([data-theme]) .motion-chip, html:is([data-theme]) .vote-footer, html:is([data-theme]) .vote-help,
+  html:is([data-theme]) .control-help, html:is([data-theme]) .stat-box span, html:is([data-theme]) .height-chip span,
+  html:is([data-theme]) .canvas-hint, html:is([data-theme]) .eyebrow, html:is([data-theme]) .game-live { font-size: 12px; }
+  html[data-theme="sunset"] .motion-chip { font-size: 15px; }
+  html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
+  html[data-theme="sunset"] .control-help, html[data-theme="primetime"] .control-help { font-size: 15px; }
+  html[data-theme="primetime"] .vote-footer, html[data-theme="primetime"] .vote-help { font-size: 17px; }
+  html:is([data-theme]) .effect-name { font-size: 17px; overflow-wrap: anywhere; }
+  html[data-theme="sunset"] .effect-name { font-size: 14px; }
+  html[data-theme="sunset"] .sabotage-list strong { font-size: 12px; }
+}
   </style>
 </head>
 <body>
@@ -875,7 +952,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   </svg>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand" aria-label="Sabotage Stack">
+      <div class="brand" role="group" aria-label="Sabotage Stack">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 17h16v3H4zM6 12h12v3H6zM8 7h8v3H8zM10 2h4v3h-4z" fill="currentColor"/><path d="m18 5 2-2m-1 5 3-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </span>
@@ -884,6 +961,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <div class="top-tools">
         <div class="top-meta"><span class="live-dot" aria-hidden="true"></span><span id="connection-mode-label">Offline solo</span></div>
         <label class="theme-picker"><span class="theme-picker-label" aria-hidden="true">Theme</span><select id="theme-select" class="theme-select" aria-label="Colour theme"><option value="paper">Paper (default)</option><option value="sunset">Sunset Stack ’94</option><option value="primetime">Prime Time</option></select></label>
+        <label class="theme-picker"><span class="theme-picker-label" aria-hidden="true">Motion</span><select id="motion-select" class="theme-select motion-select" aria-label="Motion preference" aria-describedby="motion-help"><option value="system">System</option><option value="full">Full</option><option value="reduced">Reduced</option></select></label>
+        <span id="motion-help" class="sr-only">Reduced motion limits animation and excludes five sabotages from votes. System follows your device preference; Full overrides it for game motion, while device-level reduced CSS remains respected. In a room, one reduced-motion preference reduces the room.</span>
         <button id="sound-toggle" class="button sound-toggle" type="button" aria-pressed="false" aria-label="Sound off. Activate for quiet synthesized music and sound effects." aria-describedby="sound-status">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16 9.2c1.2 1.4 1.2 4.2 0 5.6M18.5 6.8c2.3 2.8 2.3 7.6 0 10.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           <span id="sound-label">Sound off</span>
@@ -902,15 +981,28 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div class="primary-row">
               <button id="start-button" class="button button-primary" type="button">Play solo <span class="arrow" aria-hidden="true">↗</span></button>
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
-              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 16 active sabotages">DEV lab <span class="soon">Test all 16</span></button>
+              <button id="dev-mode-button" class="button" type="button" aria-label="Open practice to try any sabotage">Practice <span class="soon">Try any sabotage</span></button>
             </div>
-            <div class="mode-row" aria-label="Game modes">
+            <div class="solo-assist-setting">
+              <label for="solo-auto-drop-select">Solo auto-drop</label>
+              <select id="solo-auto-drop-select" class="solo-assist-select" aria-describedby="solo-auto-drop-help">
+                <option value="3.5">3.5 s · Standard</option>
+                <option value="10">10 s · Assisted</option>
+                <option value="off">Off · Assisted</option>
+              </select>
+            </div>
+            <p id="solo-auto-drop-help" class="solo-assist-help" aria-live="polite">Standard timing. The timer pauses for the first 2 seconds of each vote.</p>
+            <button class="button position-audio-toggle" type="button" aria-pressed="false" aria-describedby="position-audio-help">Position tone off</button>
+            <p id="position-audio-help" class="room-hint">Optional position tone requires Sound on. Lower pitch means left of the tower centre; higher pitch means right. A 440 Hz pitch indicates alignment. The tone may reveal hidden movers.</p>
+            <div class="mode-row" role="group" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
-              <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game">Teamwork <span class="soon">Host a room</span></button>
-              <button id="competitive-button" class="mode-pill" type="button" data-host-mode="competitive" aria-label="Host a Competitive game">Competitive <span class="soon">Host a room</span></button>
+              <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game" aria-describedby="multiplayer-setup-help">Teamwork <span class="soon">Host a room</span></button>
+              <button id="competitive-button" class="mode-pill" type="button" data-host-mode="competitive" aria-label="Host a Competitive game" aria-describedby="multiplayer-setup-help">Competitive <span class="soon">Host a room</span></button>
               <button id="join-game-button" class="mode-pill" type="button" aria-label="Join a multiplayer game">Join Game <span class="soon">Room code</span></button>
               </div>
+            <p id="multiplayer-setup-help" class="room-hint">Multiplayer: one non-playing host screen plus 2–6 players, each joining from a separate browser tab or device.</p>
             <p id="multiplayer-status" class="room-status" role="status" aria-live="polite"></p>
+            <div id="host-connection-actions" class="room-actions" hidden><button class="button" type="button" data-connection-retry>Retry</button><button class="button" type="button" data-connection-solo>Play solo</button></div>
           </div>
           <aside class="home-aside" aria-label="Game preview">
             <div class="preview-card">
@@ -934,7 +1026,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="room-screen" class="screen" aria-labelledby="room-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="room-mode-label" class="eyebrow">Multiplayer lobby</div><h2 id="room-heading">Room's getting busy.</h2></div>
+          <div><div id="room-mode-label" class="eyebrow">Multiplayer lobby</div><h2 id="room-heading" role="heading" aria-level="1">Room's getting busy.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="room-connection-status">Connected</span></span></div>
         </div>
         <div class="room-lobby-layout">
@@ -947,7 +1039,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           <section class="side-card room-player-card" aria-labelledby="room-players-heading">
             <div class="card-heading"><span class="eyebrow">Players</span><span id="room-player-count" class="timer-label">0 / 6</span></div>
             <h3 id="room-players-heading">The crew</h3>
-            <ul id="room-player-list" class="room-player-list" aria-live="polite"></ul>
+            <ul id="room-player-list" class="room-player-list"></ul>
+            <p id="room-motion-status" class="room-hint" hidden>Reduced motion room: five motion-heavy sabotages are excluded from votes.</p>
             <p id="room-lobby-status" class="room-status" role="status" aria-live="polite">Waiting for players to join.</p>
             <div class="room-actions">
               <button id="room-start-button" class="button button-primary" type="button" disabled>Start round</button>
@@ -962,35 +1055,48 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="game-mode-kicker" class="eyebrow">Single player · build 01</div><h2 id="game-heading">Make it stack.</h2></div>
-          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="dev-quick-button" class="button" type="button" hidden>DEV lab</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
+          <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading" role="heading" aria-level="1">Make it stack.</h2></div>
+          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="solo-pause-button" class="button" type="button" hidden>Pause</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
             <div id="game-stage" class="game-stage">
               <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
               <div class="canvas-hud" aria-hidden="false">
-                <div class="height-chip" aria-label="Blocks placed">
+                <div class="height-chip" role="group" aria-label="Blocks placed">
                   <span>HEIGHT</span><strong id="height-display">0</strong>
                 </div>
                 <div id="motion-chip" class="motion-chip">140 px/s</div>
-                <div id="canvas-toast" class="canvas-message" role="status" aria-live="polite"></div>
+                <div id="canvas-toast" class="canvas-message" aria-hidden="true"></div>
                 <div id="perfect-banner" class="canvas-message" aria-hidden="true">PERFECT!</div>
-                <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
-                <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
+                <div id="stage-vote-strip" class="stage-vote-strip" role="group" aria-label="Chat vote options" hidden>
+                  <button class="stage-vote-chip" data-option-index="0" type="button" disabled aria-label="Option 1">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                  <button class="stage-vote-chip" data-option-index="1" type="button" disabled aria-label="Option 2">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                  <button class="stage-vote-chip" data-option-index="2" type="button" disabled aria-label="Option 3">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                </div>
               </div>
             </div>
+            <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
             <div id="control-row" class="control-row">
               <button id="drop-button" class="drop-button" type="button"><span id="drop-label">DROP</span><kbd id="drop-key">SPACE</kbd></button>
               <div id="control-help" class="control-help">One press, one drop.<br>Keep stacking during votes.</div>
             </div>
+            <button class="button position-audio-toggle" type="button" aria-pressed="false" aria-describedby="position-audio-game-help">Position tone off</button>
+            <span id="position-audio-game-help" class="sr-only">Requires Sound on. Lower pitch is left of the tower centre; higher pitch is right. A 440 Hz pitch indicates alignment and may reveal hidden movers.</span>
           </section>
 
           <aside class="side-stack" aria-label="Live game information">
+            <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
             <section id="dev-panel" class="side-card dev-panel" aria-labelledby="dev-panel-title" hidden>
-              <div class="card-heading"><span class="eyebrow">Offline test bench</span><span class="timer-label">DEV</span></div>
+              <div class="card-heading"><span class="eyebrow">Practice</span><span class="timer-label">OFFLINE</span></div>
               <h3 id="dev-panel-title">Choose a sabotage.</h3>
-              <p id="dev-panel-description" class="dev-panel-description">A local sandbox—no votes, score, or multiplayer messages. Motion effects respect your reduced-motion setting.</p>
+              <p id="dev-panel-description" class="dev-panel-description">Try effects without votes or saved scores. Motion effects respect your reduced-motion setting.</p>
               <p id="dev-effect-description" class="dev-effect-description">Choose an effect to see its mechanic and preview.</p>
               <div id="dev-effects" class="dev-effect-groups" role="group" aria-label="Choose Normal mode or a sabotage to preview"></div>
               <div class="dev-actions">
@@ -1003,8 +1109,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="card-heading"><span id="multiplayer-mode-label" class="eyebrow">Room</span><span id="multiplayer-room-code" class="timer-label">----</span></div>
               <h3 id="multiplayer-turn-heading">Your turn</h3>
               <p id="multiplayer-turn-status" class="vote-title">Waiting for the round to start.</p>
-              <div class="turn-timer-row"><span>Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
-              <ul id="multiplayer-player-list" class="room-player-list compact-player-list" aria-live="polite"></ul>
+              <p id="multiplayer-motion-status" class="room-hint" hidden>Reduced motion room: five motion-heavy sabotages are excluded from votes.</p>
+              <p id="multiplayer-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
+              <p id="multiplayer-sabotage-announcement" class="mp-sabotage-announcement" role="status" aria-live="polite" hidden></p>
+              <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
+              <button id="team-skip-button" class="button" type="button" hidden>Skip current turn</button>
+              <button id="team-ready-button" class="button button-primary" type="button" hidden>I’m ready to play</button>
+              <ul id="multiplayer-player-list" class="room-player-list compact-player-list"></ul>
             </section>
             <section id="vote-card" class="side-card vote-card" aria-labelledby="vote-heading">
               <div class="card-heading"><span class="eyebrow">Chat picks</span><span id="vote-countdown" class="timer-label">First vote in 8s</span></div>
@@ -1012,17 +1123,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <p id="vote-subtitle" class="vote-title">Pick a sabotage when voting opens.</p>
               <div class="vote-options" id="vote-options">
                 <button class="vote-option" data-option-index="0" type="button" disabled aria-label="Option 1">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">1</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">1</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
                 <button class="vote-option" data-option-index="1" type="button" disabled aria-label="Option 2">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">2</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">2</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
                 <button class="vote-option" data-option-index="2" type="button" disabled aria-label="Option 3">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">3</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">3</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
               </div>
               <div class="vote-footer"><span id="vote-state-label">Vote opens in 8 seconds</span><span class="vote-progress" aria-hidden="true"><span id="vote-progress-fill"></span></span></div>
-              <p class="vote-help">Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.</p>
+              <p id="vote-help" class="vote-help">Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.</p>
             </section>
             <section id="stats-card" class="side-card" aria-labelledby="stats-heading">
               <div class="card-heading"><span class="eyebrow">Live stats</span><span class="eyebrow">Best <span id="best-inline">0</span></span></div>
@@ -1050,9 +1161,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="results-screen" class="screen" aria-labelledby="results-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading">A tower of ambition.</h2></div>
+          <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading" role="heading" aria-level="1">A tower of ambition.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span>Results</span></div>
         </div>
+        <p id="results-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
         <div id="multiplayer-results" class="multiplayer-results" hidden></div>
         <div id="solo-result-layout" class="result-layout">
           <div class="results-frame">
@@ -1066,7 +1178,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="score-tile"><span>Blocks stacked</span><strong id="result-score">0</strong></div>
               <div class="score-tile"><span>Session best</span><strong id="result-best">0</strong></div>
             </div>
-            <div class="result-detail"><span id="result-perfects" class="detail-pill">0 perfect drops</span><span id="result-fallen" class="detail-pill">0 fallen pieces</span></div>
+            <div class="result-detail"><span id="result-perfects" class="detail-pill">0 perfect drops</span><span id="result-fallen" class="detail-pill">0 fallen pieces</span><span id="result-assist-label" class="detail-pill" hidden>Assisted</span></div>
             <p id="result-scale" class="result-scale">Full-size block geometry.</p>
             <div class="result-actions">
               <button id="again-button" class="button button-primary" type="button">Play again</button>
@@ -1083,13 +1195,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     <div class="dialog-inner">
       <div class="dialog-header"><div><div class="eyebrow">The very short version</div><h2 id="how-title">How to play</h2></div><button id="close-how" class="icon-button" type="button" aria-label="Close how to play">×</button></div>
       <ol class="how-steps">
-        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. In solo, a block that waits longer than 3.5 seconds drops itself.</span></li>
-        <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during each 5-second vote. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
+        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
+        <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. A small tick marks the centre of the top block. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected player lands. Portal Walls, Superglue and Calipers last for that same player’s next 3 landings; Crumble lasts for the next 3 team landings. There is no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
+      <section aria-labelledby="multiplayer-how-heading">
+        <h3 id="multiplayer-how-heading">Playing together</h3>
+        <p class="room-hint">The host opens a Teamwork or Competitive room and shares its code. The host watches and controls the room rather than placing blocks; 2–6 players join from separate browser tabs or devices. At least two connected players are needed to start.</p>
+        <p class="room-hint"><strong>Teamwork:</strong> Players take turns on one shared tower. Your team score is the height plus the number of perfect drops. Players vote between turns; the host breaks tied votes.</p>
+        <p class="room-hint"><strong>Competitive:</strong> Each player builds a separate tower. After 90 seconds, the highest tower wins; equal heights tie. A player who misses finishes their own stack. The host has one changeable vote for each sabotage.</p>
+      </section>
       <details class="sabotage-guide">
-        <summary>Meet all 16 active sabotages</summary>
+        <summary id="sabotage-guide-summary">Meet all 16 active sabotages</summary>
         <ul id="sabotage-list" class="sabotage-list"></ul>
       </details>
     </div>
@@ -1102,11 +1220,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <input id="join-room-code" class="text-field room-code-input" name="code" maxlength="4" autocomplete="off" autocapitalize="characters" required>
       <label class="field-label" for="join-display-name">Display name</label>
       <input id="join-display-name" class="text-field" name="name" maxlength="12" autocomplete="nickname" required>
+      <label class="room-hint"><input id="join-spectator" type="checkbox"> Watch as spectator (no playing or voting; motion preference affects only your view)</label>
       <p id="join-status" class="room-status" role="status" aria-live="polite">Names are shown as plain text and may be shortened to 12 characters.</p>
+      <div id="join-connection-actions" class="room-actions" hidden><button class="button" type="button" data-connection-retry>Retry</button><button class="button" type="button" data-connection-solo>Play solo</button></div>
       <div class="room-actions"><button class="button button-primary" type="submit">Join game</button><button id="cancel-join" class="button" type="button">Cancel</button></div>
     </form>
   </dialog>
 
+  <div id="game-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <script type="application/json" id="audio-cue-sheet">
   [
     {"event":"run.start","cue":"signature","pictureBeat":"A fresh tower and moving block appear"},
@@ -1130,10 +1251,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const BASELINE = 480;
     const MIN_WIDTH = 30;
     const PERFECT_WINDOW = 3;
-    // Solo only: each block auto-drops after this long, so a 5-second sabotage cannot be waited out.
-    // Keep it at 3 s or more or Slow-to-Dart's creep stops paying off.
-    const SOLO_AUTO_DROP_SECONDS = 3.5;
+    // Solo auto-drop is configurable; the default retains the audited 3.5 s cadence.
+    const SOLO_AUTO_DROP_DEFAULT = '3.5';
+    const SOLO_AUTO_DROP_SETTINGS = Object.freeze(['3.5', '10', 'off']);
+    const SOLO_AUTO_DROP_STORAGE_KEY = 'sabotage-stack-solo-auto-drop-v1';
+    const SOLO_AUTO_DROP_VOTE_PAUSE_SECONDS = 2;
     const SOLO_AUTO_DROP_RING_AFTER = 1;
+    function loadSoloAutoDropSetting() {
+      try {
+        const saved = window.localStorage && window.localStorage.getItem(SOLO_AUTO_DROP_STORAGE_KEY);
+        return SOLO_AUTO_DROP_SETTINGS.includes(saved) ? saved : SOLO_AUTO_DROP_DEFAULT;
+      } catch (_) { return SOLO_AUTO_DROP_DEFAULT; }
+    }
+    let soloAutoDropSetting = loadSoloAutoDropSetting();
     const PALETTE = ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F'];
     // Themes are presentation only: game logic always works in the canonical Paper colours above, and the canvas
     // maps them to the active theme at draw time (SUNSET_COLOR_MAP), so switching theme mid-run recolours the tower.
@@ -1236,11 +1366,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'slowmo', name: 'Slow-to-Dart', category: 'kinetic', caption: 'Easy… easy… now!', effect: 'Creeps at ×0.3 for 0.78 seconds, then lunges at ×2.5 on a 1.4-second cycle.' },
       { id: 'magnet', name: 'Gravity Slingshot', category: 'kinetic', caption: 'The stack centre is a launch point.', effect: 'The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.' },
       { id: 'portal', name: 'Portal Walls', category: 'trajectory', caption: 'The edges are not the end of the road.', effect: 'For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.' },
-      { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.' },
+      { id: 'rollercoaster', name: 'The Rollercoaster', category: 'trajectory', caption: 'Mind the air gap, darling.', effect: 'The mover bobs up to 45 px above the landing line and speeds up to ×1.6 as it rises; no hidden sideways drift.' },
       { id: 'earthquake', name: 'Earthquake', category: 'trajectory', caption: 'The foundations have a few objections.', effect: 'The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.' },
       { id: 'pisa', name: 'The Pisa Tilt', category: 'trajectory', caption: 'Architecture is subjective, really.', effect: 'The view eases into a gentle sway of up to 16° for 5 seconds.' },
       { id: 'spotlight', name: 'Spotlight', category: 'optical', caption: 'One corner of the stage is under observation.', effect: 'Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.' },
-      { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
+      { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover stays visible for 0.31 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
       { id: 'zoom', name: 'Macro Zoom', category: 'optical', caption: 'Extreme close-up. Don’t blink.', effect: 'A 1.85× view locks onto the top platform; wall rebounds can leave the frame.' },
       { id: 'double', name: 'The Shell Game', category: 'optical', caption: 'Follow the cracked block.', effect: 'A decoy travels in the opposite direction; a small crack marks the real mover.' },
       { id: 'accordion', name: 'The Accordion', category: 'geometry', caption: 'Wide, narrow, wide again.', effect: 'Breathes between 45% and 100% of the supporting tower width on a 0.8-second cycle.' },
@@ -1249,6 +1379,22 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'calipers', name: 'Drafting Calipers', category: 'geometry', caption: 'The drafting arms have closed in.', effect: 'For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges.' }
     ]);
     const SABOTAGE_BY_ID = new Map(SABOTAGES.map(item => [item.id, item]));
+    // Short, mode-neutral mechanics fit the vote card; exact durations remain in the guide.
+    const VOTE_EFFECT_HINTS = Object.freeze({
+      turbo: 'The mover speeds up.', drunk: 'The mover alternates between stumbles and lurches.',
+      slowmo: 'The mover creeps, then darts.', magnet: 'The mover accelerates over the tower centre.',
+      portal: 'The mover wraps through the side walls.', rollercoaster: 'The mover bobs and speeds up as it rises.',
+      earthquake: 'The view shakes; block physics stay the same.', pisa: 'The view tilts and sways.',
+      spotlight: 'Most of the field is hidden outside a narrow beam.', peekaboo: 'The mover repeatedly disappears.',
+      zoom: 'The view zooms in on the tower.', double: 'A decoy moves opposite the real block.',
+      accordion: 'The mover repeatedly changes width.', crumble: 'Imperfect landings lose extra width.',
+      superglue: 'The perfect landing window becomes wider.', calipers: 'Helpful: rebounds stay closer to the tower.'
+    });
+    const STAGE_VOTE_SHORT_NAMES = Object.freeze({
+      turbo: 'Turbo', drunk: 'Drunk', slowmo: 'Slow', magnet: 'Gravity', portal: 'Portal', rollercoaster: 'Roller',
+      earthquake: 'Quake', pisa: 'Pisa', spotlight: 'Spotlight', peekaboo: 'Peekaboo', zoom: 'Zoom', double: 'Shell',
+      accordion: 'Accordion', crumble: 'Crumble', superglue: 'Glue', calipers: 'Calipers'
+    });
     const AUDIO_CUES = (() => {
       try {
         const rows = JSON.parse(document.getElementById('audio-cue-sheet').textContent || '[]');
@@ -1280,7 +1426,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     Object.entries(SABOTAGE_CATEGORIES).flatMap(([category, ids]) => ids.map(id => [id, category]))
   ));
   const SABOTAGE_IDS = Object.freeze(Object.values(SABOTAGE_CATEGORIES).flat());
-  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue'));
+  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue' && id !== 'calipers'));
   // Effects held back until the tower is tall enough for them to matter (tune in play).
   const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
   const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
@@ -1383,13 +1529,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const phase = time % 0.7;
     if (phase < 0.31) return 1;
     if (phase < 0.35) return 1 - (phase - 0.31) / 0.04;
-    if (phase < 0.39) return (phase - 0.35) / 0.04;
     return 0;
   }
   function rollercoasterOffset(elapsed, phase = 0) {
     const time = Number.isFinite(Number(elapsed)) ? Math.max(0, Number(elapsed)) : 0;
     const phaseTurns = Number.isFinite(Number(phase)) ? Number(phase) : 0;
     return -22.5 * (1 + Math.sin((time / 1.2 + phaseTurns) * Math.PI * 2));
+  }
+  function rollercoasterSpeedMultiplier(elapsed, phase = 0) {
+    return 1 + (-rollercoasterOffset(elapsed, phase) / 45) * 0.6;
   }
   function pisaAngle(elapsed, remaining, direction = 1, reducedMotion = false) {
     if (reducedMotion) return 0;
@@ -1607,7 +1755,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, rollercoasterSpeedMultiplier, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
   });
@@ -1616,29 +1764,55 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const Core = window.SabotageStackCore;
 
     const elements = {
-      themeSelect: document.getElementById('theme-select'),
+      gameAnnouncement: document.getElementById('game-announcement'),
+      motionSelect: document.getElementById('motion-select'), motionSummary: document.getElementById('sabotage-guide-summary'), roomMotionStatus: document.getElementById('room-motion-status'), mpMotionStatus: document.getElementById('multiplayer-motion-status'),
+      themeSelect: document.getElementById('theme-select'), soloAutoDropSelect: document.getElementById('solo-auto-drop-select'), soloAutoDropHelp: document.getElementById('solo-auto-drop-help'),
       soundToggle: document.getElementById('sound-toggle'), soundLabel: document.getElementById('sound-label'), soundStatus: document.getElementById('sound-status'),
       title: document.getElementById('title-screen'), lobby: document.getElementById('room-screen'), game: document.getElementById('game-screen'), results: document.getElementById('results-screen'),
-      start: document.getElementById('start-button'), devStart: document.getElementById('dev-mode-button'), devQuick: document.getElementById('dev-quick-button'), devPanel: document.getElementById('dev-panel'), devPanelTitle: document.getElementById('dev-panel-title'), devPanelDescription: document.getElementById('dev-panel-description'), devEffectDescription: document.getElementById('dev-effect-description'), devEffects: document.getElementById('dev-effects'), devReset: document.getElementById('dev-reset-button'), devDrop: document.getElementById('dev-drop-button'), devFeedback: document.getElementById('dev-feedback'), how: document.getElementById('how-button'), closeHow: document.getElementById('close-how'), dialog: document.getElementById('how-dialog'),
+      start: document.getElementById('start-button'), devStart: document.getElementById('dev-mode-button'), devPanel: document.getElementById('dev-panel'), devPanelTitle: document.getElementById('dev-panel-title'), devPanelDescription: document.getElementById('dev-panel-description'), devEffectDescription: document.getElementById('dev-effect-description'), devEffects: document.getElementById('dev-effects'), devReset: document.getElementById('dev-reset-button'), devDrop: document.getElementById('dev-drop-button'), devFeedback: document.getElementById('dev-feedback'), how: document.getElementById('how-button'), closeHow: document.getElementById('close-how'), dialog: document.getElementById('how-dialog'),
       joinButton: document.getElementById('join-game-button'), joinDialog: document.getElementById('join-dialog'), joinForm: document.getElementById('join-form'), joinCode: document.getElementById('join-room-code'), joinName: document.getElementById('join-display-name'), joinStatus: document.getElementById('join-status'), closeJoin: document.getElementById('close-join'), cancelJoin: document.getElementById('cancel-join'),
       hostModeButtons: Array.from(document.querySelectorAll('[data-host-mode]')), modeLabel: document.getElementById('connection-mode-label'), gameModeKicker: document.getElementById('game-mode-kicker'), multiplayerStatus: document.getElementById('multiplayer-status'),
       roomMode: document.getElementById('room-mode-label'), roomConnection: document.getElementById('room-connection-status'), roomCode: document.getElementById('room-code-display'), roomInviteHint: document.getElementById('room-invite-hint'), roomPlayerCount: document.getElementById('room-player-count'), roomPlayers: document.getElementById('room-player-list'), roomStatus: document.getElementById('room-lobby-status'), roomStart: document.getElementById('room-start-button'), roomReturn: document.getElementById('room-return-button'), roomRematch: document.getElementById('room-rematch-button'), roomLeave: document.getElementById('room-leave-button'), roomClose: document.getElementById('room-close-button'), copyRoomLink: document.getElementById('copy-room-link'),
-      mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
-      menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
-      gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      mpHostStatus: document.getElementById('multiplayer-host-status'), resultsHostStatus: document.getElementById('results-host-status'),
+      teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
+      mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
+      pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
+      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
-      voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
+      voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteHelp: document.getElementById('vote-help'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
+      stageVoteStrip: document.getElementById('stage-vote-strip'), stageVoteButtons: Array.from(document.querySelectorAll('.stage-vote-chip')),
       effectIconUse: document.getElementById('effect-icon-use'), effectName: document.getElementById('effect-name'), effectCaption: document.getElementById('effect-caption'), effectTime: document.getElementById('effect-time'), effectMeter: document.getElementById('effect-meter-fill'),
       toast: document.getElementById('canvas-toast'), perfect: document.getElementById('perfect-banner'), chatFlavor: document.getElementById('chat-flavor-pop'),
       resultTitle: document.getElementById('result-title'), resultSubtitle: document.getElementById('result-subtitle'), resultScore: document.getElementById('result-score'), resultBest: document.getElementById('result-best'), resultPerfects: document.getElementById('result-perfects'), resultFallen: document.getElementById('result-fallen'), resultScale: document.getElementById('result-scale'),
       titleBest: document.getElementById('title-best'), titleBestMobile: document.getElementById('title-best-mobile'), sabotageList: document.getElementById('sabotage-list')
     };
+    function updateSoloAutoDropHelp() {
+      if (!elements.soloAutoDropHelp) return;
+      elements.soloAutoDropHelp.textContent = soloAutoDropSetting === '3.5'
+        ? 'Standard timing. The timer pauses for the first 2 seconds of each vote.'
+        : soloAutoDropSetting === '10'
+          ? '10-second timer. This solo run will be labelled Assisted; the first 2 seconds of each vote pause the timer.'
+          : 'Auto-drop is off. This solo run will be labelled Assisted.';
+    }
+    function setSoloAutoDropSetting(value) {
+      soloAutoDropSetting = SOLO_AUTO_DROP_SETTINGS.includes(value) ? value : SOLO_AUTO_DROP_DEFAULT;
+      elements.soloAutoDropSelect.value = soloAutoDropSetting;
+      updateSoloAutoDropHelp();
+      try { if (window.localStorage) window.localStorage.setItem(SOLO_AUTO_DROP_STORAGE_KEY, soloAutoDropSetting); } catch (_) { /* storage unavailable: keep the choice for this page view */ }
+    }
+    elements.soloAutoDropSelect.value = soloAutoDropSetting;
+    updateSoloAutoDropHelp();
     // Keep alpha enabled: Spotlight masks a hole in its dark overlay to reveal the world below.
     const gameContext = elements.gameCanvas.getContext('2d');
     const resultsContext = elements.resultsCanvas.getContext('2d');
-    let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const MOTION_STORAGE_KEY = 'sabotage-stack-motion-v1';
+    const motionPreferenceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let motionSetting = 'system';
+    try { const saved = window.localStorage && window.localStorage.getItem(MOTION_STORAGE_KEY); if (['system', 'full', 'reduced'].includes(saved)) motionSetting = saved; } catch (_) {}
+    function localReducedMotion() { return motionSetting === 'reduced' || (motionSetting === 'system' && motionPreferenceQuery.matches); }
+    let reducedMotion = localReducedMotion();
     let dpr = 1;
     let game = null;
     let devReturnState = null;
@@ -1651,6 +1825,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     let resultShownAt = 0;
     let soloVoteNumber = 0;
     let spaceDropKeyHeld = false;
+    let spaceDropTarget = null;
     let camera = 0;
     let frameDt = 0;
     let zoomScale = 1;
@@ -1659,9 +1834,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
     const multiplayer = {
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
-      socket: null, connected: false, room: null, remoteGame: null, pendingAction: null,
-      explicitLeave: false, reconnectTimer: null, reconnectDelay: 800, pingTimer: null,
-      positionSequence: 0, lastPositionSentAt: 0, dropPending: false,
+      socket: null, connected: false, room: null, remoteGame: null, pendingAction: null, deltaBaseline: null, syncPending: false,
+      explicitLeave: false, reconnectTimer: null, reconnectDelay: 800, pingTimer: null, connectionTimers: [],
+      positionSequence: 0, lastPositionSentAt: 0, dropPending: false, lobbyViewPhase: null,
       dropRequestPrefix: Math.random().toString(36).slice(2, 10), dropRequestSequence: 0,
       pendingDropId: null, pendingDropContext: null, forceServerPosition: false,
       lastEffectKey: '', resultPayload: null, sessionBest: 0
@@ -1670,9 +1845,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       : typeof window.webkitAudioContext === 'function' ? window.webkitAudioContext : null;
     let audioContext = null;
     let masterGain = null;
+    const SOUND_STORAGE_KEY = 'sabotage-stack-sound-v1';
     let soundEnabled = false;
+    try { soundEnabled = window.localStorage && window.localStorage.getItem(SOUND_STORAGE_KEY) === 'on'; } catch (_) {}
+    let audioStarting = false;
     let audioUnavailable = !AudioContextConstructor;
     let ambientBed = null;
+    const POSITION_AUDIO_KEY = 'sabotage-stack-position-tone-v1';
+    let positionAudioEnabled = false;
+    try { positionAudioEnabled = window.localStorage && window.localStorage.getItem(POSITION_AUDIO_KEY) === 'on'; } catch (_) {}
+    let positionTone = null;
     const AMBIENT_CHORDS = Object.freeze([
       [261.63, 329.63, 392.00], [220.00, 261.63, 329.63],
       [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]
@@ -1681,8 +1863,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function setCanvasResolution(canvas, context) {
       const deviceDpr = Number(window.devicePixelRatio) || 1;
       const nextDpr = Math.min(2, deviceDpr > 0 ? deviceDpr : 1);
-      if (canvas.width !== Math.round(WIDTH * nextDpr) || canvas.height !== Math.round(HEIGHT * nextDpr)) {
-        canvas.width = Math.round(WIDTH * nextDpr);
+      const wideBoard = canvas === elements.gameCanvas && game && game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player';
+      const canvasWidth = wideBoard ? WIDTH * 2 : WIDTH;
+      if (canvas.width !== Math.round(canvasWidth * nextDpr) || canvas.height !== Math.round(HEIGHT * nextDpr)) {
+        canvas.width = Math.round(canvasWidth * nextDpr);
         canvas.height = Math.round(HEIGHT * nextDpr);
       }
       context.setTransform(nextDpr, 0, 0, nextDpr, 0, 0);
@@ -1701,6 +1885,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
 
     function setScreen(name) {
+      const changed = document.body.dataset.screen !== name;
       const screens = [['title', elements.title], ['lobby', elements.lobby], ['game', elements.game], ['results', elements.results]];
       for (const [key, node] of screens) {
         const active = key === name;
@@ -1708,6 +1893,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
+      if (changed && name === 'title') resetGameAnnouncements();
+      // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
+      if (changed && name === 'game') document.documentElement.scrollTop = 0;
     }
     function mpSessionRead() {
       try {
@@ -1735,11 +1923,47 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (elements.joinStatus && elements.joinDialog && elements.joinDialog.open) elements.joinStatus.textContent = message || '';
       if (elements.roomStatus && document.body.dataset.screen === 'lobby' && message) elements.roomStatus.textContent = message;
     }
+    function clearConnectionWait() {
+      for (const timer of multiplayer.connectionTimers) clearTimeout(timer);
+      multiplayer.connectionTimers = [];
+      elements.hostModeButtons.forEach(button => { button.disabled = false; });
+      elements.joinForm.querySelector('[type="submit"]').disabled = false;
+      document.getElementById('host-connection-actions').hidden = true;
+      document.getElementById('join-connection-actions').hidden = true;
+    }
+    function startConnectionWait(socket) {
+      clearConnectionWait();
+      if (multiplayer.resumeToken) return;
+      elements.hostModeButtons.forEach(button => { button.disabled = true; });
+      elements.joinForm.querySelector('[type="submit"]').disabled = true;
+      multiplayer.connectionTimers = [
+        setTimeout(() => { if (socket === multiplayer.socket && multiplayer.pendingAction) mpSetStatus('Waking the server. This can take up to a minute.'); }, 5000),
+        setTimeout(() => {
+          if (socket !== multiplayer.socket || !multiplayer.pendingAction) return;
+          mpSetStatus('Still waiting for the server. You can retry or play solo.');
+          const id = multiplayer.pendingAction.type === 'join' ? 'join-connection-actions' : 'host-connection-actions';
+          document.getElementById(id).hidden = false;
+        }, 30000)
+      ];
+    }
+    function cancelPendingConnection() {
+      if (!multiplayer.resumeToken && multiplayer.pendingAction) { resetMultiplayerSession(true); mpSessionClear(); mpSetStatus(''); }
+    }
+    function retryPendingConnection() {
+      const action = multiplayer.pendingAction;
+      if (!action || multiplayer.resumeToken) return;
+      resetMultiplayerSession(true);
+      multiplayer.active = true; multiplayer.explicitLeave = false;
+      multiplayer.role = action.type === 'create' ? 'host' : action.spectate ? 'spectator' : 'player';
+      multiplayer.mode = action.mode || null; multiplayer.code = action.code || null;
+      mpSetStatus('Connecting to the game server…');
+      connectMultiplayer(action);
+    }
     function updateConnectionLabels() {
       const status = multiplayer.connected ? 'Connected' : multiplayer.resumeToken ? 'Reconnecting…' : 'Connecting…';
       if (elements.roomConnection) elements.roomConnection.textContent = status;
       if (elements.modeLabel) elements.modeLabel.textContent = multiplayer.active
-        ? `${multiplayer.mode === 'teamwork' ? 'Teamwork' : multiplayer.mode === 'competitive' ? 'Competitive' : 'Multiplayer'} · ${multiplayer.connected ? 'connected' : 'reconnecting'}`
+        ? `${multiplayer.mode === 'teamwork' ? 'Teamwork' : multiplayer.mode === 'competitive' ? 'Competitive' : 'Multiplayer'} · ${multiplayer.connected && !multiplayer.pendingAction ? 'connected' : multiplayer.resumeToken ? 'reconnecting' : 'connecting'}`
         : 'Offline solo';
     }
     function sendMultiplayer(message) {
@@ -1748,9 +1972,18 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       try { socket.send(JSON.stringify(message)); return true; }
       catch (_) { return false; }
     }
-    function handleMotionPreferenceChange(event) {
-      reducedMotion = Boolean(event && event.matches);
-      if (multiplayer.active && multiplayer.connected) sendMultiplayer({ type: 'client.preferences', reducedMotion });
+    function refreshMotionState() {
+      reducedMotion = localReducedMotion() || Boolean(multiplayer.active && multiplayer.room && multiplayer.room.reducedMotion);
+      document.documentElement.dataset.motion = reducedMotion ? 'reduced' : 'full';
+      elements.motionSelect.value = motionSetting;
+      const total = Core.SABOTAGE_IDS.length;
+      const eligible = total - Core.REDUCED_MOTION_EXCLUDED_IDS.length;
+      elements.motionSummary.textContent = multiplayer.active && multiplayer.role === 'spectator' && localReducedMotion() && !(multiplayer.room && multiplayer.room.reducedMotion)
+        ? `Your view uses reduced motion; the room vote pool follows the host and players (guide lists all ${total}).`
+        : reducedMotion ? `Reduced motion: ${eligible} of ${total} sabotages eligible for votes (guide lists all)` : `Meet all ${total} active sabotages`;
+      const roomReduced = Boolean(multiplayer.active && multiplayer.room && multiplayer.room.reducedMotion);
+      elements.roomMotionStatus.hidden = !roomReduced;
+      elements.mpMotionStatus.hidden = !roomReduced;
       if (game) {
         if (reducedMotion) {
           camera = Math.max(0, 200 - (BASELINE - (game.stack.length + 1) * BLOCK_H));
@@ -1760,7 +1993,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         syncHud(true);
       }
     }
-    const motionPreferenceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function handleMotionPreferenceChange() {
+      if (multiplayer.active && multiplayer.connected) sendMultiplayer({ type: 'client.preferences', reducedMotion: localReducedMotion() });
+      refreshMotionState();
+    }
+    elements.motionSelect.value = motionSetting;
+    elements.motionSelect.addEventListener('change', () => {
+      motionSetting = ['system', 'full', 'reduced'].includes(elements.motionSelect.value) ? elements.motionSelect.value : 'system';
+      try { if (window.localStorage) window.localStorage.setItem(MOTION_STORAGE_KEY, motionSetting); } catch (_) {}
+      handleMotionPreferenceChange();
+    });
+    refreshMotionState();
     if (motionPreferenceQuery.addEventListener) motionPreferenceQuery.addEventListener('change', handleMotionPreferenceChange);
     else if (motionPreferenceQuery.addListener) motionPreferenceQuery.addListener(handleMotionPreferenceChange);
     function stopMultiplayerPing() {
@@ -1799,6 +2042,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const socket = new WebSocketClass(`${protocol}//${location.host}/ws`);
       multiplayer.socket = socket;
       multiplayer.connected = false;
+      startConnectionWait(socket);
       updateConnectionLabels();
       socket.addEventListener('open', () => {
         if (socket !== multiplayer.socket) return;
@@ -1807,11 +2051,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         updateConnectionLabels();
         startMultiplayerPing();
         if (multiplayer.resumeToken && multiplayer.code) {
-          sendMultiplayer({ type: 'room.resume', code: multiplayer.code, resumeToken: multiplayer.resumeToken, reducedMotion });
+          sendMultiplayer({ type: 'room.resume', code: multiplayer.code, resumeToken: multiplayer.resumeToken, reducedMotion: localReducedMotion() });
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'create') {
-          sendMultiplayer({ type: 'room.create', mode: multiplayer.pendingAction.mode, reducedMotion });
+          sendMultiplayer({ type: 'room.create', mode: multiplayer.pendingAction.mode, reducedMotion: localReducedMotion() });
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'join') {
-          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, reducedMotion });
+          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, spectate: Boolean(multiplayer.pendingAction.spectate), reducedMotion: localReducedMotion() });
         }
       });
       socket.addEventListener('message', event => {
@@ -1821,6 +2065,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       socket.addEventListener('close', () => {
         if (socket !== multiplayer.socket) return;
         multiplayer.connected = false;
+        clearConnectionWait();
         clearMultiplayerPendingDrop(null, false);
         multiplayer.forceServerPosition = true;
         stopMultiplayerPing();
@@ -1830,11 +2075,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           scheduleMultiplayerReconnect();
         } else if (multiplayer.active && !multiplayer.resumeToken) {
           multiplayer.active = false;
-          mpSetStatus('Connection closed before the room was created. Check the server, then try again.');
+          multiplayer.pendingAction = null;
+          updateConnectionLabels();
+          mpSetStatus('Could not reach the game server. Please try again.');
         }
       });
       socket.addEventListener('error', () => {
-        if (!multiplayer.resumeToken) mpSetStatus('Could not reach the game server. Check the address and try again.');
+        if (socket !== multiplayer.socket) return;
+        if (!multiplayer.resumeToken) mpSetStatus('Could not reach the game server. Please try again.');
       });
     }
     function clearMultiplayerPendingDrop(requestId = null, refreshHud = true) {
@@ -1892,6 +2140,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         multiplayer.active = true;
         multiplayer.explicitLeave = false;
         multiplayer.pendingAction = null;
+        clearConnectionWait();
+        updateConnectionLabels();
         multiplayer.reconnectDelay = 800;
         mpSessionSave();
         if (elements.joinDialog && elements.joinDialog.open) elements.joinDialog.close();
@@ -1905,6 +2155,33 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           }
         }
         applyRoomSnapshot(message.state);
+        return;
+      }
+      if (message.type === 'room.delta') {
+        const baseline = multiplayer.deltaBaseline;
+        if (baseline && Number.isInteger(message.revision) && message.revision <= baseline.revision) return;
+        if (!baseline || baseline.revision !== message.baseRevision || !Array.isArray(message.changes)) {
+          if (!multiplayer.syncPending) multiplayer.syncPending = sendMultiplayer({ type: 'room.sync' });
+          return;
+        }
+        try {
+          const next = JSON.parse(JSON.stringify(baseline));
+          for (const change of message.changes) {
+            if (!Array.isArray(change) || !Array.isArray(change[0]) || !change[0].length) throw new Error('Invalid delta');
+            let target = next;
+            for (const key of change[0].slice(0, -1)) {
+              if (key === '__proto__' || key === 'constructor' || key === 'prototype' || !target || typeof target !== 'object') throw new Error('Invalid delta path');
+              target = target[key];
+            }
+            const key = change[0][change[0].length - 1];
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype' || !target || typeof target !== 'object') throw new Error('Invalid delta path');
+            target[key] = change[1];
+          }
+          if (next.revision !== message.revision) throw new Error('Invalid delta revision');
+          applyRoomSnapshot(next);
+        } catch (_) {
+          if (!multiplayer.syncPending) multiplayer.syncPending = sendMultiplayer({ type: 'room.sync' });
+        }
         return;
       }
       if (message.type === 'room.state' || message.type === 'round.started') {
@@ -1923,16 +2200,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         applyRemotePosition(message);
         return;
       }
-      if (message.type === 'turn.auto-drop') {
-        if (message.playerId === multiplayer.playerId && game && multiplayer.mode === 'teamwork') {
-          clearMultiplayerPendingDrop(null, false);
-          game.awaitingAutoDrop = true;
-          game.turnRemaining = 0;
-          game.autoDropRemaining = Math.max(0, (Number(message.deadline) - Date.now()) / 1000);
-          sendMultiplayerDrop(true);
-        }
-        return;
-      }
       if (message.type === 'drop.ack') {
         if (message.playerId === multiplayer.playerId && message.requestId && message.requestId === multiplayer.pendingDropId) {
           clearMultiplayerPendingDrop(message.requestId, false);
@@ -1943,13 +2210,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       if (message.type === 'block.perfect' || message.type === 'block.land') {
         playCue(message.type === 'block.perfect' ? 'block.perfect' : 'block.land');
-        if (message.playerId === multiplayer.playerId && message.type === 'block.perfect') setToast('PERFECT DROP · +1 TEAM BONUS', 1.25);
+        if (message.playerId === multiplayer.playerId && message.type === 'block.perfect') {
+          setToast(game && game.mode === 'teamwork' ? 'PERFECT DROP · +1 TEAM BONUS' : 'PERFECT DROP', 1.25);
+          announceGame(`Perfect drop. Height ${Number(message.height) || 0}.`);
+        }
         const height = Number(message.height) || 0;
         if (height > 0 && height % 3 === 0) showChatFlavor(ROASTS[(Math.floor(height / 3) - 1) % ROASTS.length]);
         return;
       }
       if (message.type === 'round.paused') {
-        if (game) game.statusMessage = 'Everyone is disconnected. The round is paused.';
+        if (game) game.statusMessage = message.reason === 'all-players-idle' ? 'All players are idle. The round is paused.' : 'Everyone is disconnected. The round is paused.';
         return;
       }
       if (message.type === 'round.resumed') {
@@ -1967,6 +2237,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         return;
       }
       if (message.type === 'error') {
+        if (!multiplayer.resumeToken && multiplayer.pendingAction) clearConnectionWait();
         if (message.action === 'position') return;
         if (message.action === 'drop' && message.requestId && message.requestId === multiplayer.pendingDropId) {
           clearMultiplayerPendingDrop(message.requestId, false);
@@ -1993,6 +2264,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function resetMultiplayerSession(closeSocket = true) {
       multiplayer.explicitLeave = true;
+      clearConnectionWait();
       if (game && game.multiplayer) { stopAmbientBed(3); game = null; resultData = null; }
       if (multiplayer.reconnectTimer) clearTimeout(multiplayer.reconnectTimer);
       multiplayer.reconnectTimer = null;
@@ -2010,14 +2282,20 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       multiplayer.playerId = null;
       multiplayer.resumeToken = null;
       multiplayer.room = null;
+      multiplayer.deltaBaseline = null;
+      multiplayer.syncPending = false;
       multiplayer.remoteGame = null;
+      multiplayer.lobbyViewPhase = null;
       multiplayer.pendingAction = null;
       multiplayer.resultPayload = null;
       multiplayer.lastEffectKey = '';
       multiplayer.forceServerPosition = false;
       multiplayer.positionSequence = 0;
       multiplayer.sessionBest = 0;
+      refreshMotionState();
       elements.mpCard.hidden = true;
+      elements.mpHostStatus.hidden = true;
+      elements.resultsHostStatus.hidden = true;
       elements.mpResults.hidden = true;
       elements.soloResultLayout.hidden = false;
       elements.again.textContent = 'Play again';
@@ -2025,7 +2303,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.resultsMenu.textContent = 'Return to menu';
       elements.menu.textContent = 'Menu';
       elements.menu.setAttribute('aria-label', 'Return to menu');
-      elements.gameModeKicker.textContent = 'Single player · build 01';
+      elements.gameModeKicker.textContent = 'Single player';
       elements.gameCanvas.setAttribute('role', 'button');
       elements.gameCanvas.tabIndex = 0;
       elements.gameCanvas.setAttribute('aria-disabled', 'false');
@@ -2067,7 +2345,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function applyRoomSnapshot(state) {
       if (!state || typeof state !== 'object') return;
+      const keepLobby = multiplayer.lobbyViewPhase !== null && multiplayer.lobbyViewPhase === state.phase;
+      if (!keepLobby) multiplayer.lobbyViewPhase = null;
+      multiplayer.deltaBaseline = Number.isInteger(state.revision) ? JSON.parse(JSON.stringify(state)) : null;
+      multiplayer.syncPending = false;
       multiplayer.room = state;
+      refreshMotionState();
       multiplayer.code = state.code || multiplayer.code;
       multiplayer.mode = state.mode || multiplayer.mode;
       if (Number.isFinite(Number(state.bestTeamScore))) multiplayer.sessionBest = Math.max(multiplayer.sessionBest || 0, Number(state.bestTeamScore) || 0);
@@ -2077,13 +2360,22 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       renderLobby(state);
       if (state.phase !== 'playing' && multiplayer.dropPending) clearMultiplayerPendingDrop(null, false);
       if (state.phase === 'lobby') {
+        multiplayer.lobbyViewPhase = null;
         setScreen('lobby');
       } else if (state.phase === 'playing') {
         applyMultiplayerGame(state.game);
-        setScreen('game');
+        if (!keepLobby) setScreen('game');
       } else if (state.phase === 'results') {
-        if (state.game) showMultiplayerResults(state.game.results);
-        setScreen('results');
+        const enteringResults = !keepLobby && document.body.dataset.screen !== 'results';
+        if (!keepLobby && state.game) showMultiplayerResults(state.game.results);
+        if (!keepLobby) {
+          setScreen('results');
+          if (enteringResults) {
+            const actions = elements.mpResults.querySelector('.multiplayer-result-actions');
+            const target = actions && (actions.querySelector('button:not(:disabled)'));
+            if (target) target.focus({ preventScroll: true });
+          }
+        }
       }
       mpSessionSave();
     }
@@ -2102,14 +2394,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       const stats = document.createElement('span'); stats.className = 'player-connection';
       if (Number.isFinite(player.height)) stats.textContent = `${player.height} high · ${player.perfects || 0}★`;
-      else if (Number.isFinite(player.blocksPlaced)) stats.textContent = `${player.blocksPlaced} blocks · ${player.perfects || 0}★`;
+      else if (Number.isFinite(player.blocksPlaced)) stats.textContent = `${player.blocksPlaced} ${player.blocksPlaced === 1 ? 'block' : 'blocks'} · ${player.perfects || 0}★`;
       else stats.textContent = '';
       if (stats.textContent) li.append(stats);
       const currentId = state && state.game && state.game.team ? state.game.team.currentPlayerId : null;
       const current = player.id === currentId || player.playerId === currentId;
       const status = document.createElement('span');
       status.className = 'player-connection';
-      status.textContent = !player.connected ? 'Offline' : player.ended ? 'Finished' : current ? 'Turn' : 'Ready';
+      status.textContent = !player.connected ? 'Offline' : player.ended ? 'Finished' : player.idle ? 'Idle' : current ? 'Turn' : 'Ready';
       li.append(status);
       return li;
     }
@@ -2119,6 +2411,24 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function renderLobby(state) {
       if (!state) return;
+      const gameState = state.game;
+      const lastSabotage = state.phase === 'playing' && gameState && gameState.mode === 'competitive' ? gameState.lastSabotage : null;
+      const targetIds = new Set(lastSabotage && Array.isArray(lastSabotage.targetPlayerIds) ? lastSabotage.targetPlayerIds : []);
+      const affected = gameState && Array.isArray(gameState.players)
+        ? gameState.players.filter(player => targetIds.has(player.playerId || player.id))
+        : [];
+      const sabotage = lastSabotage && effectById(lastSabotage.id);
+      if (sabotage && affected.length) {
+        const sequence = Number.isInteger(lastSabotage.sequence) ? ` #${lastSabotage.sequence}` : '';
+        const audience = affected.length === 1 ? 'the active player' : 'all active players';
+        const names = affected.map(player => String(player.name || 'Player')).join(', ');
+        const announcement = `Sabotage${sequence}: ${sabotage.name} hits ${audience} — ${names}.`;
+        if (elements.mpSabotageAnnouncement.textContent !== announcement) elements.mpSabotageAnnouncement.textContent = announcement;
+        if (elements.mpSabotageAnnouncement.hidden) elements.mpSabotageAnnouncement.hidden = false;
+      } else {
+        if (elements.mpSabotageAnnouncement.textContent) elements.mpSabotageAnnouncement.textContent = '';
+        if (!elements.mpSabotageAnnouncement.hidden) elements.mpSabotageAnnouncement.hidden = true;
+      }
       elements.roomCode.textContent = state.code || '----';
       elements.mpCode.textContent = state.code || '----';
       elements.roomMode.textContent = `${state.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · Room ${state.code || '----'}`;
@@ -2135,28 +2445,40 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.roomStart.hidden = !host || state.phase !== 'lobby';
       elements.roomStart.disabled = !state.canStart || !multiplayer.connected;
       elements.roomReturn.hidden = state.phase !== 'playing';
-      elements.roomRematch.hidden = !host || state.phase !== 'results';
+      const canRematch = multiplayer.connected && (host || (multiplayer.role === 'player' && state.canRematchWithoutHost));
+      elements.roomRematch.hidden = state.phase !== 'results' || !canRematch;
+      elements.roomRematch.disabled = !canRematch;
       elements.roomLeave.hidden = host;
       elements.roomClose.hidden = !host;
       elements.copyRoomLink.hidden = !host;
       elements.roomConnection.textContent = multiplayer.connected ? 'Connected' : 'Reconnecting…';
+      const hostAway = !state.hostConnected;
+      const awayText = state.phase === 'results'
+        ? (state.canRematchWithoutHost ? 'Host disconnected. Any connected player can start a rematch.' : 'Host disconnected. Players can start a rematch after the host has been away for 10 seconds.')
+        : state.mode === 'competitive' ? 'Host disconnected. Competitive votes are skipped until the host returns.'
+        : 'Host disconnected. Teammates can vote; tied votes are random until the host returns.';
+      for (const status of [elements.mpHostStatus, elements.resultsHostStatus]) {
+        status.hidden = !hostAway;
+        if (status.textContent !== (hostAway ? awayText : '')) status.textContent = hostAway ? awayText : '';
+      }
       if (state.phase === 'lobby') {
         elements.roomStatus.textContent = !state.hostConnected ? 'The host is reconnecting. The room will stay open.'
           : state.canStart ? 'Everyone is in. The host can start when ready.'
           : 'Waiting for at least two connected players. The room locks when the host starts.';
       } else if (state.phase === 'playing') {
-        elements.roomStatus.textContent = state.game && state.game.paused ? 'Round paused until someone reconnects.' : 'The round is live. Use Back to round to return to play.';
+        elements.roomStatus.textContent = hostAway ? awayText : state.game && state.game.paused ? (state.game.pauseReason === 'all-players-idle' ? 'Round paused until a player is ready.' : 'Round paused until someone reconnects.') : 'The round is live. Use Back to round to return to play.';
       } else {
-        elements.roomStatus.textContent = host ? 'Round complete. Start a rematch when the crew is ready.' : 'Round complete. Waiting for the host to start a rematch.';
+        elements.roomStatus.textContent = hostAway ? awayText : host ? 'Round complete. Start a rematch when the crew is ready.' : 'Round complete. Waiting for the host to start a rematch.';
       }
       if (state.phase === 'playing' && state.game) {
         const g = state.game;
         const current = g.team && g.team.currentPlayerName;
-        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (current ? `${current}'s turn` : 'Round live') : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
-        elements.mpTurnStatus.textContent = g.paused ? 'Everyone is disconnected. The timer is paused.'
-          : g.mode === 'teamwork' ? (g.team.awaitingAutoDrop ? 'Time! Automatic drop requested…' : 'Shared tower · fixed player order')
-          : multiplayer.role === 'host' ? 'Everyone builds independently. The room vote affects a leader or all players.' : 'Build your own tower. The host display shows the room.';
-        const seconds = g.mode === 'teamwork' ? (g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining) : g.remainingSeconds;
+        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (g.vote ? 'Room vote' : current ? `${current}'s turn` : 'Round live') : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack';
+        elements.mpTurnStatus.textContent = g.paused ? (g.pauseReason === 'all-players-idle' ? 'All players are idle. The timer is paused.' : 'Everyone is disconnected. The timer is paused.')
+          : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : 'Idle players are skipped until ready.')
+          : multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every connected, active stack.' : 'Build your own tower. Room votes hit every connected, active stack.';
+        const seconds = g.mode === 'teamwork' ? g.vote ? g.vote.remaining : g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining : g.remainingSeconds;
+        elements.mpTurnTimerLabel.textContent = g.mode === 'competitive' ? 'Round timer' : g.vote ? 'Vote closes' : 'Turn timer';
         elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(seconds || 0))}s`;
       } else {
         elements.mpTurnHeading.textContent = 'Waiting for the round';
@@ -2187,14 +2509,25 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const self = roster.find(player => player.id === multiplayer.playerId) || {};
       const effects = remote.activeEffects || [];
       const motion = team ? team.motion : competitor ? competitor.motion : null;
-      let active = effects.find(effect => effect.targetPlayerId == null || effect.targetPlayerId === multiplayer.playerId) || null;
-      if (!active && multiplayer.role === 'host' && effects.length) active = effects[0];
-      const effectKey = active ? `${active.id}:${active.targetPlayerId || 'all'}` : '';
+      const activeTargetId = team ? team.currentPlayerId : multiplayer.playerId;
+      let active = effects.find(effect => effect.targetPlayerId == null || effect.targetPlayerId === activeTargetId) || null;
+      if (!active && remote.mode === 'competitive' && multiplayer.role !== 'player' && effects.length) active = effects[0];
+      let pending = null;
+      if (team) {
+        const pendingEffects = effects.filter(effect => effect.targetPlayerId != null && effect.targetPlayerId !== team.currentPlayerId);
+        pending = multiplayer.role === 'host'
+          ? pendingEffects[0] || null
+          : pendingEffects.find(effect => effect.targetPlayerId === multiplayer.playerId) || null;
+      }
+      const observed = team && multiplayer.role !== 'host' ? pending || active : active || pending;
+      const effectKey = observed ? `${observed.id}:${observed.targetPlayerId || 'all'}` : '';
       const view = {
         multiplayer: true, mode: remote.mode, phase: remote.phase, roundNumber: remote.roundNumber, elapsed: remote.elapsed || 0,
         nextVoteAt: (remote.elapsed || 0) + (remote.nextVoteIn || 0),
         vote: remote.vote ? { ...remote.vote, votes: new Map() } : null,
+        voteCancellationSequence: remote.voteCancellationSequence || 0,
         activeEffect: active ? { ...active } : null,
+        pendingEffect: pending ? { ...pending } : null,
         lastVote: remote.lastVote || null, statusMessage: remote.paused ? 'The round is paused.' : '',
         stack: team ? team.stack : competitor ? competitor.blocks : [],
         fallenPieces: team ? team.fallen : competitor ? competitor.fallen : [],
@@ -2216,7 +2549,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         collapseClock: previous ? previous.collapseClock : 0, collapseLevel: previous ? previous.collapseLevel : null,
         collapseStartLevel: previous ? previous.collapseStartLevel : null, collapseShake: previous ? previous.collapseShake : 0,
         collapsingLevels: previous ? previous.collapsingLevels.slice() : [],
-        paused: Boolean(remote.paused), pausedByAll: Boolean(remote.paused),
+        paused: Boolean(remote.paused), pauseReason: remote.pauseReason, pausedByAll: Boolean(remote.paused),
         currentPlayerId: team ? team.currentPlayerId : null,
         currentPlayerName: team ? team.currentPlayerName : null,
         currentTurnId: team ? team.turnId : null,
@@ -2228,7 +2561,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         remotePlayers: remote.players || [], remoteEffects: effects,
         role: multiplayer.role
       };
-      if (remote.mode === 'competitive' && multiplayer.role === 'host' && remote.players && remote.players.length) {
+      if (remote.mode === 'competitive' && multiplayer.role !== 'player' && remote.players && remote.players.length) {
         const hostStacks = remote.players;
         view.stack = competitor ? competitor.blocks : hostStacks[0].blocks;
         view.moving = null;
@@ -2240,17 +2573,30 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : Boolean(competitor && competitor.playerId === multiplayer.playerId && !competitor.ended && !competitor.collapsed);
         if (sameActor) view.moving.left = previous.moving.left;
       }
+      if (newRound) resetGameAnnouncements();
+      if (remote.vote && (newRound || !previous.vote)) announceVoteOptions(remote.vote.options);
+      if (!newRound && previous.vote && !remote.vote && previous.voteCancellationSequence === (remote.voteCancellationSequence || 0) && remote.lastVote && remote.lastVote.winner) announceVoteWinner(remote.lastVote.winner);
+      if (team && team.turnActive && team.currentPlayerId && (newRound || previous.currentTurnId !== team.turnId)) {
+        announceGame(team.currentPlayerId === multiplayer.playerId ? `Your turn. ${Math.max(0, Math.ceil(team.turnRemaining || 0))} seconds to drop.` : `${team.currentPlayerName || 'A player'}’s turn.`);
+      }
+      const effectIds = effects.map(effect => `${effect.id}:${effect.targetPlayerId || 'all'}`);
+      if (!newRound) {
+        const ended = new Set((previous.announcedEffectIds || []).filter(key => !effectIds.includes(key)).map(key => key.split(':')[0]));
+        for (const id of ended) announceEffectEnd(id);
+      }
+      view.announcedEffectIds = effectIds;
+      view.turnWarningSent = !newRound && previous.currentTurnId === view.currentTurnId && previous.turnWarningSent;
       game = view;
       multiplayer.forceServerPosition = false;
       if (newRound) { camera = 0; zoomScale = 1; lastFrame = 0; }
       if (pendingDropStateTransition(view)) clearMultiplayerPendingDrop(null, false);
       elements.mpCard.hidden = false;
-      elements.gameModeKicker.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · Room ${multiplayer.code || ''}`;
+      elements.gameModeKicker.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.role === 'spectator' ? 'Spectator · ' : ''}Room ${multiplayer.code || ''}`;
       elements.menu.textContent = 'Room';
       elements.menu.setAttribute('aria-label', 'Return to room details');
       elements.modeLabel.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.connected ? 'connected' : 'reconnecting'}`;
       if (effectKey && effectKey !== multiplayer.lastEffectKey) {
-        const sabotage = effectById(active.id);
+        const sabotage = effectById(observed.id);
         if (sabotage) {
           playCue('sabotage.pick');
           game.toastText = sabotage.name;
@@ -2287,8 +2633,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function effectCountdownText(effect) {
       if (!effect) return 'Ready';
       if (game && game.devMode) return 'Sandbox preview';
+      if (effect.untilDrop) return Number.isInteger(effect.dropsRemaining) ? `${effect.dropsRemaining} ${effect.dropsRemaining === 1 ? 'drop' : 'drops'} left` : 'Until landing';
       const seconds = `${Math.max(0, Math.ceil(Number(effect.remaining) || 0))}s`;
       return Number.isInteger(effect.dropsRemaining) ? `${effect.dropsRemaining} drops · ${seconds} max` : `${seconds} left`;
+    }
+    function compactSabotageName(sabotage) {
+      return sabotage ? STAGE_VOTE_SHORT_NAMES[sabotage.id] || sabotage.name : 'Waiting';
+    }
+    function stageEffectStatus(effect) {
+      const sabotage = effectById(effect && effect.id);
+      return `${compactSabotageName(sabotage)} · ${effect && effect.untilDrop ? effectCountdownText(effect) : `${Math.max(0, Math.ceil(Number(effect && effect.remaining) || 0))}s left`}`;
     }
     function randomBetween(min, max) { return min + Math.random() * (max - min); }
 
@@ -2419,16 +2773,49 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ambientBed.nextChange = now + 8;
     }
 
-    async function toggleSound() {
-      if (audioUnavailable || !AudioContextConstructor) { syncSoundButton(); return; }
-      if (soundEnabled) {
-        stopAmbientBed(.08);
-        soundEnabled = false;
-        try { if (audioContext && masterGain) masterGain.gain.setTargetAtTime(0, audioContext.currentTime, .025); }
-        catch (_) { audioUnavailable = true; }
-        syncSoundButton();
-        return;
-      }
+    function syncPositionAudioButtons() {
+      document.querySelectorAll('.position-audio-toggle').forEach(button => {
+        button.setAttribute('aria-pressed', String(positionAudioEnabled));
+        button.textContent = `Position tone ${positionAudioEnabled ? 'on' : 'off'}`;
+      });
+    }
+    function stopPositionTone() {
+      if (!positionTone || !audioContext) return;
+      const tone = positionTone; positionTone = null;
+      try { tone.gain.gain.setTargetAtTime(0, audioContext.currentTime, .015); tone.oscillator.stop(audioContext.currentTime + .1); } catch (_) {}
+    }
+    function updatePositionTone() {
+      const active = positionAudioEnabled && soundEnabled && audioContext && audioContext.state === 'running' && masterGain &&
+        game && game.phase === 'playing' && !game.soloPaused && game.moving && game.stack && game.stack.length &&
+        document.body.dataset.screen === 'game' && !document.hidden && !document.querySelector('dialog[open]') &&
+        (!game.multiplayer || canDropMultiplayer());
+      if (!active) { stopPositionTone(); return; }
+      const below = game.stack[game.stack.length - 1];
+      const offset = game.moving.left + game.moving.width / 2 - (below.left + below.right) / 2;
+      const frequency = 440 * Math.pow(2, Math.max(-1, Math.min(1, offset / 180)));
+      try {
+        if (!positionTone) {
+          const oscillator = audioContext.createOscillator(); const gain = audioContext.createGain();
+          oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+          gain.gain.setValueAtTime(0, audioContext.currentTime); oscillator.connect(gain); gain.connect(masterGain);
+          oscillator.start(); gain.gain.setTargetAtTime(.08, audioContext.currentTime, .03);
+          positionTone = { oscillator, gain };
+        } else positionTone.oscillator.frequency.setTargetAtTime(frequency, audioContext.currentTime, .035);
+      } catch (_) { stopPositionTone(); }
+    }
+    document.querySelectorAll('.position-audio-toggle').forEach(button => button.addEventListener('click', () => {
+      positionAudioEnabled = !positionAudioEnabled;
+      try { if (window.localStorage) window.localStorage.setItem(POSITION_AUDIO_KEY, positionAudioEnabled ? 'on' : 'off'); } catch (_) {}
+      syncPositionAudioButtons();
+      if (!positionAudioEnabled) stopPositionTone();
+    }));
+    syncPositionAudioButtons();
+    function saveSoundPreference() {
+      try { if (window.localStorage) window.localStorage.setItem(SOUND_STORAGE_KEY, soundEnabled ? 'on' : 'off'); } catch (_) {}
+    }
+    async function unlockSound() {
+      if (!soundEnabled || audioUnavailable || !AudioContextConstructor || audioStarting || (audioContext && audioContext.state === 'running')) return;
+      audioStarting = true;
       try {
         if (!audioContext) {
           audioContext = new AudioContextConstructor();
@@ -2437,26 +2824,97 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           masterGain.connect(audioContext.destination);
         }
         await audioContext.resume();
+        if (!soundEnabled) return;
         masterGain.gain.cancelScheduledValues(audioContext.currentTime);
         masterGain.gain.setTargetAtTime(.32, audioContext.currentTime, .035);
-        soundEnabled = true;
-        syncSoundButton();
-        if (game && game.phase === 'playing') {
-          playCue('run.start');
-          startAmbientBed();
-        }
+        if (game && game.phase === 'playing') { playCue('run.start'); startAmbientBed(); }
       } catch (_) {
-        soundEnabled = false;
         audioUnavailable = true;
         syncSoundButton();
+      } finally { audioStarting = false; }
+    }
+    function toggleSound() {
+      if (audioUnavailable || !AudioContextConstructor) { syncSoundButton(); return; }
+      soundEnabled = !soundEnabled;
+      saveSoundPreference();
+      if (!soundEnabled) {
+        stopAmbientBed(.08);
+        stopPositionTone();
+        try { if (audioContext && masterGain) masterGain.gain.setTargetAtTime(0, audioContext.currentTime, .025); }
+        catch (_) { audioUnavailable = true; }
+      } else if (audioContext && audioContext.state === 'running') {
+        try { masterGain.gain.setTargetAtTime(.32, audioContext.currentTime, .035); startAmbientBed(); } catch (_) { audioUnavailable = true; }
+      } else unlockSound();
+      syncSoundButton();
+    }
+    // Restoring a preference never creates or resumes an AudioContext on load.
+    // A subsequent player gesture unlocks audio; the toggle handles its own gesture.
+    function unlockSoundOnGesture(event) {
+      if (elements.soundToggle.contains(event.target)) return;
+      unlockSound();
+    }
+    document.addEventListener('click', unlockSoundOnGesture, true);
+    document.addEventListener('keydown', unlockSoundOnGesture, true);
+
+    // Serialize game announcements so simultaneous turn, vote and effect changes are not overwritten.
+    const announcementQueue = [];
+    let announcementTimer = null;
+    function resetGameAnnouncements() {
+      announcementQueue.length = 0;
+      if (announcementTimer !== null) clearTimeout(announcementTimer);
+      announcementTimer = null;
+      elements.gameAnnouncement.textContent = '';
+    }
+    function announceGame(text, expiresIn = 0) {
+      if (!text) return;
+      // Bound the backlog without displacing vote or turn updates for a burst of perfects.
+      if (announcementQueue.length >= 20) {
+        const perfect = announcementQueue.findIndex(item => item.text.startsWith('Perfect drop.'));
+        if (perfect >= 0) announcementQueue.splice(perfect, 1);
+        else if (text.startsWith('Perfect drop.')) return;
+        else announcementQueue.shift();
       }
+      announcementQueue.push({ text, expiresAt: expiresIn ? Date.now() + expiresIn : 0 });
+      if (announcementTimer !== null) return;
+      function next() {
+        while (announcementQueue.length && announcementQueue[0].expiresAt && announcementQueue[0].expiresAt <= Date.now()) announcementQueue.shift();
+        if (!announcementQueue.length) { announcementTimer = null; return; }
+        const message = announcementQueue.shift().text;
+        // Separate clearing from writing so consecutive identical messages are announced again.
+        elements.gameAnnouncement.textContent = '';
+        announcementTimer = setTimeout(() => {
+          elements.gameAnnouncement.textContent = message;
+          announcementTimer = setTimeout(next, Math.max(1200, Math.min(6000, message.length * 45)));
+        }, 50);
+      }
+      next();
+    }
+    function announceVoteOptions(options) {
+      const names = (options || []).map(id => effectById(id)).filter(Boolean).map(item => item.name);
+      if (names.length) announceGame(`Vote open. Options: ${names.join(', ')}.`);
+    }
+    function announceVoteWinner(id) {
+      const sabotage = effectById(id);
+      if (!sabotage) return;
+      const teamwork = game && game.multiplayer && game.mode === 'teamwork';
+      const effect = teamwork ? sabotage.effect.replace(/ \(up to 8 seconds\)/g, '').replace(/ for 5 seconds/g, '') : sabotage.effect;
+      const duration = teamwork ? (id === 'crumble' ? ' In Teamwork, the next three team landings, with no time limit.' : Core.DROP_COUNTED_IDS.includes(id) ? ' In Teamwork, the affected player’s next three landings, with no time limit.' : ' In Teamwork, until the affected player lands.') : '';
+      announceGame(`Vote winner: ${sabotage.name}. ${effect}${duration}`);
+    }
+    function announceEffectEnd(id) {
+      const sabotage = effectById(id);
+      if (sabotage) announceGame(`${sabotage.name} ended.`);
     }
 
     function newGame() {
+      cancelPendingConnection();
+      resetGameAnnouncements();
       resultData = null;
       camera = 0; zoomScale = 1;
+      const autoDropSeconds = soloAutoDropSetting === 'off' ? 0 : Number(soloAutoDropSetting);
       game = {
-        phase: 'playing', elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
+        phase: 'playing', soloPaused: false, elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
+        autoDropSeconds, autoDropPauseRemaining: 0, assisted: soloAutoDropSetting !== SOLO_AUTO_DROP_DEFAULT,
         stack: [Core.makeBase()], fallenPieces: [], fallingActors: [], moving: null,
         perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1,
@@ -2530,8 +2988,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const ids = Core.pickOptions(availableVoteOptions(), Math.random, game.lastSabotageWinner, reducedMotion);
       const simulatedVotes = multiplayer.active ? [] : makeSimulatedChatVotes(ids);
       game.vote = { options: ids, votes: new Map(), remaining: 5, duration: 5, botVotes: simulatedVotes, botVoteIndex: 0 };
+      if (!game.multiplayer && game.autoDropSeconds > 0) game.autoDropPauseRemaining = SOLO_AUTO_DROP_VOTE_PAUSE_SECONDS;
       game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(heightOf(game));
       game.statusMessage = 'Voting is open. The block keeps moving; chat votes are arriving live.';
+      announceVoteOptions(ids);
       playCue('vote.open');
       syncHud(true);
     }
@@ -2548,7 +3008,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (changed) syncHud(true);
     }
     function receiveVote(event) {
-      if (!game || game.phase !== 'playing' || !game.vote) return false;
+      if (!game || game.phase !== 'playing' || game.soloPaused || !game.vote) return false;
       game.vote.votes = Core.recordVote(game.vote.votes, event, game.vote.options);
       game.statusMessage = 'Vote counted. Change your mind before the vote closes.';
       syncHud(true);
@@ -2558,11 +3018,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const voteEngine = Object.freeze({ receive: receiveVote });
     const manualVoteAdapter = {
       submit(optionIndex) {
-        if (!game || !game.vote) return false;
+        if (!game || game.soloPaused || !game.vote) return false;
         const option = game.vote.options[Number(optionIndex)];
         if (!option) return false;
         if (multiplayer.active) {
-          if (multiplayer.role !== 'host' || !multiplayer.connected) return false;
+          const hostCanChooseTieBreak = multiplayer.role === 'host' && multiplayer.connected;
+          const teammateCanVote = multiplayer.role === 'player' && multiplayer.connected && multiplayer.mode === 'teamwork'
+            && game.mode === 'teamwork' && game.currentPlayerId !== multiplayer.playerId;
+          if (!hostCanChooseTieBreak && !teammateCanVote) return false;
           return sendMultiplayer({ type: 'vote.cast', option });
         }
         const event = { voterId: 'you', option };
@@ -2632,7 +3095,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game.vote = null;
       if (outcome && outcome.winner) {
         game.lastSabotageWinner = outcome.winner;
+        if (game.activeEffect) announceEffectEnd(game.activeEffect.id);
         activateSabotage(outcome.winner);
+        announceVoteWinner(outcome.winner);
         playCue('sabotage.pick');
       } else syncHud(true);
     }
@@ -2749,7 +3214,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         sendMultiplayerDrop(false, requestId);
         return;
       }
-      if (!game || game.phase !== 'playing') return;
+      if (!game || game.phase !== 'playing' || game.soloPaused) return;
       if (game.devMode) game.devLastDrop = null;
       completeDrop();
     }
@@ -2758,6 +3223,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game.activeEffect.dropsRemaining = Math.max(0, game.activeEffect.dropsRemaining - 1);
       if (game.activeEffect.dropsRemaining <= 0) {
         game.statusMessage = `${effectById(game.activeEffect.id).name} used its final drop.`;
+        announceEffectEnd(game.activeEffect.id);
         game.activeEffect = null;
       }
     }
@@ -2789,13 +3255,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           const automatic = Boolean(game.devLastDrop && game.devLastDrop.automatic);
           game.devLastDrop = { ...(game.devLastDrop || {}), status: 'miss' };
           elements.devFeedback.textContent = automatic
-            ? 'The automatic sample drop missed; the test bench will reset the fixture. No real run ended.'
-            : 'The manual sample drop missed; the tower stayed in the sandbox. Adjust your timing or reset the sample.';
+            ? 'The automatic practice drop missed; the tower will reset. No real run ended.'
+            : 'The practice drop missed. Adjust your timing or reset the tower.';
           syncHud(true);
           return;
         }
         playCue('block.miss');
         game.statusMessage = 'No overlap. The tower has collapsed.';
+        announceGame('No overlap. The tower has collapsed.');
         game.toastText = 'NO OVERLAP · TOWER COLLAPSED';
         startCollapse();
         syncHud(true);
@@ -2808,7 +3275,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (game.devMode && !(game.devLastDrop && game.devLastDrop.automatic)) {
         const placedWidth = Math.round(outcome.placed.right - outcome.placed.left);
         const drift = landedMover && Number(landedMover.drift) ? `, ${Math.abs(Math.round(landedMover.drift))} px drift` : '';
-        const devName = devSelectedId === 'normal' ? 'Normal (no sabotage)' : effectById(devSelectedId) ? effectById(devSelectedId).name : 'DEV sample';
+        const devName = devSelectedId === 'normal' ? 'Normal (no sabotage)' : effectById(devSelectedId) ? effectById(devSelectedId).name : 'practice sample';
         elements.devFeedback.textContent = `${devName}: manual ${outcome.perfect ? 'perfect landing' : 'safe overlap'} at sample height ${heightOf(game)}, placed width ${placedWidth} px${drift}. No real score saved.`;
       }
       if (!game.devMode) sessionBest = Math.max(sessionBest, game.score);
@@ -2817,7 +3284,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         game.perfectTime = 1.25;
         game.statusMessage = 'Perfect drop! The block snapped into line.';
       }
-      if (outcome.perfect) setToast('PERFECT! +1 CLEAN DROP', 1.25);
+      if (outcome.perfect) {
+        if (!game.devMode) announceGame(`Perfect drop. Height ${heightOf(game)}.`);
+      }
       if (!game.devMode) {
         game.flavorCounter = (game.flavorCounter || 0) + 1;
         if (game.flavorCounter % 3 === 0) showChatFlavor(ROASTS[(game.flavorCounter / 3 - 1) % ROASTS.length]);
@@ -2869,7 +3338,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         fallen: game.fallenPieces.map(piece => ({ left: piece.left, right: piece.right, level: piece.level, color: piece.color, kind: piece.kind })),
         collapsedBlocks, collapsed: true,
         collapseLevel: game.collapseLevel == null ? Math.max(0, game.stack.length - 1) : game.collapseLevel,
-        height: heightOf(game), perfects: game.perfects, best: sessionBest, newBest: heightOf(game) > game.bestAtStart
+        height: heightOf(game), perfects: game.perfects, best: sessionBest, newBest: heightOf(game) > game.bestAtStart,
+        assisted: Boolean(game.assisted)
       };
     }
     function finishGame() {
@@ -2897,6 +3367,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game) return 140;
       const base = Core.speedForHeight(heightOf(game));
       if (effectActive('turbo')) return base * 1.7;
+      if (effectActive('rollercoaster') && !reducedMotion) return base * Core.rollercoasterSpeedMultiplier(Number(game.activeEffect.elapsed) || 0, game.moving && game.moving.rollerPhase);
       if (effectActive('slowmo')) return base * Core.slowToDartMultiplier(Number(game.activeEffect.elapsed) || 0);
       if (effectActive('drunk')) return base * game.drunkMultiplier;
       return base;
@@ -2939,17 +3410,21 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (Array.isArray(game.remoteEffects)) {
         for (const effect of game.remoteEffects) {
           effect.elapsed = Math.max(0, Number(effect.elapsed) || 0) + dt;
-          effect.remaining = Math.max(0, (Number(effect.remaining) || 0) - dt);
+          if (!effect.untilDrop) effect.remaining = Math.max(0, (Number(effect.remaining) || 0) - dt);
         }
-        game.remoteEffects = game.remoteEffects.filter(effect => effect.remaining > 0);
+        game.remoteEffects = game.remoteEffects.filter(effect => effect.untilDrop || effect.remaining > 0);
       }
       if (game.mode === 'teamwork') {
         if (game.awaitingAutoDrop) game.autoDropRemaining = Math.max(0, game.autoDropRemaining - dt);
         else game.turnRemaining = Math.max(0, game.turnRemaining - dt);
+        if (!game.vote && game.currentPlayerId === multiplayer.playerId && !game.turnWarningSent && game.turnRemaining > 0 && game.turnRemaining <= 3) {
+          game.turnWarningSent = true;
+          announceGame('Three seconds left in your turn.', 2000);
+        }
       }
       if (game.activeEffect) {
-        game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
-        game.activeEffect.elapsed = Math.max(Number(game.activeEffect.elapsed) || 0, (game.activeEffect.duration || 5) - game.activeEffect.remaining);
+        if (!game.activeEffect.untilDrop) game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
+        game.activeEffect.elapsed = game.activeEffect.untilDrop ? (Number(game.activeEffect.elapsed) || 0) + dt : Math.max(Number(game.activeEffect.elapsed) || 0, (game.activeEffect.duration || 5) - game.activeEffect.remaining);
         if (game.activeEffect.remaining <= 0) {
           finishMoverEffect(game.activeEffect);
           game.activeEffect = null;
@@ -3011,6 +3486,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
           if (game.activeEffect.remaining <= 0) {
             finishMoverEffect(game.activeEffect);
+            announceEffectEnd(game.activeEffect.id);
             game.activeEffect = null;
             game.statusMessage = 'Sabotage over. For now.';
           }
@@ -3036,9 +3512,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           if (decoyNext) { game.moving.decoy.left = decoyNext.left; game.moving.decoy.direction = decoyNext.direction; }
         } else if (game.moving.decoy) delete game.moving.decoy;
         game.moving.vx = speed;
-        if (!game.devMode && !game.multiplayer) {
-          game.blockClock = (Number(game.blockClock) || 0) + dt;
-          if (game.blockClock >= SOLO_AUTO_DROP_SECONDS) completeDrop();
+        if (!game.devMode && !game.multiplayer && game.autoDropSeconds > 0) {
+          const pause = Math.min(dt, Math.max(0, Number(game.autoDropPauseRemaining) || 0));
+          game.autoDropPauseRemaining = Math.max(0, (Number(game.autoDropPauseRemaining) || 0) - pause);
+          game.blockClock = (Number(game.blockClock) || 0) + dt - pause;
+          if (game.blockClock >= game.autoDropSeconds) completeDrop();
         }
       }
       updateFallingActors(dt);
@@ -3099,12 +3577,26 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    // A visual centre reference only: perfect-window calculations remain in the shared core.
+    function drawCenterTick(ctx, block, baseline, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
+      if (!block) return;
+      const x = origin + (block.left + block.right) / 2 * scaleX;
+      const y = baseline - (block.level + 1) * BLOCK_H * scaleY + cameraOffset;
+      const height = Math.max(2, 7 * scaleY);
+      ctx.save();
+      ctx.globalAlpha = .8;
+      ctx.fillStyle = '#101010';
+      ctx.fillRect(x - Math.max(1, 1.5 * scaleX), y + scaleY, Math.max(2, 3 * scaleX), height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - Math.max(.5, .5 * scaleX), y + scaleY, Math.max(1, scaleX), height);
+      ctx.restore();
+    }
     function drawAutoDropRing(ctx) {
-      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving) return;
+      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving || game.autoDropSeconds <= 0) return;
       const elapsed = Number(game.blockClock) || 0;
       if (elapsed < SOLO_AUTO_DROP_RING_AFTER) return;
-      const left = Math.max(0, SOLO_AUTO_DROP_SECONDS - elapsed);
-      const fraction = Math.min(1, left / SOLO_AUTO_DROP_SECONDS);
+      const left = Math.max(0, game.autoDropSeconds - elapsed);
+      const fraction = Math.min(1, left / game.autoDropSeconds);
       const x = WIDTH - 24; const y = 82; const radius = 11;
       ctx.save();
       ctx.lineWidth = 3.5; ctx.lineCap = 'round';
@@ -3350,10 +3842,23 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    function drawKineticCue(ctx, id, x, y, width, height) {
+      if (!['turbo', 'drunk', 'slowmo'].includes(id)) return;
+      ctx.save(); ctx.strokeStyle = canvasTheme().inkDeep || canvasTheme().ink;
+      ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.beginPath();
+      if (id === 'turbo') {
+        for (let i = 0; i < 3; i += 1) { const yy = y + height * (.25 + i * .25); ctx.moveTo(x + width * .2, yy); ctx.lineTo(x + width * .8, yy); }
+      } else if (id === 'drunk') {
+        ctx.moveTo(x + width * .2, y + height * .65); ctx.lineTo(x + width * .35, y + height * .35); ctx.lineTo(x + width * .5, y + height * .65); ctx.lineTo(x + width * .65, y + height * .35); ctx.lineTo(x + width * .8, y + height * .65);
+      } else {
+        ctx.moveTo(x + width * .4, y + height * .22); ctx.lineTo(x + width * .6, y + height * .78); ctx.moveTo(x + width * .6, y + height * .22); ctx.lineTo(x + width * .4, y + height * .78);
+      }
+      ctx.stroke(); ctx.restore();
+    }
     function drawShellCrack(ctx, x, y, width) {
       ctx.save();
       ctx.strokeStyle = canvasTheme().crack;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(x + width * .53, y + 4);
@@ -3364,9 +3869,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ctx.restore();
     }
     function drawCompetitiveHostBoard(ctx) {
+      ctx.save();
+      ctx.scale(2, 1);
       drawBackground(ctx, game.elapsed, 0);
+      ctx.restore();
       const players = game.remotePlayers || [];
-      const columnWidth = WIDTH / Math.max(1, players.length);
+      const columnWidth = (WIDTH * 2) / Math.max(1, players.length);
       const maxHeight = Math.max(0, ...players.map(player => Number(player.height) || 0));
       const baseline = BASELINE + 38;
       const horizontalScale = columnWidth / WIDTH;
@@ -3405,6 +3913,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           const y = baseline - ((block.level || 0) + 1) * BLOCK_H * verticalScale;
           drawRoundedBlock(ctx, x, y, Math.max(1, width * horizontalScale), Math.max(1.5, BLOCK_H * verticalScale - .5), block.color || player.color, 1, Boolean(block.perfect));
         }
+        if (!player.ended && !player.collapsed && player.moving) drawCenterTick(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'superglue') drawGlueCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'crumble') drawCrumbleCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'calipers' && player.moving) drawCaliperGuides(ctx, topBlock, player.moving, baseline, 0, columnLeft, horizontalScale, verticalScale);
@@ -3431,6 +3940,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             } else {
               drawWorldBlock(ctx, drawnLeft, y, drawnWidth, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.color || player.color, Boolean(effect && effect.id === 'portal'), columnLeft, horizontalScale, alpha);
             }
+            if (effect) drawKineticCue(ctx, effect.id, screenLeft, y, screenWidth, Math.max(1.5, BLOCK_H * verticalScale - .5));
             if (effect && effect.id === 'double') drawShellCrack(ctx, screenLeft, y, screenWidth);
           }
           if (effect && effect.id === 'spotlight') {
@@ -3455,7 +3965,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game) return;
       setCanvasResolution(elements.gameCanvas, gameContext);
       const ctx = gameContext;
-      if (game.multiplayer && game.mode === 'competitive' && multiplayer.role === 'host') {
+      if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') {
         drawCompetitiveHostBoard(ctx);
         if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
         else elements.toast.classList.remove('is-visible');
@@ -3531,6 +4041,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         }
       }
       const below = game.stack[game.stack.length - 1] || Core.makeBase();
+      if (moving && game.phase === 'playing' && !collapsingLevels.has(below.level)) drawCenterTick(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'superglue') drawGlueCue(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'crumble') drawCrumbleCue(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'calipers' && moving) drawCaliperGuides(ctx, below, moving, BASELINE, cameraOffset);
@@ -3559,6 +4070,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           } else {
             drawWorldBlock(ctx, drawnLeft, movingY, drawnWidth, BLOCK_H - 1, moving.color, effectId === 'portal', 0, 1, alpha);
           }
+          drawKineticCue(ctx, effectId, drawnLeft, movingY, drawnWidth, BLOCK_H - 1);
           if (effectId === 'double') drawShellCrack(ctx, drawnLeft, movingY, drawnWidth);
         }
       }
@@ -3639,13 +4151,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function showMultiplayerResults(result) {
       if (!result) return;
+      if (game && game.multiplayer) game.phase = 'results';
       multiplayer.resultPayload = result;
       resultData = null;
       elements.soloResultLayout.hidden = true;
       elements.mpResults.hidden = false;
+      const previousActions = elements.mpResults.querySelector('.multiplayer-result-actions');
+      const focusedActionIndex = previousActions ? Array.from(previousActions.querySelectorAll('button')).indexOf(document.activeElement) : -1;
       elements.mpResults.replaceChildren();
-      elements.again.textContent = multiplayer.role === 'host' ? 'Rematch' : 'Host rematches';
-      elements.again.disabled = multiplayer.role !== 'host' || !multiplayer.connected;
+      const canRematch = multiplayer.connected && (multiplayer.role === 'host' || (multiplayer.role === 'player' && multiplayer.room && multiplayer.room.canRematchWithoutHost));
+      elements.again.textContent = canRematch ? 'Rematch' : 'Waiting for rematch';
+      elements.again.disabled = !canRematch;
       elements.resultsMenu.textContent = 'Return to room';
       const heading = document.getElementById('results-heading');
       const eyebrow = elements.results.querySelector('.eyebrow');
@@ -3655,7 +4171,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (heading) heading.textContent = result.score > 0 ? 'The crew kept it up.' : 'The tower met the floor.';
         appendResultHeading(`Team score · ${result.score}`, `Shared height ${result.height} · ${result.perfects} perfect ${result.perfects === 1 ? 'drop' : 'drops'} · Session best ${multiplayer.sessionBest}.`);
         const canvas = document.createElement('canvas'); canvas.className = 'teamwork-result-canvas'; canvas.setAttribute('role', 'img');
-        canvas.setAttribute('aria-label', `Shared teamwork tower at height ${result.height}. Player colors and perfect drops are shown.`);
+        canvas.setAttribute('aria-label', `Shared teamwork tower at height ${result.height}. Player names label the blocks; the list below provides each placement in order.`);
         elements.mpResults.append(canvas);
         drawMultiplayerStack(canvas, result.blocks || [], result.fallen || [], (result.blocks || []).length - 1, result.collapseLevel, true);
         const legend = document.createElement('ul'); legend.className = 'room-player-list teamwork-result-legend';
@@ -3666,11 +4182,22 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           li.append(dot, text); legend.append(li);
         }
         elements.mpResults.append(legend);
+        const placements = document.createElement('details'); placements.className = 'teamwork-placements';
+        const summary = document.createElement('summary'); summary.textContent = 'Who placed each block';
+        const list = document.createElement('ol');
+        for (const block of result.blocks || []) {
+          if (!block || block.placer === 'Base' || !block.placer) continue;
+          const item = document.createElement('li');
+          item.textContent = `Block ${Number(block.level) || list.children.length + 1}: ${block.placer}${block.perfect ? ' · perfect' : ''}`;
+          list.append(item);
+        }
+        if (!list.children.length) { const item = document.createElement('li'); item.textContent = 'No blocks placed.'; list.append(item); }
+        placements.append(summary, list); elements.mpResults.append(placements);
       } else {
         const players = result.players || [];
         const winners = new Set(result.winnerIds || []);
         const maxHeight = Math.max(0, ...players.map(player => Number(player.height) || 0));
-        if (heading) heading.textContent = winners.size > 1 ? 'A shared lead. Magnificent.' : 'One tower survived the chaos.';
+        if (heading) heading.textContent = winners.size > 1 ? 'A shared lead. Magnificent.' : 'The tallest stack takes the lead.';
         appendResultHeading(winners.size > 1 ? 'It’s a tie at the top.' : 'The stacks, ranked.', 'Every stack uses the same scale and baseline. Fallen pieces sit below the shared baseline.');
         const grid = document.createElement('div'); grid.className = 'multiplayer-result-grid';
         players.forEach((player, index) => {
@@ -3694,15 +4221,18 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       actions.className = 'result-actions multiplayer-result-actions';
       const rematch = document.createElement('button');
       rematch.type = 'button'; rematch.className = 'button button-primary';
-      rematch.textContent = multiplayer.role === 'host' ? 'Rematch' : 'Host rematches';
-      rematch.disabled = multiplayer.role !== 'host' || !multiplayer.connected;
+      rematch.textContent = canRematch ? 'Rematch' : 'Waiting for rematch';
+      rematch.disabled = !canRematch;
       rematch.addEventListener('click', handleAgain);
       const roomButton = document.createElement('button');
       roomButton.type = 'button'; roomButton.className = 'button'; roomButton.textContent = 'Return to room';
       roomButton.addEventListener('click', returnToRoom);
       actions.append(rematch, roomButton);
       elements.mpResults.append(actions);
-      if (multiplayer.role === 'host' && multiplayer.connected) rematch.focus({ preventScroll: true });
+      if (focusedActionIndex >= 0) {
+        const target = [rematch, roomButton][focusedActionIndex];
+        (target && !target.disabled ? target : roomButton).focus({ preventScroll: true });
+      }
     }
     function populateResults(data) {
       const score = data.height;
@@ -3710,6 +4240,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.resultBest.textContent = String(data.best);
       elements.resultPerfects.textContent = `${data.perfects} perfect ${data.perfects === 1 ? 'drop' : 'drops'}`;
       elements.resultFallen.textContent = `${data.fallen.length} fallen ${data.fallen.length === 1 ? 'piece' : 'pieces'}`;
+      document.getElementById('result-assist-label').hidden = !data.assisted;
       elements.resultTitle.textContent = data.newBest ? 'New session best!' : score === 0 ? 'Chat got you.' : 'Nice little tower.';
       elements.resultSubtitle.textContent = score === 0 ? 'The first block missed. The floor is feeling rather smug.' : `You stacked ${score} ${score === 1 ? 'block' : 'blocks'} before chat's interference became structural.`;
       const totalHeight = Math.max(BLOCK_H, data.blocks.length * BLOCK_H);
@@ -3787,33 +4318,97 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (Object.prototype.hasOwnProperty.call(counts, choice)) counts[choice] += 3;
         total += 3;
       }
-      for (const button of elements.voteButtons) {
+      const soloChoice = voting && !remoteVote ? game.vote.votes.get('you') : null;
+      const hostChoice = voting && remoteVote && game.mode === 'competitive' && multiplayer.role === 'host' ? game.vote.hostChoice : null;
+      elements.stageVoteStrip.hidden = !voting;
+      elements.stageVoteStrip.setAttribute('aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
+      for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
         const index = Number(button.dataset.optionIndex);
         const id = voting ? game.vote.options[index] : null;
         const sabotage = effectById(id);
-        const icon = button.querySelector('.vote-icon-use');
+        const teamworkVote = voting && game.mode === 'teamwork' && remoteVote;
+        const hostCanVote = remoteVote && multiplayer.role === 'host';
+        const hostCanChooseTieBreak = teamworkVote && multiplayer.role === 'host';
+        const teammateCanVote = teamworkVote && multiplayer.role === 'player' && multiplayer.connected
+          && game.currentPlayerId !== multiplayer.playerId;
+        const canChoose = !remoteVote || hostCanVote || teammateCanVote;
+        const isHostTieBreak = hostCanChooseTieBreak && game.vote.hostTiebreak === id;
+        const isSoloPick = Boolean(id && soloChoice === id);
+        const isCompetitivePick = Boolean(id && hostChoice === id);
+        const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
         if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
-        const name = button.querySelector('.vote-name');
-        const count = button.querySelector('.vote-count');
+        const name = button.querySelector('.vote-name, .stage-vote-name');
+        const count = button.querySelector('.vote-count, .stage-vote-count');
         const fill = button.querySelector('.vote-fill');
-        name.textContent = sabotage ? sabotage.name : 'Waiting for vote';
+        const description = button.querySelector('.vote-description');
+        const pickTag = button.querySelector('.vote-pick');
+        if (description) { description.textContent = sabotage ? VOTE_EFFECT_HINTS[sabotage.id] || '' : ''; description.hidden = !sabotage; }
+        if (pickTag) { pickTag.hidden = !(isSoloPick || isCompetitivePick); pickTag.textContent = isCompetitivePick ? 'Your pick' : 'Your pick ×4'; }
+        name.textContent = sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote';
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
-        fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
-        button.disabled = !voting || (remoteVote && multiplayer.role !== 'host');
-        button.setAttribute('aria-label', sabotage ? `${remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for'} ${sabotage.name}, ${votes} votes` : `Option ${index + 1}, voting closed`);
+        if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
+        button.disabled = !voting || !canChoose || Boolean(game.soloPaused);
+        button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
+        button.classList.toggle('is-your-pick', isSoloPick || isCompetitivePick);
+        if (voting && (!remoteVote || (game.mode === 'competitive' && multiplayer.role === 'host'))) button.setAttribute('aria-pressed', String(isSoloPick || isCompetitivePick));
+        else button.removeAttribute('aria-pressed');
+        const choiceLabel = teamworkVote
+          ? hostCanChooseTieBreak ? 'Set the tie-break to' : multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId ? 'Unavailable while you are on turn:' : 'Vote for'
+          : remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for';
+        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${VOTE_EFFECT_HINTS[sabotage.id] || ''} ${votes} votes${isSoloPick ? ', your pick worth four votes' : isCompetitivePick ? ', your pick' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
+        if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
       }
       if (voting) {
         const seconds = Math.max(0, Math.ceil(game.vote.remaining));
         elements.voteCountdown.textContent = `Closes in ${seconds}s`;
-        elements.voteSubtitle.textContent = remoteVote && multiplayer.role !== 'host' ? 'The block keeps moving. The host is choosing the room vote.' : 'The block keeps moving. Pick one to cast a vote.';
-        elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
+        if (remoteVote && game.mode === 'teamwork') {
+          if (multiplayer.role === 'host') {
+            elements.voteHelp.textContent = 'Set a tie-break choice. It applies only if player votes tie; change it until the vote closes.';
+            const tiebreak = game.vote.hostTiebreak ? effectById(game.vote.hostTiebreak) : null;
+            elements.voteSubtitle.textContent = tiebreak ? `Host tie-break set to ${tiebreak.name}. It applies only if player votes tie.` : 'The tower pauses between turns. Players vote; choose a tie-break, even if no one votes.';
+          } else if (multiplayer.role === 'spectator') {
+            elements.voteHelp.textContent = 'Spectators can watch the vote but cannot vote.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns while players vote.';
+          } else if (game.currentPlayerId === multiplayer.playerId) {
+            elements.voteHelp.textContent = 'You are taking a turn and cannot vote in this pause. Watch your teammates decide.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns. You are currently taking a turn, so watch the vote.';
+          } else if (!multiplayer.connected) {
+            elements.voteHelp.textContent = 'Reconnect to vote during the between-turn pause.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns. Reconnecting…';
+          } else {
+            elements.voteHelp.textContent = 'Choose one option. You can change your vote until the vote closes.';
+            elements.voteSubtitle.textContent = multiplayer.room && !multiplayer.room.hostConnected ? 'The tower pauses between turns. Host disconnected; tied votes are random.' : 'The tower pauses between turns. Pick one option for the room.';
+          }
+          const tiebreak = game.vote.hostTiebreak ? ` · Host tie-break: ${effectById(game.vote.hostTiebreak)?.name || 'selected'}` : '';
+          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
+        } else {
+          elements.voteHelp.textContent = remoteVote
+            ? multiplayer.role === 'host' ? 'You have one vote. Click a choice or press 1, 2, or 3; change it until the vote closes.' : 'The host has one changeable vote. The block keeps moving.'
+            : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
+          elements.voteSubtitle.textContent = hostChoice
+            ? `Vote counted: ${effectById(hostChoice)?.name || 'your pick'}. You can change it.`
+            : !remoteVote && soloChoice
+            ? `Vote counted: ${effectById(soloChoice)?.name || 'your pick'} ×4. You can change it.`
+            : multiplayer.active && multiplayer.role !== 'host'
+              ? 'The block keeps moving. The host is choosing the room vote.'
+              : 'The block keeps moving. Pick one to cast a vote.';
+          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
+        }
         elements.voteProgress.style.width = `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`;
       } else if (game.phase === 'playing') {
         const seconds = Math.max(0, Math.ceil(game.nextVoteAt - game.elapsed));
-        elements.voteCountdown.textContent = `Next vote in ${seconds}s`;
-        elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage : 'Pick a sabotage when voting opens.';
-        elements.voteState.textContent = `Vote opens in ${seconds} seconds`;
+        const hostAwayCompetitive = remoteVote && game.mode === 'competitive' && multiplayer.room && !multiplayer.room.hostConnected;
+        elements.voteCountdown.textContent = hostAwayCompetitive ? 'Voting paused' : `Next vote in ${seconds}s`;
+        const teamworkRoomVote = remoteVote && game.mode === 'teamwork';
+        elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage
+          : teamworkRoomVote ? (multiplayer.room && !multiplayer.room.hostConnected ? 'Host disconnected. Players vote; tied votes are random.' : 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.')
+          : hostAwayCompetitive ? 'Host disconnected. Competitive votes are skipped until the host returns.' : 'Pick a sabotage when voting opens.';
+        elements.voteHelp.textContent = teamworkRoomVote
+          ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : multiplayer.role === 'spectator' ? 'Spectators watch the vote; only players can vote.' : 'Vote once during a between-turn pause; change your choice until it closes.'
+          : remoteVote ? (multiplayer.role === 'host' ? 'You have one vote; change it until voting closes.' : 'The host has one changeable vote.')
+          : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
+        elements.voteState.textContent = hostAwayCompetitive ? 'Voting paused while host is away' : `Vote opens in ${seconds} seconds`;
         elements.voteProgress.style.width = '0%';
       } else {
         elements.voteCountdown.textContent = 'Closed';
@@ -3824,12 +4419,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function syncHud(force = false) {
       if (!game) return;
+      elements.pause.hidden = Boolean(game.multiplayer || game.devMode || game.phase !== 'playing');
+      elements.pause.textContent = game.soloPaused ? 'Resume' : 'Pause';
+      elements.gameStage.classList.toggle('competitive-host', Boolean(game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player'));
       if (game.devMode) {
+        elements.stageVoteStrip.hidden = true;
         const normal = devSelectedId === 'normal';
         const sabotage = effectById(devSelectedId);
         const previewName = normal ? 'Normal' : sabotage ? sabotage.name : 'a sabotage';
         elements.devPanel.hidden = false;
-        elements.devQuick.hidden = true;
         elements.mpCard.hidden = true;
         elements.voteCard.hidden = true;
         elements.statsCard.hidden = true;
@@ -3846,17 +4444,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.gameCanvas.setAttribute('role', 'button');
         elements.gameCanvas.tabIndex = 0;
         elements.gameCanvas.setAttribute('aria-disabled', 'false');
-        elements.gameCanvas.setAttribute('aria-label', `DEV sandbox: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
-        elements.gameModeKicker.textContent = 'Developer test bench · offline';
+        elements.gameCanvas.setAttribute('aria-label', `Practice: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
+        elements.gameModeKicker.textContent = 'Practice · offline';
         elements.gameHeading.textContent = 'Test every sabotage.';
-        elements.roundStatus.textContent = 'DEV SANDBOX';
-        elements.modeLabel.textContent = 'DEV sandbox · offline';
-        elements.menu.textContent = 'Exit DEV';
-        elements.menu.setAttribute('aria-label', 'Exit developer sandbox');
+        elements.roundStatus.textContent = 'PRACTICE';
+        elements.modeLabel.textContent = 'Practice · offline';
+        elements.menu.textContent = 'Exit practice';
+        elements.menu.setAttribute('aria-label', 'Exit practice');
         elements.height.textContent = String(heightOf(game));
-        elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'DEV PREVIEW';
+        elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'PRACTICE PREVIEW';
         elements.devPanelTitle.textContent = normal ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'Choose a sabotage.';
-        elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'follows your system preference'}. Exit with Menu or Esc.`;
+        elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'is full'}. Exit with Menu or Esc.`;
         elements.devEffectDescription.textContent = normal ? 'Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.' : sabotage ? sabotage.effect : 'Pick any effect to see its mechanic and preview.';
         elements.devDrop.textContent = devSelectedId === 'superglue' ? 'Test +10 px snap' : 'Simulate clean drop';
         elements.devDrop.setAttribute('aria-label', devSelectedId === 'superglue' ? 'Automatically test a landing ten pixels off-centre' : `Automatically simulate a landing with ${previewName}`);
@@ -3870,19 +4468,23 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.controlRow.hidden = false;
       elements.drop.hidden = false;
       elements.canvasHint.hidden = false;
-      elements.controlHelp.innerHTML = 'One press, one drop.<br>Keep stacking during votes.';
+      elements.controlHelp.innerHTML = game.multiplayer && multiplayer.role === 'spectator' ? 'Watching the room.<br>Spectators do not play or vote.'
+        : game.multiplayer && multiplayer.role === 'host'
+        ? (game.mode === 'teamwork' ? 'Take turns building.<br>Only tied votes come to you.' : 'Watch the stacks.<br>Choose one sabotage per vote.')
+        : game.multiplayer && game.mode === 'teamwork' ? 'Take turns building.<br>Vote on your phone between turns.'
+        : 'One press, one drop.<br>Keep stacking during votes.';
       elements.canvasHint.textContent = 'Tap anywhere to drop';
       elements.drop.setAttribute('aria-label', 'Drop the moving block');
       elements.mpCard.hidden = !game.multiplayer;
-      elements.devQuick.hidden = Boolean(multiplayer.active || game.multiplayer || game.phase !== 'playing');
       if (!game.multiplayer) {
         elements.gameCanvas.setAttribute('role', 'button');
         elements.gameCanvas.tabIndex = 0;
-        elements.gameCanvas.setAttribute('aria-disabled', 'false');
-        elements.gameCanvas.setAttribute('aria-label', 'Stacking game. Press Space to drop the moving block.');
+        elements.gameCanvas.setAttribute('aria-disabled', String(Boolean(game.soloPaused)));
+        elements.gameCanvas.setAttribute('aria-label', game.soloPaused ? 'Game paused. Use Resume to continue.' : 'Stacking game. Press Space to drop the moving block.');
+        if (game.soloPaused) elements.canvasHint.textContent = 'Paused · use Resume to continue';
         elements.dropKey.hidden = false;
         elements.gameHeading.textContent = 'Make it stack.';
-        elements.gameModeKicker.textContent = 'Single player · build 01';
+        elements.gameModeKicker.textContent = game.assisted ? 'Single player · Assisted' : 'Single player';
         elements.menu.textContent = 'Menu';
         elements.menu.setAttribute('aria-label', 'Return to menu');
         elements.modeLabel.textContent = 'Offline solo';
@@ -3893,35 +4495,42 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.statPerfects.textContent = String(game.perfects);
       elements.statSpeed.textContent = String(Math.round(gameSpeed()));
       elements.bestInline.textContent = String(game.multiplayer ? multiplayer.sessionBest : sessionBest);
-      elements.roundStatus.textContent = game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
+      elements.roundStatus.textContent = game.soloPaused ? 'Paused' : game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
       if (game.multiplayer) {
         elements.mpCard.hidden = false;
-        const turnName = game.currentPlayerName || 'the next player';
+        const turnName = game.currentPlayerName || 'Next player';
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
-        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
+        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack';
         if (game.paused) {
-          elements.mpTurnStatus.textContent = 'Everyone is disconnected. The round is paused.';
+          elements.mpTurnStatus.textContent = game.pauseReason === 'all-players-idle' ? 'All players are idle. Waiting for someone to return.' : 'Everyone is disconnected. The round is paused.';
           elements.mpTurnTimer.textContent = 'Paused';
         } else if (!multiplayer.connected) {
           elements.mpTurnStatus.textContent = 'Connection lost. Rejoining automatically…';
           elements.mpTurnTimer.textContent = '—';
         } else if (game.mode === 'teamwork') {
-          elements.mpTurnStatus.textContent = game.awaitingAutoDrop ? 'Time! Automatic drop requested…' : ownTurn ? 'Move the block and drop before the timer runs out.' : 'Shared tower · fixed player order';
-          elements.mpTurnTimer.textContent = game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
+          elements.mpTurnStatus.textContent = game.vote ? 'Vote between turns. Teammates decide; the host breaks ties.'
+            : ownTurn ? 'Drop before time runs out or your turn will be skipped.' : 'Shared tower · idle players are skipped until ready.';
+          elements.mpTurnTimerLabel.textContent = game.vote ? 'Vote closes' : 'Turn timer';
+          elements.mpTurnTimer.textContent = game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
+            : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
         } else {
+          elements.mpTurnTimerLabel.textContent = 'Round timer';
           const self = (game.remotePlayers || []).find(player => player.playerId === multiplayer.playerId);
-          elements.mpTurnStatus.textContent = multiplayer.role === 'host' ? 'Everyone builds independently. The host view compares all stacks.'
-            : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. The host sees everyone’s stacks.';
+          elements.mpTurnStatus.textContent = multiplayer.role !== 'player' ? 'Everyone builds independently. Room votes hit every active stack.'
+            : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.';
           elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(game.remainingSeconds || 0))}s`;
         }
-        const hostView = multiplayer.role === 'host';
+        const selfTeamPlayer = game.mode === 'teamwork' ? (game.remotePlayers || []).find(player => player.id === multiplayer.playerId) : null;
+        elements.teamReady.hidden = !(selfTeamPlayer && selfTeamPlayer.idle && multiplayer.connected && game.phase === 'playing');
+        elements.teamSkip.hidden = !(game.mode === 'teamwork' && multiplayer.role === 'host' && multiplayer.connected && !game.paused && !game.vote && game.currentPlayerId && game.phase === 'playing');
+        const hostView = multiplayer.role !== 'player';
         const activePlayer = canDropMultiplayer();
         elements.dropKey.hidden = hostView;
         elements.gameCanvas.setAttribute('role', hostView ? 'img' : 'button');
         elements.gameCanvas.tabIndex = hostView ? -1 : 0;
         elements.gameCanvas.setAttribute('aria-disabled', String(hostView || !activePlayer));
         elements.gameCanvas.setAttribute('aria-label', hostView
-          ? (game.mode === 'teamwork' ? 'Live Teamwork shared tower. Host view only; players take turns on their phones.' : 'Live Competitive scoreboard showing each player’s independent stack.')
+          ? (game.mode === 'teamwork' ? 'Live Teamwork shared tower. Players take turns on their phones.' : 'Live Competitive scoreboard showing each player’s independent stack.')
           : game.mode === 'teamwork' && !activePlayer ? `Shared tower. Waiting for ${turnName} to take their turn.` : 'Stacking game. Press Space or tap to drop the moving block.');
         elements.canvasHint.hidden = hostView;
         elements.canvasHint.textContent = hostView ? 'Live room view · players drop on their phones'
@@ -3938,9 +4547,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.drop.disabled = true;
           elements.dropLabel.textContent = 'ROUND PAUSED';
           elements.motion.textContent = 'WAITING FOR PLAYERS';
-        } else if (multiplayer.role === 'host') {
+        } else if (multiplayer.role !== 'player') {
           elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'HOST VIEW';
+          elements.dropLabel.textContent = multiplayer.role === 'host' ? 'HOST VIEW' : 'SPECTATOR';
           elements.motion.textContent = game.vote ? 'ROOM VOTE LIVE' : 'WATCH THE TOWER';
         } else if (multiplayer.dropPending) {
           elements.drop.disabled = true;
@@ -3951,21 +4560,21 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.dropLabel.textContent = 'DROP';
           const speed = Math.round(gameSpeed());
           const id = game.activeEffect && game.activeEffect.id;
-          const name = id ? effectById(id).name.toUpperCase() : `${speed} PX/S`;
-          const motion = `${name} · ${speed} PX/S`;
+          const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
           elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
         } else {
           elements.drop.disabled = true;
           elements.dropLabel.textContent = game.mode === 'teamwork' ? 'WAIT YOUR TURN' : 'STACK FINISHED';
           elements.motion.textContent = game.mode === 'teamwork' ? `NEXT · ${turnName.toUpperCase()}` : 'SPECTATING';
         }
-        if (game.activeEffect) {
-          const sabotage = effectById(game.activeEffect.id);
+        const displayedEffect = game.activeEffect || game.pendingEffect;
+        if (displayedEffect) {
+          const sabotage = effectById(displayedEffect.id);
           elements.effectIconUse.setAttribute('href', `#sabotage-symbol-${sabotage.id}`);
           elements.effectName.textContent = sabotage.name;
           elements.effectCaption.textContent = sabotage.caption;
-          elements.effectTime.textContent = effectCountdownText(game.activeEffect);
-          elements.effectMeter.style.width = `${Math.max(0, Math.min(100, game.activeEffect.remaining / game.activeEffect.duration * 100))}%`;
+          elements.effectTime.textContent = (displayedEffect === game.pendingEffect ? 'Pending · ' : '') + effectCountdownText(displayedEffect);
+          elements.effectMeter.style.width = displayedEffect.untilDrop ? (Number.isInteger(displayedEffect.dropsRemaining) ? `${displayedEffect.dropsRemaining / 3 * 100}%` : '100%') : `${Math.max(0, Math.min(100, displayedEffect.remaining / displayedEffect.duration * 100))}%`;
         } else {
           elements.effectIconUse.setAttribute('href', '#sabotage-symbol-empty');
           elements.effectName.textContent = game.lastVote ? 'Sabotage over' : 'No sabotage active';
@@ -3973,10 +4582,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.effectTime.textContent = 'Ready';
           elements.effectMeter.style.width = '0%';
         }
+        if (game.activeEffect && game.phase === 'playing' && !game.paused && multiplayer.connected) elements.motion.textContent = stageEffectStatus(game.activeEffect);
         syncVotePanel();
         return;
       }
-      if (game.phase !== 'playing') {
+      if (game.soloPaused) {
+        elements.drop.disabled = true;
+        elements.dropLabel.textContent = 'PAUSED';
+        elements.motion.textContent = 'PAUSED';
+      } else if (game.phase !== 'playing') {
         elements.drop.disabled = true;
         elements.dropLabel.textContent = game.phase === 'collapse' ? 'TOWER DOWN' : 'RUN OVER';
         elements.motion.textContent = 'STACK COLLAPSED';
@@ -3985,8 +4599,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.dropLabel.textContent = 'DROP';
         const speed = Math.round(gameSpeed());
         const id = game.activeEffect && game.activeEffect.id;
-        const name = id ? effectById(id).name.toUpperCase() : `${speed} PX/S`;
-        const motion = `${name} · ${speed} PX/S`;
+        const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
         elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
       }
       if (game.activeEffect) {
@@ -4003,16 +4616,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.effectTime.textContent = 'Ready';
         elements.effectMeter.style.width = '0%';
       }
+      if (game.activeEffect && game.phase === 'playing' && !game.soloPaused) elements.motion.textContent = stageEffectStatus(game.activeEffect);
       syncVotePanel();
     }
 
     function frame(timestamp) {
       const dt = lastFrame ? Math.min(50, Math.max(0, timestamp - lastFrame)) / 1000 : 0;
-      frameDt = dt;
+      frameDt = game && game.soloPaused ? 0 : dt;
       lastFrame = timestamp;
-      if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
+      if (game && game.soloPaused) { /* All solo simulation clocks stay frozen. */ }
+      else if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
       else updateGame(dt);
       updateAmbientBed();
+      updatePositionTone();
       if (game && (document.body.dataset.screen === 'game' || game.phase === 'collapse')) drawGame();
       if (resultData && document.body.dataset.screen === 'results') {
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
@@ -4041,7 +4657,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const name = document.createElement('strong');
         name.textContent = sabotage.name;
         const description = document.createElement('span');
-        description.textContent = sabotage.effect;
+        description.textContent = sabotage.effect + ' Teamwork: ' + (sabotage.id === 'crumble' ? 'lasts for 3 affected landings without a time limit. These are the next 3 team landings.' : ['portal', 'superglue', 'calipers'].includes(sabotage.id) ? 'lasts for 3 affected landings without a time limit. These are the affected player’s next 3 landings.' : 'lasts until the affected player lands a block.');
         copy.append(name, description);
         li.append(icon, copy);
         elements.sabotageList.append(li);
@@ -4140,7 +4756,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         stack: makeDevStack(), fallenPieces: [], fallingActors: [], moving: null, perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1,
         collapseClock: 0, collapseLevel: null, collapseStartLevel: null, collapseShake: 0, collapsingLevels: [],
-        score: 7, lastVote: null, lastSabotageWinner: sabotage ? sabotage.id : null, statusMessage: 'Offline developer sandbox.', bestAtStart: sessionBest,
+        score: 7, lastVote: null, lastSabotageWinner: sabotage ? sabotage.id : null, statusMessage: 'Offline practice.', bestAtStart: sessionBest,
         nextSpawnFromLeft: true, flavorCounter: 0, chatFlavorText: '', chatFlavorTime: 0, devLastDrop: null
       };
       spawnMovingBlock();
@@ -4153,7 +4769,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       elements.devFeedback.textContent = normal
         ? 'Normal mode: no sabotage is active. Use manual Drop to establish a baseline, or simulate a clean landing.'
-        : `Previewing ${sabotage.name}. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.`;
+        : `Previewing ${sabotage.name}. The sample tower is ready; use Drop or Simulate clean drop to test its landing effect.`;
       syncHud(true);
       return true;
     }
@@ -4167,8 +4783,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       return changed;
     }
     function startDevMode(id = devSelectedId) {
+      cancelPendingConnection();
       if (multiplayer.active) {
-        elements.multiplayerStatus.textContent = 'Leave the multiplayer room before opening the offline DEV sandbox. The test bench never sends game messages.';
+        elements.multiplayerStatus.textContent = 'Leave the multiplayer room before opening offline practice.';
         return false;
       }
       if (game && game.devMode) return resetDevSandbox(id);
@@ -4182,7 +4799,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game = { devMode: true };
       resetDevSandbox(id);
       elements.gameHeading.textContent = 'Test every sabotage.';
-      elements.gameModeKicker.textContent = 'Developer test bench · offline';
+      elements.gameModeKicker.textContent = 'Practice · offline';
       setScreen('game');
       lastFrame = 0;
       syncHud(true);
@@ -4208,13 +4825,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.gameCanvas.tabIndex = 0;
       elements.gameCanvas.setAttribute('aria-disabled', 'false');
       elements.gameHeading.textContent = saved ? saved.heading : 'Make it stack.';
-      elements.gameModeKicker.textContent = saved ? saved.kicker : 'Single player · build 01';
+      elements.gameModeKicker.textContent = saved ? saved.kicker : 'Single player';
       setScreen(saved ? saved.screen : 'title');
       if (game) {
         syncHud(true);
         if (game.phase === 'playing' && soundEnabled) startAmbientBed();
       } else {
-        elements.devQuick.hidden = true;
         elements.mpCard.hidden = true;
         elements.modeLabel.textContent = 'Offline solo';
         updateBestLabels();
@@ -4228,7 +4844,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game || !game.devMode || !game.moving) return false;
       const id = devSelectedId;
       const sabotage = effectById(id);
-      const effectName = id === 'normal' ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'DEV sample';
+      const effectName = id === 'normal' ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'practice sample';
       const below = game.stack[game.stack.length - 1];
       const landingEffectId = effectActive('rollercoaster') ? 'rollercoaster' : '';
       const verticalOffset = landingEffectId === 'rollercoaster' && !reducedMotion
@@ -4288,11 +4904,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       resetMultiplayerSession(true);
       mpSessionClear();
       multiplayer.active = true;
-      multiplayer.role = 'player';
+      const spectate = document.getElementById('join-spectator').checked;
+      multiplayer.role = spectate ? 'spectator' : 'player';
       multiplayer.code = code;
       multiplayer.explicitLeave = false;
       elements.joinStatus.textContent = 'Connecting to the room…';
-      connectMultiplayer({ type: 'join', code, name: Array.from(name).slice(0, 12).join('') });
+      connectMultiplayer({ type: 'join', code, name: Array.from(name).slice(0, 12).join(''), spectate });
     }
     function leaveMultiplayerRoom() {
       if (!multiplayer.active) return;
@@ -4311,6 +4928,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function returnToRoom() {
       if (!multiplayer.active || !multiplayer.room) return;
+      multiplayer.lobbyViewPhase = multiplayer.room.phase || null;
       renderLobby(multiplayer.room);
       setScreen('lobby');
       elements.roomReturn.focus({ preventScroll: true });
@@ -4321,7 +4939,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         newGame();
         return;
       }
-      if (multiplayer.role === 'host' && multiplayer.connected) sendMultiplayer({ type: 'round.rematch' });
+      if (multiplayer.connected && (multiplayer.role === 'host' || (multiplayer.role === 'player' && multiplayer.room && multiplayer.room.canRematchWithoutHost))) sendMultiplayer({ type: 'round.rematch' });
     }
     function closeToMenu() {
       if (multiplayer.active && game && game.multiplayer) { returnToRoom(); return; }
@@ -4347,10 +4965,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
 
     elements.themeSelect.addEventListener('change', event => applyTheme(event.target.value));
+    elements.soloAutoDropSelect.addEventListener('change', event => setSoloAutoDropSetting(event.target.value));
     elements.soundToggle.addEventListener('click', toggleSound);
     elements.start.addEventListener('click', newGame);
     elements.devStart.addEventListener('click', () => startDevMode('turbo'));
-    elements.devQuick.addEventListener('click', () => startDevMode(devSelectedId));
     elements.devReset.addEventListener('click', () => resetDevSandbox(devSelectedId));
     elements.devDrop.addEventListener('click', simulateDevDrop);
     elements.again.addEventListener('click', handleAgain);
@@ -4360,14 +4978,27 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.joinButton.addEventListener('click', openJoinDialog);
     elements.joinForm.addEventListener('submit', submitJoinForm);
     elements.joinCode.addEventListener('input', () => { elements.joinCode.value = elements.joinCode.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); });
-    elements.closeJoin.addEventListener('click', () => elements.joinDialog.close());
-    elements.cancelJoin.addEventListener('click', () => elements.joinDialog.close());
+    elements.closeJoin.addEventListener('click', () => { cancelPendingConnection(); elements.joinDialog.close(); });
+    elements.cancelJoin.addEventListener('click', () => { cancelPendingConnection(); elements.joinDialog.close(); });
+    elements.joinDialog.addEventListener('cancel', cancelPendingConnection);
+    document.querySelectorAll('[data-connection-retry]').forEach(button => button.addEventListener('click', retryPendingConnection));
+    document.querySelectorAll('[data-connection-solo]').forEach(button => button.addEventListener('click', () => { cancelPendingConnection(); if (elements.joinDialog.open) elements.joinDialog.close(); newGame(); }));
+    elements.teamSkip.addEventListener('click', () => { if (game) sendMultiplayer({ type: 'team.skip', turnId: game.currentTurnId }); });
+    elements.teamReady.addEventListener('click', () => sendMultiplayer({ type: 'team.ready' }));
     elements.roomStart.addEventListener('click', () => sendMultiplayer({ type: 'round.start' }));
-    elements.roomReturn.addEventListener('click', () => { setScreen('game'); if (canDropMultiplayer()) elements.drop.focus({ preventScroll: true }); });
+    elements.roomReturn.addEventListener('click', () => { multiplayer.lobbyViewPhase = null; setScreen('game'); if (canDropMultiplayer()) elements.drop.focus({ preventScroll: true }); });
     elements.roomRematch.addEventListener('click', () => sendMultiplayer({ type: 'round.rematch' }));
     elements.roomLeave.addEventListener('click', leaveMultiplayerRoom);
     elements.roomClose.addEventListener('click', leaveMultiplayerRoom);
     elements.copyRoomLink.addEventListener('click', copyInviteLink);
+    elements.pause.addEventListener('click', () => {
+      if (!game || game.multiplayer || game.devMode || game.phase !== 'playing') return;
+      game.soloPaused = !game.soloPaused;
+      lastFrame = 0;
+      if (game.soloPaused) stopPositionTone();
+      announceGame(game.soloPaused ? 'Game paused.' : 'Game resumed.');
+      syncHud(true);
+    });
     elements.how.addEventListener('click', () => elements.dialog.showModal());
     elements.closeHow.addEventListener('click', () => elements.dialog.close());
     elements.dialog.addEventListener('click', event => {
@@ -4375,7 +5006,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     });
     elements.drop.addEventListener('pointerdown', event => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
-      event.preventDefault();
       requestDrop();
     });
     elements.drop.addEventListener('click', event => {
@@ -4388,11 +5018,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       requestDrop();
     });
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
-    document.querySelectorAll('button').forEach(button => button.addEventListener('contextmenu', event => event.preventDefault()));
-    elements.voteButtons.forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
-    window.addEventListener('contextmenu', event => {
-      if (event.target === elements.gameCanvas || event.target === elements.drop) event.preventDefault();
-    });
+    [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
     function isGamePlaying() {
       return Boolean(game && game.phase === 'playing' && document.body.dataset.screen === 'game');
     }
@@ -4400,6 +5026,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       return Boolean(target && (target.isContentEditable || (target.closest && target.closest('input, textarea, select, [contenteditable="true"]'))));
     }
     function isSpaceKey(event) { return event.code === 'Space' || event.key === ' '; }
+    function isSpaceDropTarget(target) {
+      if (document.querySelector('dialog[open]')) return false;
+      return target === window || target === document || target === document.body || target === document.documentElement
+        || target === elements.gameCanvas || target === elements.drop || elements.drop.contains(target);
+    }
     window.addEventListener('keydown', event => {
       const target = event.target;
       if (game && game.devMode && event.key === 'Escape') {
@@ -4407,17 +5038,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         stopDevMode();
         return;
       }
-      if (isSpaceKey(event) && isGamePlaying() && !isTypingTarget(target)) {
+      if (isSpaceKey(event) && isGamePlaying() && isSpaceDropTarget(target)) {
         event.preventDefault();
-        spaceDropKeyHeld = true;
-        if (!event.repeat) requestDrop();
+        if (!event.repeat) {
+          spaceDropKeyHeld = true;
+          spaceDropTarget = target;
+          requestDrop();
+        }
         return;
       }
-      const interactive = target && target.closest && target.closest('button, a, input, textarea, select, summary, [role="button"], [contenteditable="true"]');
       if ((event.code === 'Enter' || event.key === 'Enter') && target === elements.gameCanvas && isGamePlaying() && !event.repeat) {
         event.preventDefault(); requestDrop(); return;
       }
-      if (isGamePlaying() && game.vote && !interactive && !isTypingTarget(target) && !event.repeat) {
+      if (isGamePlaying() && game.vote && !isTypingTarget(target) && !event.repeat) {
         const keyMap = { Digit1: 0, Numpad1: 0, Digit2: 1, Numpad2: 1, Digit3: 2, Numpad3: 2 };
         if (Object.prototype.hasOwnProperty.call(keyMap, event.code)) {
           event.preventDefault(); manualVoteAdapter.submit(keyMap[event.code]);
@@ -4426,11 +5059,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     });
     window.addEventListener('keyup', event => {
       if (isSpaceKey(event) && spaceDropKeyHeld) {
-        event.preventDefault();
+        if (event.target === spaceDropTarget) event.preventDefault();
         spaceDropKeyHeld = false;
+        spaceDropTarget = null;
       }
     });
-    document.addEventListener('visibilitychange', () => { lastFrame = 0; });
+    document.addEventListener('visibilitychange', () => { lastFrame = 0; if (document.hidden) stopPositionTone(); });
     populateSabotageGuide();
     populateDevEffects();
     syncSoundButton();

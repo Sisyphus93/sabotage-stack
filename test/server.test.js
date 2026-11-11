@@ -86,6 +86,120 @@ describe('connection handover', () => {
   });
 });
 
+describe('Competitive disconnect grace (F-006)', () => {
+  test('a player can resume before the grace deadline and continue their frozen stack', async () => {
+    const { app, url } = await listen();
+    let host; let player; let other; let resumed;
+    try {
+      host = await connect(url);
+      host.send({ type: 'room.create', mode: 'competitive' });
+      await sleep(80);
+      const created = host.inbox.find(message => message.type === 'room.created');
+
+      player = await connect(url);
+      player.send({ type: 'room.join', code: created.code, name: 'Ada' });
+      await sleep(80);
+      const joined = player.inbox.find(message => message.type === 'room.joined');
+      other = await connect(url);
+      other.send({ type: 'room.join', code: created.code, name: 'Bo' });
+      await sleep(80);
+      host.send({ type: 'round.start' });
+      await sleep(120);
+
+      const room = app.roomManager.rooms.get(created.code);
+      const roomPlayer = room.players.find(item => item.id === joined.playerId);
+      const competitor = room.engine.game.competitors.find(item => item.playerId === joined.playerId);
+      const stackHeight = competitor.stack.length;
+      player.ws.terminate();
+      await sleep(120);
+      assert.equal(roomPlayer.connected, false);
+      assert.equal(competitor.ended, false, 'the Competitive stack remains active during the grace window');
+      assert.equal(competitor.disconnected, true);
+      assert.equal(roomPlayer.ended, false);
+      const frozenLeft = competitor.moving.left;
+      await sleep(120);
+      assert.equal(competitor.moving.left, frozenLeft, 'the mover must stay frozen while its player is offline');
+
+      resumed = await connect(url);
+      resumed.send({ type: 'room.resume', code: created.code, resumeToken: joined.resumeToken });
+      await sleep(120);
+      assert.equal(roomPlayer.connected, true);
+      assert.equal(competitor.ended, false);
+      assert.equal(competitor.disconnected, false);
+      assert.equal(competitor.disconnectDeadline, null);
+      assert.equal(competitor.stack.length, stackHeight, 'reconnecting must preserve the tower height');
+      assert.equal(room.engine.connectedPlayer(joined.playerId), roomPlayer);
+      await sleep(120);
+      assert.notEqual(competitor.moving.left, frozenLeft, 'the mover continues after the player resumes');
+    } finally {
+      for (const client of [host, player, other, resumed]) if (client && client.ws.readyState < 2) client.ws.terminate();
+      await app.close();
+    }
+  });
+});
+
+describe('Teamwork vote routing (F-008)', () => {
+  function makeRoom(mode) {
+    const time = 1e9;
+    const manager = new RoomManager({ now: () => time, random: rng(mode === 'teamwork' ? 31 : 32), idleLimitMs: 1e12 });
+    const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+    const host = socket(); const players = [socket(), socket()];
+    manager.connect(host); players.forEach(player => manager.connect(player));
+    manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const code = host.sent.find(message => message.type === 'room.created').code;
+    players.forEach((player, index) => manager.receive(player, JSON.stringify({ type: 'room.join', code, name: `P${index}` })));
+    manager.receive(host, JSON.stringify({ type: 'round.start' }));
+    return { manager, host, players, room: manager.rooms.get(code) };
+  }
+
+  test('authenticated Teamwork players cast one changeable ballot and the host records a separate tie-break', () => {
+    const setup = makeRoom('teamwork');
+    const { manager, host, players, room } = setup;
+    const engine = room.engine;
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+    engine.game.team.turnExpiresAt = null;
+    engine.openVote(setup.manager.now());
+    const [first, second] = engine.game.vote.options;
+    engine.game.team.turnActive = true;
+    engine.game.team.currentPlayerId = room.players[0].id;
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(players[0].sent.at(-1).code, 'PLAYER_ON_TURN');
+    assert.equal(engine.game.vote.votes.size, 0);
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: second }));
+    manager.receive(players[1], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(engine.game.vote.votes.size, 2, 'changing a choice does not add another ballot');
+    assert.deepEqual(Object.values(engine.snapshot().vote.counts).sort(), [0, 1, 1]);
+
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(engine.game.vote.votes.size, 2, 'the host tie-break is not an extra player vote');
+    assert.equal(engine.snapshot().vote.hostTiebreak, first);
+    engine.resolveVote(setup.manager.now());
+    assert.equal(engine.game.lastVote.winner, first);
+    assert.equal(engine.game.lastVote.tiebreak, 'host');
+  });
+
+  test('Competitive accepts one changeable host ballot and rejects player ballots', () => {
+    const { manager, host, players, room } = makeRoom('competitive');
+    const engine = room.engine;
+    engine.openVote(manager.now());
+    const [first, second] = engine.game.vote.options;
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY', 'a Competitive player keeps the original host-only route');
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: second }));
+    assert.equal(engine.game.vote.votes.size, 1, 'host changes the existing ballot');
+    assert.equal(engine.snapshot().vote.hostChoice, second);
+    assert.equal(engine.snapshot().vote.counts[first], 0);
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    assert.equal(Object.hasOwn(engine.snapshot().vote, 'hostTiebreak'), false);
+  });
+});
+
 describe('abuse limits', () => {
   const socket = () => ({ readyState: 1, sent: [], closed: false, send(m) { this.sent.push(JSON.parse(m)); }, close() { this.closed = true; } });
   test('legitimate traffic (20 msg/s, plus a 150-message burst) is never limited', () => {
@@ -110,7 +224,7 @@ describe('abuse limits', () => {
 });
 
 describe('broadcast', () => {
-  test('one state change sends one message per socket, carrying the whole game', () => {
+  test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
     let t = 1e9; const rm = new RoomManager({ now: () => t, random: rng(3), idleLimitMs: 1e12 });
     const mk = () => ({ readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)); } });
     const host = mk(); const players = [mk(), mk()]; rm.connect(host); players.forEach(p => rm.connect(p));
@@ -121,7 +235,12 @@ describe('broadcast', () => {
     for (const s of [host, ...players]) s.sent.length = 0;
     rm.rooms.get(code).engine.changed('game.state');
     for (const s of [host, ...players]) {
-      assert.equal(s.sent.length, 1); assert.equal(s.sent[0].type, 'room.state'); assert.ok(s.sent[0].state.game && s.sent[0].state.game.phase === 'playing');
+      assert.equal(s.sent.length, 1); assert.equal(s.sent[0].type, 'room.delta');
+      assert.ok(Array.isArray(s.sent[0].changes));
+      rm.receive(s, JSON.stringify({ type: 'room.sync' }));
+      assert.equal(s.sent[1].type, 'room.state');
+      assert.equal(s.sent[1].state.revision, s.sent[0].revision);
+      assert.equal(s.sent[1].state.game.phase, 'playing');
     }
   });
 });
@@ -145,5 +264,227 @@ describe('message handler fuzz', () => {
         if (r() < 0.02) rm.disconnect(socks[Math.floor(r() * socks.length)]);
       }
     }
+  });
+});
+
+describe('Teamwork idle controls authorization (F-010)', () => {
+  test('only the host can skip and only the idle player can mark themselves ready', async () => {
+    const { app, url } = await listen();
+    const clients = [];
+    try {
+      const host = await connect(url); clients.push(host); host.send({ type: 'room.create', mode: 'teamwork' }); await sleep(80);
+      const code = host.inbox.find(m => m.type === 'room.created').code;
+      const a = await connect(url); clients.push(a); a.send({ type: 'room.join', code, name: 'Ada' }); await sleep(80);
+      const b = await connect(url); clients.push(b); b.send({ type: 'room.join', code, name: 'Bea' }); await sleep(80);
+      host.send({ type: 'round.start' }); await sleep(100);
+      const engine = app.roomManager.rooms.get(code).engine, team = engine.game.team;
+      const turn = team.turnId, current = team.currentPlayerId;
+      a.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.equal(team.turnId, turn);
+      assert.ok(a.inbox.some(m => m.type === 'error' && m.code === 'HOST_ONLY'));
+      host.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.notEqual(team.currentPlayerId, current);
+      host.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.ok(host.inbox.some(m => m.type === 'error' && m.code === 'TURN_NOT_ACTIVE'));
+      const idleId = team.currentPlayerId;
+      const idleClient = a.inbox.find(m => m.type === 'room.joined').playerId === idleId ? a : b;
+      team.turnExpiresAt = Date.now() - 1;
+      engine.tick(Date.now() + 100); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, true);
+      host.send({ type: 'team.ready' }); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, true);
+      idleClient.send({ type: 'team.ready' }); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, false);
+    } finally { for (const client of clients) client.ws.terminate(); await app.close(); }
+  });
+});
+
+describe('Host absence (F-015)', () => {
+  function setup(mode) {
+    const clock = { t: 1_000_000 };
+    const manager = new RoomManager({ now: () => clock.t, random: rng(71), idleLimitMs: 1e12 });
+    const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+    const host = socket(), players = [socket(), socket()];
+    manager.connect(host); players.forEach(player => manager.connect(player));
+    manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const created = host.sent.find(m => m.type === 'room.created');
+    players.forEach((p, i) => manager.receive(p, JSON.stringify({ type: 'room.join', code: created.code, name: `P${i}` })));
+    manager.receive(host, JSON.stringify({ type: 'round.start' }));
+    return { manager, host, players, room: manager.rooms.get(created.code), created, clock, socket };
+  }
+
+  test('Competitive cancels a live vote, skips later votes, and resumes voting when the host returns', () => {
+    const { manager, host, players, room, created, clock, socket } = setup('competitive');
+    const engine = room.engine;
+    engine.openVote(clock.t);
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: engine.game.vote.options[0] }));
+    manager.disconnect(host);
+    assert.equal(room.host.connected, false);
+    assert.equal(engine.game.vote, null);
+    assert.equal(engine.game.lastVote, null);
+    assert.equal(engine.game.activeEffects.length, 0);
+    assert.ok(players[0].sent.some(m => m.type === 'vote.cancelled'));
+    clock.t += 12000; manager.tick();
+    assert.equal(engine.game.vote, null, 'no vote opens while host is absent');
+    assert.ok(engine.game.nextVoteAt > engine.game.elapsed, 'skipped vote advances the cadence');
+    const replacement = socket(); manager.connect(replacement);
+    manager.receive(replacement, JSON.stringify({ type: 'room.resume', code: created.code, resumeToken: created.resumeToken }));
+    assert.equal(room.host.connected, true);
+    assert.equal(engine.openVote(clock.t), true);
+    manager.receive(replacement, JSON.stringify({ type: 'vote.cast', option: engine.game.vote.options[0] }));
+    assert.equal(engine.game.vote.votes.size, 1);
+  });
+
+  test('Teamwork keeps player voting and removes the absent host tie-break', () => {
+    const { manager, host, players, room, clock } = setup('teamwork');
+    const engine = room.engine;
+    engine.game.team.turnActive = false; engine.game.team.currentPlayerId = null;
+    engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.disconnect(host);
+    assert.equal(engine.snapshot().vote.hostTiebreak, null);
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: second }));
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    engine.resolveVote(clock.t);
+    assert.equal(engine.game.lastVote.winner, second);
+  });
+
+  test('a connected player can rematch after ten seconds, but reconnecting host restores exclusivity', () => {
+    const { manager, host, players, room, created, clock, socket } = setup('competitive');
+    room.engine.finishCompetitiveRound(clock.t);
+    manager.disconnect(host);
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY');
+    clock.t += 9999; manager.tick();
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, false);
+    clock.t += 1; manager.tick();
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, true);
+    assert.ok(players[0].sent.some(m => m.type === 'room.state' && m.state.canRematchWithoutHost));
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(room.phase, 'playing');
+    assert.equal(room.roundNumber, 2);
+    room.engine.finishCompetitiveRound(clock.t);
+    const replacement = socket(); manager.connect(replacement);
+    manager.receive(replacement, JSON.stringify({ type: 'room.resume', code: created.code, resumeToken: created.resumeToken }));
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, false);
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY');
+    manager.receive(replacement, JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(room.roundNumber, 3);
+  });
+});
+
+describe('Multiplayer minimum player count (F-016)', () => {
+  for (const mode of ['teamwork', 'competitive']) {
+    test(`${mode} requires two connected players in addition to the host`, () => {
+      const manager = new RoomManager({ now: () => 10000, random: rng(82) });
+      const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+      const host = socket(), a = socket(), b = socket();
+      manager.connect(host); manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+      const code = host.sent.find(message => message.type === 'room.created').code;
+      manager.connect(a); manager.receive(a, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+      assert.equal(manager.snapshot(code).canStart, false);
+      manager.receive(host, JSON.stringify({ type: 'round.start' }));
+      assert.equal(host.sent.at(-1).code, 'NEED_TWO_PLAYERS');
+      manager.connect(b); manager.receive(b, JSON.stringify({ type: 'room.join', code, name: 'B' }));
+      assert.equal(manager.snapshot(code).canStart, true);
+      manager.receive(host, JSON.stringify({ type: 'round.start' }));
+      assert.equal(manager.snapshot(code).phase, 'playing');
+    });
+  }
+});
+
+describe('Incremental room updates (F-023)', () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: long stacks reconstruct exactly and avoid repeated tower payloads`, () => {
+    const rm = new RoomManager({ now: () => 1000000, random: rng(7) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); const players = [mk(), mk()]; rm.connect(host); players.forEach(s => rm.connect(s));
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const room = [...rm.rooms.values()][0];
+    players.forEach((p, i) => rm.receive(p, JSON.stringify({ type: 'room.join', code: room.code, name: `Player ${i}` })));
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    const stacks = mode === 'teamwork' ? [room.engine.game.team.stack] : room.engine.game.competitors.map(c => c.stack);
+    for (const stack of stacks) for (let level = 1; level <= 100; level++) stack.push({ left: 80, right: 280, level, color: '#E3A33B', placer: 'Player' });
+    rm.broadcastState(room);
+    const baseline = JSON.parse(JSON.stringify(room.lastBroadcastState));
+    host.sent.length = 0;
+    stacks[0].push({ left: 81, right: 279, level: 101, color: '#E3A33B', placer: 'Player' });
+    room.engine.changed('game.state');
+    const delta = host.sent[0];
+    assert.equal(delta.type, 'room.delta');
+    assert.equal(delta.baseRevision, baseline.revision);
+    for (const [path, value] of delta.changes) {
+      let target = baseline;
+      for (const key of path.slice(0, -1)) target = target[key];
+      target[path[path.length - 1]] = value;
+    }
+    assert.deepEqual(baseline, room.lastBroadcastState);
+    const fullBytes = Buffer.byteLength(JSON.stringify({ type: 'room.state', state: room.lastBroadcastState }));
+    assert.ok(Buffer.byteLength(JSON.stringify(delta)) < fullBytes / 3, 'delta should be substantially smaller than the full state');
+  });
+});
+
+describe('Room-code guessing limit (A-03)', () => {
+  test('failed attempts share a bounded server-wide budget across connections and recover after the window', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(9), joinFailureLimit: 3, joinFailureWindowMs: 60_000 });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const code = [...rm.rooms.keys()][0];
+    for (let i = 0; i < 3; i++) {
+      const socket = mk(); rm.connect(socket);
+      rm.receive(socket, JSON.stringify({ type: 'room.join', code: 'ZZZZ', name: 'Guest' }));
+      assert.equal(socket.sent.at(-1).code, 'ROOM_NOT_FOUND');
+      rm.disconnect(socket);
+    }
+    const player = mk(); rm.connect(player);
+    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
+    assert.equal(player.sent.at(-1).code, 'JOIN_RATE_LIMITED', 'even a valid guess is blocked while the shared budget is exhausted');
+    assert.equal(rm.rooms.get(code).players.length, 0);
+    now += 60_000;
+    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
+    assert.ok(player.sent.some(message => message.type === 'room.joined'));
+    assert.equal(rm.rooms.get(code).players.length, 1);
+  });
+});
+
+describe('Spectator role (A-09)', () => {
+  test('late spectators receive updates and resume, but cannot affect the room', () => {
+    let now = 1_000_000; const rm = new RoomManager({ now: () => now, random: rng(12) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(), a = mk(), b = mk(), viewer = mk();
+    for (const socket of [host, a, b, viewer]) rm.connect(socket);
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const room = [...rm.rooms.values()][0];
+    for (const [socket, name] of [[a, 'A'], [b, 'B']]) rm.receive(socket, JSON.stringify({ type: 'room.join', code: room.code, name }));
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    rm.receive(viewer, JSON.stringify({ type: 'room.join', code: room.code, name: 'Viewer', spectate: true, reducedMotion: true }));
+    const joined = viewer.sent.find(message => message.type === 'room.joined');
+    assert.equal(joined.role, 'spectator'); assert.equal(room.players.length, 2); assert.equal(rm.snapshot(room).reducedMotion, false);
+    for (const type of ['player.drop', 'player.position', 'vote.cast', 'team.skip', 'round.rematch']) {
+      rm.receive(viewer, JSON.stringify({ type, x: 0, option: 'turbo' }));
+      assert.equal(viewer.sent.at(-1).type, 'error', `${type} must be rejected`);
+    }
+    rm.receive(viewer, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.equal(rm.snapshot(room).reducedMotion, false);
+    viewer.sent.length = 0; room.engine.changed('game.state');
+    assert.ok(viewer.sent.some(message => message.type === 'room.delta' || message.type === 'room.state'));
+    rm.disconnect(viewer); const resumed = mk(); rm.connect(resumed);
+    rm.receive(resumed, JSON.stringify({ type: 'room.resume', code: room.code, resumeToken: joined.resumeToken }));
+    assert.equal(resumed.sent.find(message => message.type === 'room.resumed').role, 'spectator');
+    rm.receive(resumed, JSON.stringify({ type: 'room.leave' }));
+    assert.equal(room.spectators.length, 0); assert.equal(room.players.length, 2);
+  });
+  test('spectator slots are bounded and disconnected slots expire', () => {
+    let now = 1_000_000; const rm = new RoomManager({ now: () => now });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'competitive' }));
+    const room = [...rm.rooms.values()][0]; const viewers = [];
+    for (let i = 0; i < 17; i++) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code: room.code, spectate: true })); viewers.push(socket); }
+    assert.equal(room.spectators.length, 16); assert.equal(viewers[16].sent.at(-1).code, 'SPECTATORS_FULL');
+    rm.disconnect(viewers[0]); now += 120_000; rm.tick();
+    rm.receive(viewers[16], JSON.stringify({ type: 'room.join', code: room.code, spectate: true }));
+    assert.ok(viewers[16].sent.some(message => message.type === 'room.joined'));
   });
 });

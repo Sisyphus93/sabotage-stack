@@ -1,0 +1,21 @@
+tw.onePlayer start disabled true :: Waiting for at least two connected players. The room locks when the host starts.
+tw.early p1 {"screen":"game","conn":"Teamwork · connected","round":"Round live","turnH":"Your turn","turnS":"Move the block and drop before the timer runs out.","timer":"10s","effect":"No sabotage active","effTime":"Ready","drop":"D
+tw.early p2 {"screen":"game","conn":"Teamwork · connected","round":"Round live","turnH":"Ada's turn","turnS":"Shared tower · fixed player order","timer":"10s","effect":"No sabotage active","effTime":"Ready","drop":"WAIT YOUR TURN","
+tw.vote host 3 clicks -> {"t":12689,"dir":"in","type":"vote.updated","code":"MBHJ","counts":{"crumble":3,"turbo":0,"portal":0}}
+tw.vote player view {"screen":"game","conn":"Teamwork · connected","round":"Round live","turnH":"the next player's turn","turnS":"Shared tower · fixed player order","timer":"0s","effect":"No sabotage active","effTime":"Ready","drop":"WAIT Y
+tw.waitOut after {"phase":"playing","round":1,"elapsed":23.4,"cur":null,"turnRemaining":0,"awaiting":false,"height":19,"heights":[{"id":"248f4226e99918f636f07404","ended":false,"connected":true},{"id":"a8567f9bd242fbade41452c5","ended":f
+tw.results host buttons [{"id":"sound-toggle","text":"Sound off","disabled":false},{"id":"","text":"Rematch","disabled":false},{"id":"","text":"Return to room","disabled":false}]
+tw.results p1 buttons [{"id":"sound-toggle","text":"Sound off","disabled":false},{"id":"","text":"Host rematches","disabled":true},{"id":"","text":"Return to room","disabled":false}]
+tw.rematch {"phase":"playing","round":2,"elapsed":1.1,"cur":"248f4226e99918f636f07404","turnRemaining":10,"awaiting":false,"height":2,"heights":[{"id":"248f4226e99918f636f07404","ended":false,"connected":true},{"id":"a8567f9bd242fb
+tw.disconnect {"tl":["Teamwork · reconnecting","Teamwork · reconnecting","Teamwork · connected","Teamwork · connected","Teamwork · connected"],"back":true,"ev":["error","error","error","error","error","socket.close","socket.new","sock
+tw.reload p2 game Teamwork · connected
+co.early p1 {"screen":"game","conn":"Competitive · connected","round":"Round live","turnH":"Your stack","turnS":"Build your own tower. The host sees everyone’s stacks.","timer":"87s","effect":"No sabotage active","effTime":"Ready","
+co.effect {"eff":["zoom->p1"],"heights":[25,6]}
+co.prefs [{"t":16052,"dir":"out","type":"client.preferences","reducedMotion":true},{"t":16059,"dir":"in","type":"preferences.updated","reducedMotion":true}]
+co.disconnect after [{"id":"9dfb4932d68f474b8acfae81","h":60,"ended":false,"collapsed":false,"disconnected":false,"connected":true},{"id":"45e14516c3e559cf2e32ab64","h":17,"ended":true,"collapsed":false,"disconnected":true,"connected":true}
+co.disconnect p2 view {"after":2500,"conn":"Competitive · connected","round":"Round live","turnH":"Your stack","turnS":"Your stack is finished. You can watch the room.","toast":"PERFECT DROP · +1 TEAM BONUS","drop":"STACK FINISHED","dropDisab
+co.results COMPETITIVE · ROUND 1 COMPLETE One tower survived the chaos. Results The stacks, ranked. Every stack uses the same scale and baseline. Fallen pieces sit below t
+co.rematch heights [{"id":"9dfb4932d68f474b8acfae81","h":1,"ended":false,"collapsed":false,"disconnected":false,"connected":true},{"id":"45e14516c3e559cf2e32ab64","h":1,"ended":false,"collapsed":false,"disconnected":false,"connected":true}
+co.closed p1 game :: 
+console entries 0 phase errors 0
+MULTIPLAYER COMPLETE

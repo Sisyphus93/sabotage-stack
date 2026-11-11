@@ -23,7 +23,7 @@ test('Earthquake tremor is deterministic, bounded, eased and disabled for reduce
 });
 
 for (const mode of ['teamwork', 'competitive']) {
-  test(`${mode}: Earthquake enters the vote pool and lasts five seconds without changing blocks`, () => {
+  test(`${mode}: Earthquake enters the vote pool with mode-specific duration without changing blocks`, () => {
     const players = ['a', 'b'].map(id => ({ id, name: id, connected: true }));
     const engine = new RoundEngine({ mode, players, now: () => 10000, random: () => 0.5 });
     engine.start(1);
@@ -31,7 +31,8 @@ for (const mode of ['teamwork', 'competitive']) {
     const actor = mode === 'teamwork' ? engine.game.team : engine.game.competitors[0];
     const before = JSON.stringify(actor.stack);
     const effect = engine.addEffect('earthquake', 'a', 10000);
-    assert.equal(effect.expiresAt, 15000);
+    if (mode === 'competitive') assert.equal(effect.expiresAt, 15000);
+    else assert.equal(effect.untilDrop, true);
     assert.equal(effect.duration, 5);
     assert.equal(JSON.stringify(actor.stack), before);
     players[0].reducedMotion = true;

@@ -21,7 +21,7 @@
     Object.entries(SABOTAGE_CATEGORIES).flatMap(([category, ids]) => ids.map(id => [id, category]))
   ));
   const SABOTAGE_IDS = Object.freeze(Object.values(SABOTAGE_CATEGORIES).flat());
-  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue'));
+  const HARSH_SABOTAGE_IDS = Object.freeze(SABOTAGE_IDS.filter(id => id !== 'superglue' && id !== 'calipers'));
   // Effects held back until the tower is tall enough for them to matter (tune in play).
   const SABOTAGE_MIN_HEIGHT = Object.freeze({ zoom: 12 });
   const DROP_COUNTED_IDS = Object.freeze(['crumble', 'superglue', 'portal', 'calipers']);
@@ -124,13 +124,15 @@
     const phase = time % 0.7;
     if (phase < 0.31) return 1;
     if (phase < 0.35) return 1 - (phase - 0.31) / 0.04;
-    if (phase < 0.39) return (phase - 0.35) / 0.04;
     return 0;
   }
   function rollercoasterOffset(elapsed, phase = 0) {
     const time = Number.isFinite(Number(elapsed)) ? Math.max(0, Number(elapsed)) : 0;
     const phaseTurns = Number.isFinite(Number(phase)) ? Number(phase) : 0;
     return -22.5 * (1 + Math.sin((time / 1.2 + phaseTurns) * Math.PI * 2));
+  }
+  function rollercoasterSpeedMultiplier(elapsed, phase = 0) {
+    return 1 + (-rollercoasterOffset(elapsed, phase) / 45) * 0.6;
   }
   function pisaAngle(elapsed, remaining, direction = 1, reducedMotion = false) {
     if (reducedMotion) return 0;
@@ -348,7 +350,7 @@
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, rollercoasterSpeedMultiplier, pisaAngle, earthquakeOffset, createShellDecoy, dropDrift, caliperBounds, portalLandingMover, landingMover,
     makeBase, placeDrop, pickOptions, voteIntervalForHeight,
     recordVote, countVotes, chooseWinner
   });

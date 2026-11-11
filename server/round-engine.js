@@ -15,9 +15,14 @@ const VOTE_SECONDS = 5;
 const EFFECT_SECONDS = 5;
 const DROP_EFFECT_SECONDS = 8;
 const ROUND_SECONDS = 90;
+const COMPETITIVE_DISCONNECT_GRACE_MS = 10_000;
 const SABOTAGE_IDS = Core.SABOTAGE_IDS;
 const DROP_COUNTED_EFFECTS = new Set(Core.DROP_COUNTED_IDS);
 const TEAM_GLOBAL_EFFECTS = new Set(['crumble']);
+// Per-ballot bounds for future authenticated chat adapters.
+const MAX_CHAT_VOTER_ID_LENGTH = 128;
+const MAX_CHAT_VOTERS = 1000;
+const MAX_CHAT_VOTES_PER_VOTER = 20;
 const ROOM_GLOBAL_EFFECTS = new Set();
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -29,13 +34,14 @@ function randomDrunkTarget(mode, random) {
 }
 
 class RoundEngine {
-  constructor({ mode, players, now = Date.now, random = Math.random, motionPrefersReduced = false, onEvent = () => {}, onChange = () => {} }) {
+  constructor({ mode, players, now = Date.now, random = Math.random, motionPrefersReduced = false, isHostConnected = () => true, onEvent = () => {}, onChange = () => {} }) {
     if (!['teamwork', 'competitive'].includes(mode)) throw new TypeError('Unknown round mode.');
     this.mode = mode;
     this.players = players;
     this.now = now;
     this.random = random;
     this.motionPrefersReduced = Boolean(motionPrefersReduced);
+    this.isHostConnected = isHostConnected;
     this.onEvent = onEvent;
     this.onChange = onChange;
     this.manualVoteSequence = 0;
@@ -48,6 +54,7 @@ class RoundEngine {
     const now = this.now();
     for (const player of this.players) {
       player.ended = false;
+      player.teamIdle = false;
       player.blocksPlaced = 0;
       player.perfects = 0;
       player.sabotageCount = 0;
@@ -57,7 +64,8 @@ class RoundEngine {
     this.game = {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
-      activeEffects: [], pendingSabotage: null, paused: false, pausedAt: null,
+      lastSabotage: null, sabotageSequence: 0, voteCancellationSequence: 0,
+      activeEffects: [], pendingSabotage: null, teamSabotageQueue: [], paused: false, pausedAt: null, pauseReason: null,
       team: this.mode === 'teamwork' ? {
         stack: [Core.makeBase()], fallen: [], perfects: 0, score: 0,
         turnOrder: this.players.map(player => player.id), turnIndex: -1,
@@ -70,7 +78,7 @@ class RoundEngine {
         playerId: player.id,
         stack: [{ ...Core.makeBase(), color: player.color, placer: player.name }],
         fallen: [], perfects: 0, sabotageCount: 0, collapsed: false, disconnected: !player.connected,
-        ended: !player.connected, collapseLevel: null, moving: this.makeMover([{ ...Core.makeBase(), color: player.color }], true, player.color, false),
+        ended: !player.connected, disconnectDeadline: null, collapseLevel: null, moving: this.makeMover([{ ...Core.makeBase(), color: player.color }], true, player.color, false),
         nextSpawnFromLeft: false, lastPositionSeq: -1,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1
       })) : null,
@@ -110,11 +118,23 @@ class RoundEngine {
 
   connectedPlayer(id) { return this.players.find(player => player.id === id && player.connected && !player.ended) || null; }
   player(id) { return this.players.find(player => player.id === id) || null; }
+  expireCompetitiveDisconnect(competitor) {
+    if (!competitor || competitor.ended || competitor.disconnectDeadline == null) return false;
+    competitor.disconnectDeadline = null;
+    competitor.disconnected = true;
+    competitor.ended = true;
+    const player = this.player(competitor.playerId);
+    if (player) player.ended = true;
+    return true;
+  }
+  competitiveRoundFinished() {
+    return this.game.competitors.every(competitor => competitor.ended || competitor.collapsed);
+  }
   teamMover() { return this.game && this.game.team ? this.game.team.moving : null; }
   effectApplies(effect, playerId = null) { return effect.targetPlayerId == null || effect.targetPlayerId === playerId; }
   effectFor(id, playerId = null, now = this.now()) {
     if (!this.game) return null;
-    return this.game.activeEffects.find(effect => effect.id === id && (effect.startedAt || 0) <= now && effect.expiresAt > now && this.effectApplies(effect, playerId)) || null;
+    return this.game.activeEffects.find(effect => effect.id === id && (effect.startedAt || 0) <= now && (effect.untilDrop || effect.expiresAt > now) && this.effectApplies(effect, playerId)) || null;
   }
   hasEffect(id, playerId = null, now = this.now()) { return Boolean(this.effectFor(id, playerId, now)); }
   effectElapsed(effect, now = this.now()) { return effect ? Math.max(0, (now - effect.startedAt) / 1000) : 0; }
@@ -134,6 +154,8 @@ class RoundEngine {
   movementSpeed(stack, actor, playerId, now) {
     const base = Core.speedForHeight(Math.max(0, stack.length - 1));
     if (this.hasEffect('turbo', playerId, now)) return base * 1.7;
+    const roller = this.effectFor('rollercoaster', playerId, now);
+    if (roller && !this.motionReductionEnabled()) return base * Core.rollercoasterSpeedMultiplier(this.effectElapsed(roller, now), actor.moving && actor.moving.rollerPhase);
     const slowToDart = this.effectFor('slowmo', playerId, now);
     if (slowToDart) return base * Core.slowToDartMultiplier(this.effectElapsed(slowToDart, now));
     const drunk = this.effectFor('drunk', playerId, now);
@@ -228,10 +250,10 @@ class RoundEngine {
     for (let offset = 1; offset <= count; offset += 1) {
       const index = (team.turnIndex + offset + count) % count;
       const candidate = this.connectedPlayer(team.turnOrder[index]);
-      if (candidate) { nextIndex = index; break; }
+      if (candidate && !candidate.teamIdle) { nextIndex = index; break; }
     }
     if (nextIndex == null) {
-      this.pauseIfNoConnected(now);
+      this.pauseIfNoAvailable(now);
       return false;
     }
     const player = this.player(team.turnOrder[nextIndex]);
@@ -244,11 +266,15 @@ class RoundEngine {
     team.autoDropDeadlineAt = null;
 
     if (game.pendingSabotage) {
-      const id = game.pendingSabotage;
-      const targetPlayerId = TEAM_GLOBAL_EFFECTS.has(id) ? null : player.id;
-      this.addEffect(id, targetPlayerId, now);
-      player.sabotageCount += 1;
+      game.teamSabotageQueue.push(game.pendingSabotage);
       game.pendingSabotage = null;
+    }
+    // Do not replace a sabotage that has not consumed all its landings. Votes queue
+    // until the stage is free, then target the player starting that turn.
+    if (!game.activeEffects.length && game.teamSabotageQueue.length) {
+      const id = game.teamSabotageQueue.shift();
+      this.addEffect(id, TEAM_GLOBAL_EFFECTS.has(id) ? null : player.id, now);
+      player.sabotageCount += 1;
     }
     if (!reuseMoving || !team.moving) {
       const fromLeft = team.nextSpawnFromLeft;
@@ -257,6 +283,9 @@ class RoundEngine {
       team.moving.portalWrap = this.hasEffect('portal', player.id, now);
       if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
     }
+    team.moving.portalWrap = this.hasEffect('portal', player.id, now);
+    if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
+    else delete team.moving.decoy;
     this.onEvent('turn.started', { playerId: player.id, turnId: team.turnId, deadline: team.turnExpiresAt });
     this.changed('game.state');
     return true;
@@ -266,12 +295,16 @@ class RoundEngine {
     if (!SABOTAGE_IDS.includes(id)) return null;
     const dropCounted = DROP_COUNTED_EFFECTS.has(id);
     const duration = dropCounted ? DROP_EFFECT_SECONDS : EFFECT_SECONDS;
+    const untilDrop = this.mode === 'teamwork';
     // One sabotage at a time per target (per stage in Teamwork). The client renders and predicts exactly one effect, and
     // solo play replaces the running effect when a new vote resolves. Letting the server stack effects made a queued
     // sabotage (for example Spotlight) mechanically active but invisible, and let movement speed diverge from the client.
     this.game.activeEffects = this.game.activeEffects.filter(item => !(
       this.mode === 'teamwork' || item.targetPlayerId == null || targetPlayerId == null || item.targetPlayerId === targetPlayerId));
-    const effect = { id, targetPlayerId, startedAt: now, expiresAt: now + duration * 1000, duration };
+    const effect = {
+      id, targetPlayerId, startedAt: now, duration,
+      ...(untilDrop ? { untilDrop: true } : { expiresAt: now + duration * 1000 })
+    };
     if (dropCounted) effect.dropsRemaining = 3;
     if (id === 'pisa') effect.tiltDirection = this.random() < 0.5 ? -1 : 1;
     if (id === 'spotlight') effect.spotlightSide = this.random() < 0.5 ? -1 : 1;
@@ -299,22 +332,47 @@ class RoundEngine {
     }
     this.game.activeEffects = this.game.activeEffects.filter(item => !(item.id === id && item.targetPlayerId === targetPlayerId));
     this.game.activeEffects.push(effect);
-    this.onEvent('sabotage.active', { id, targetPlayerId, expiresAt: effect.expiresAt, ...(dropCounted ? { dropsRemaining: effect.dropsRemaining } : {}) });
+    this.onEvent('sabotage.active', {
+      id, targetPlayerId,
+      ...(untilDrop ? { untilDrop: true } : { expiresAt: effect.expiresAt }),
+      ...(dropCounted ? { dropsRemaining: effect.dropsRemaining } : {})
+    });
     return effect;
   }
 
   openVote(now = this.now()) {
     const game = this.game;
     if (!game || game.phase !== 'playing' || game.vote) return false;
+    if (this.mode === 'competitive' && !this.isHostConnected()) {
+      game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(this.currentHeight());
+      this.onEvent('vote.skipped', { reason: 'host-disconnected' });
+      this.changed('game.state');
+      return false;
+    }
     game.vote = {
       options: Core.pickOptions(this.votePool(), this.random, game.lastSabotageWinner, this.motionReductionEnabled()),
-      votes: new Map(), openedAt: game.elapsed, closesAt: now + VOTE_SECONDS * 1000,
+      votes: new Map(), chatVoteUpdates: new Map(), ...(this.mode === 'teamwork' ? { hostTiebreak: null } : {}),
+      openedAt: game.elapsed, closesAt: now + VOTE_SECONDS * 1000,
       duration: VOTE_SECONDS
     };
     game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(this.currentHeight());
     this.onEvent('vote.open', { options: game.vote.options.slice(), closesAt: game.vote.closesAt });
     this.changed('game.state');
     return true;
+  }
+
+  hostDisconnected() {
+    const game = this.game;
+    if (!game || game.phase !== 'playing' || !game.vote) return;
+    if (this.mode === 'competitive') {
+      game.vote = null;
+      game.voteCancellationSequence += 1;
+      this.onEvent('vote.cancelled', { reason: 'host-disconnected' });
+      this.changed('game.state');
+    } else if (game.vote.hostTiebreak) {
+      game.vote.hostTiebreak = null;
+      this.changed('game.state');
+    }
   }
 
   votePool() {
@@ -332,10 +390,43 @@ class RoundEngine {
   castManualVote(option) {
     const game = this.game;
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
-    const event = { voterId: `manual-${++this.manualVoteSequence}`, option };
-    game.vote.votes = Core.recordVote(game.vote.votes, event, game.vote.options);
-    if (!game.vote.votes.has(event.voterId)) return { ok: false, code: 'INVALID_OPTION' };
+    const event = { voterId: this.mode === 'competitive' ? 'competitive-host' : `manual-${++this.manualVoteSequence}`, option };
+    const next = Core.recordVote(game.vote.votes, event, game.vote.options);
+    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.votes = next;
     this.onEvent('vote.updated', { counts: Core.countVotes(game.vote.votes, game.vote.options), totalVotes: game.vote.votes.size });
+    this.changed('game.state');
+    return { ok: true };
+  }
+
+  castTeamworkPlayerVote(playerId, option) {
+    const game = this.game;
+    if (this.mode !== 'teamwork') return { ok: false, code: 'PLAYER_VOTING_DISABLED' };
+    if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
+    if (!this.connectedPlayer(playerId)) return { ok: false, code: 'PLAYER_INACTIVE' };
+    if (game.team.turnActive && game.team.currentPlayerId === playerId) return { ok: false, code: 'PLAYER_ON_TURN' };
+    const voterId = `teamwork-player:${playerId}`;
+    const next = Core.recordVote(game.vote.votes, { voterId, option }, game.vote.options);
+    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.votes = next;
+    const counts = Core.countVotes(game.vote.votes, game.vote.options);
+    this.onEvent('vote.updated', { counts, totalVotes: game.vote.votes.size });
+    this.changed('game.state');
+    return { ok: true };
+  }
+
+  castHostTiebreak(option) {
+    const game = this.game;
+    if (this.mode !== 'teamwork') return { ok: false, code: 'HOST_TIEBREAK_DISABLED' };
+    if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
+    const selected = String(option);
+    if (!game.vote.options.includes(selected)) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.hostTiebreak = selected;
+    this.onEvent('vote.updated', {
+      counts: Core.countVotes(game.vote.votes, game.vote.options),
+      totalVotes: game.vote.votes.size,
+      hostTiebreak: selected
+    });
     this.changed('game.state');
     return { ok: true };
   }
@@ -343,8 +434,19 @@ class RoundEngine {
   receiveChatVote(event) {
     const game = this.game;
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
-    const next = Core.recordVote(game.vote.votes, event, game.vote.options);
-    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    // The adapter must supply an authenticated platform identity; this seam does not authenticate it.
+    // Legacy callers without a platform remain isolated under their own namespace.
+    if (!event || typeof event.voterId !== 'string') return { ok: false, code: 'INVALID_VOTER' };
+    const voter = event.voterId.trim();
+    const platform = event.platform == null ? 'legacy' : typeof event.platform === 'string' ? event.platform.trim().toLowerCase() : '';
+    if (!voter || voter.length > MAX_CHAT_VOTER_ID_LENGTH || !/^[a-z0-9_-]{1,32}$/.test(platform)) return { ok: false, code: 'INVALID_VOTER' };
+    if (!game.vote.options.includes(event.option)) return { ok: false, code: 'INVALID_OPTION' };
+    const voterId = `chat:${platform}:${voter}`;
+    const updates = game.vote.chatVoteUpdates;
+    if (!updates.has(voterId) && updates.size >= MAX_CHAT_VOTERS) return { ok: false, code: 'CHAT_VOTER_LIMIT' };
+    if ((updates.get(voterId) || 0) >= MAX_CHAT_VOTES_PER_VOTER) return { ok: false, code: 'CHAT_VOTE_LIMIT' };
+    const next = Core.recordVote(game.vote.votes, { voterId, option: event.option }, game.vote.options);
+    updates.set(voterId, (updates.get(voterId) || 0) + 1);
     game.vote.votes = next;
     this.onEvent('vote.updated', { counts: Core.countVotes(game.vote.votes, game.vote.options), totalVotes: game.vote.votes.size });
     this.changed('game.state');
@@ -354,7 +456,17 @@ class RoundEngine {
   resolveVote(now = this.now()) {
     const game = this.game;
     if (!game || !game.vote) return false;
-    const outcome = Core.chooseWinner(game.vote.votes, game.vote.options, this.random);
+    const vote = game.vote;
+    let outcome = null;
+    if (this.mode === 'teamwork' && vote.hostTiebreak) {
+      const counts = Core.countVotes(vote.votes, vote.options);
+      const maximum = Math.max(0, ...Object.values(counts));
+      const tied = vote.options.filter(option => counts[option] === maximum);
+      if (tied.length > 1 && tied.includes(vote.hostTiebreak)) {
+        outcome = { winner: vote.hostTiebreak, counts, totalVotes: vote.votes.size, tiebreak: 'host' };
+      }
+    }
+    if (!outcome) outcome = Core.chooseWinner(vote.votes, vote.options, this.random);
     game.lastVote = outcome;
     game.vote = null;
     const winner = outcome && outcome.winner ? outcome.winner : null;
@@ -375,14 +487,7 @@ class RoundEngine {
     const id = game.pendingSabotage;
     if (!id) return;
     const active = game.competitors.filter(item => !item.ended && this.connectedPlayer(item.playerId));
-    let targets = [];
-    if (ROOM_GLOBAL_EFFECTS.has(id)) targets = active;
-    else if (active.length) {
-      const maxHeight = Math.max(...active.map(item => item.stack.length - 1));
-      const leaders = active.filter(item => item.stack.length - 1 === maxHeight);
-      const chosen = leaders[Math.floor(Math.max(0, Math.min(.999999999, Number(this.random()) || 0)) * leaders.length)];
-      targets = chosen ? [chosen] : [];
-    }
+    const targets = active;
     if (ROOM_GLOBAL_EFFECTS.has(id) && targets.length) this.addEffect(id, null, now);
     for (const target of targets) {
       if (!ROOM_GLOBAL_EFFECTS.has(id)) this.addEffect(id, target.playerId, now);
@@ -390,6 +495,10 @@ class RoundEngine {
       const player = this.player(target.playerId);
       if (player) player.sabotageCount = target.sabotageCount;
     }
+    game.lastSabotage = targets.length ? {
+      id, sequence: ++game.sabotageSequence,
+      targetPlayerIds: targets.map(target => target.playerId)
+    } : null;
     game.pendingSabotage = null;
     this.changed('game.state');
   }
@@ -476,10 +585,8 @@ class RoundEngine {
     if (!team.turnActive || team.currentPlayerId !== playerId || Number(message.turnId) !== team.turnId) return { ok: false, code: 'NOT_YOUR_TURN' };
     const player = this.connectedPlayer(playerId);
     if (!player) return { ok: false, code: 'PLAYER_INACTIVE' };
-    const auto = Boolean(message.auto);
-    if (auto && !team.awaitingAutoDrop) return { ok: false, code: 'AUTO_DROP_NOT_REQUESTED' };
-    if (team.awaitingAutoDrop && now > team.autoDropDeadlineAt) return { ok: false, code: 'TURN_EXPIRED' };
-    if (now > team.turnExpiresAt && !team.awaitingAutoDrop) return { ok: false, code: 'TURN_EXPIRED' };
+    if (message.auto) return { ok: false, code: 'AUTO_DROP_NOT_REQUESTED' };
+    if (now >= team.turnExpiresAt || game.paused) return { ok: false, code: 'TURN_EXPIRED' };
     const checked = this.validateReportedX(team.moving, team.stack, team, playerId, message.x, now, 'DROP_POSITION_OUT_OF_SYNC');
     if (!checked.ok) return { ...checked, requestId: message.requestId };
     if (message.sequence != null && Number(message.sequence) < player.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: team.moving.left };
@@ -510,7 +617,6 @@ class RoundEngine {
     team.turnExpiresAt = null;
     team.awaitingAutoDrop = false;
     team.autoDropDeadlineAt = null;
-    this.clearTurnEffect(playerId);
     team.turnIndex = team.turnOrder.indexOf(playerId);
     team.currentPlayerId = null;
     team.moving = null;
@@ -555,7 +661,7 @@ class RoundEngine {
       competitor.moving = this.nextCompetitorMover(competitor, player, now);
       this.onEvent(outcome.perfect ? 'block.perfect' : 'block.land', { playerId, height: competitor.stack.length - 1 });
     }
-    if (game.competitors.every(item => item.ended || item.disconnected || !this.connectedPlayer(item.playerId))) this.finishCompetitiveRound(now);
+    if (this.competitiveRoundFinished()) this.finishCompetitiveRound(now);
     else this.changed('game.state');
     return { ok: true, outcome: clone(outcome), authoritativeX: landing.left, collapsed: Boolean(competitor.collapsed) };
   }
@@ -569,21 +675,35 @@ class RoundEngine {
     return moving;
   }
 
-  clearTurnEffect(playerId) {
-    this.game.activeEffects = this.game.activeEffects.filter(effect =>
-      effect.targetPlayerId !== playerId || DROP_COUNTED_EFFECTS.has(effect.id));
-  }
-
   consumeDropEffects(playerId, now = this.now()) {
     if (!this.game) return false;
     let changed = false;
+    const retained = [];
     for (const effect of this.game.activeEffects) {
-      if (!DROP_COUNTED_EFFECTS.has(effect.id) || !this.effectApplies(effect, playerId) || effect.expiresAt <= now) continue;
-      effect.dropsRemaining = Math.max(0, (Number(effect.dropsRemaining) || 1) - 1);
-      changed = true;
+      if (!this.effectApplies(effect, playerId)) {
+        retained.push(effect);
+        continue;
+      }
+      if (this.mode === 'teamwork' && effect.untilDrop) {
+        changed = true;
+        if (DROP_COUNTED_EFFECTS.has(effect.id)) {
+          const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
+          effect.dropsRemaining = Math.max(0, remaining - 1);
+          if (effect.dropsRemaining > 0) retained.push(effect);
+        }
+        // Regular Teamwork effects are consumed by this affected landing; no wall-clock expiry applies.
+        continue;
+      }
+      if (DROP_COUNTED_EFFECTS.has(effect.id) && effect.expiresAt > now) {
+        const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
+        effect.dropsRemaining = Math.max(0, remaining - 1);
+        changed = true;
+        if (effect.dropsRemaining > 0) retained.push(effect);
+        continue;
+      }
+      retained.push(effect);
     }
-    if (changed) this.game.activeEffects = this.game.activeEffects.filter(effect =>
-      !DROP_COUNTED_EFFECTS.has(effect.id) || Number(effect.dropsRemaining) > 0);
+    if (changed) this.game.activeEffects = retained;
     return changed;
   }
 
@@ -681,10 +801,19 @@ class RoundEngine {
     game.lastTickAt = now;
     const moved = this.advanceMovers(previousTickAt, now);
     const oldEffects = game.activeEffects.length;
-    game.activeEffects = game.activeEffects.filter(effect => effect.expiresAt > now);
+    game.activeEffects = game.activeEffects.filter(effect => effect.untilDrop || effect.expiresAt > now);
     let changed = game.activeEffects.length !== oldEffects;
 
     if (this.mode === 'competitive') {
+      for (const competitor of game.competitors) {
+        if (competitor.disconnectDeadline != null && now >= competitor.disconnectDeadline) {
+          changed = this.expireCompetitiveDisconnect(competitor) || changed;
+        }
+      }
+      if (this.competitiveRoundFinished()) {
+        this.finishCompetitiveRound(now);
+        return true;
+      }
       if (now >= game.endsAt) {
         this.finishCompetitiveRound(now);
         return true;
@@ -709,16 +838,10 @@ class RoundEngine {
       return true;
     }
     if (team.turnActive) {
-      if (!team.awaitingAutoDrop && now >= team.turnExpiresAt) {
-        team.awaitingAutoDrop = true;
-        team.autoDropDeadlineAt = team.turnExpiresAt + AUTO_DROP_GRACE_MS;
-        this.onEvent('turn.auto-drop', { playerId: team.currentPlayerId, turnId: team.turnId, deadline: team.autoDropDeadlineAt });
-        this.changed('game.state');
-        if (now >= team.autoDropDeadlineAt) this.forfeitTeamTurn(now);
-        return true;
-      }
-      if (team.awaitingAutoDrop && now >= team.autoDropDeadlineAt) {
-        this.forfeitTeamTurn(now);
+      if (now >= team.turnExpiresAt) {
+        const player = this.player(team.currentPlayerId);
+        if (player) player.teamIdle = true;
+        this.forfeitTeamTurn(now, 'timeout');
         return true;
       }
       if (changed) this.changed('game.state');
@@ -729,17 +852,19 @@ class RoundEngine {
     return true;
   }
 
-  forfeitTeamTurn(now = this.now()) {
+  forfeitTeamTurn(now = this.now(), reason = 'forfeit') {
     const team = this.game.team;
     const playerId = team.currentPlayerId;
-    this.clearTurnEffect(playerId);
+    if (!team.turnActive || !playerId) return false;
+    // A forfeited turn has no landing, so its drop-based sabotage remains pending for the next affected block.
     team.turnActive = false;
     team.awaitingAutoDrop = false;
     team.turnExpiresAt = null;
     team.autoDropDeadlineAt = null;
     team.turnIndex = team.turnOrder.indexOf(playerId);
     team.currentPlayerId = null;
-    this.onEvent('turn.forfeited', { playerId, turnId: team.turnId });
+    this.onEvent('turn.forfeited', { playerId, turnId: team.turnId, reason });
+    if (this.pauseIfNoAvailable(now)) return true;
     if (this.game.elapsed >= this.game.nextVoteAt) this.openVote(now);
     else this.startTeamTurn(now, true);
     this.changed('game.state');
@@ -750,39 +875,38 @@ class RoundEngine {
     if (!game || game.phase !== 'playing') return;
     if (this.mode === 'teamwork') {
       if (!this.players.some(player => player.connected && !player.ended)) {
+        if (!game.paused) game.pausedAt = now;
         game.paused = true;
-        game.pausedAt = now;
-        this.onEvent('round.paused', { reason: 'all-players-disconnected' });
+        game.pauseReason = 'all-players-disconnected';
+        this.onEvent('round.paused', { reason: game.pauseReason });
         this.changed('game.state');
         return;
       }
       if (game.team.turnActive && game.team.currentPlayerId === playerId) this.forfeitTeamTurn(now);
-      else this.changed('game.state');
+      else if (!this.pauseIfNoAvailable(now)) this.changed('game.state');
       return;
     }
     const competitor = game.competitors.find(item => item.playerId === playerId);
-    if (competitor && !competitor.ended) {
+    if (competitor && !competitor.ended && !competitor.collapsed && competitor.disconnectDeadline == null) {
       competitor.disconnected = true;
-      competitor.ended = true;
-      const player = this.player(playerId);
-      if (player) player.ended = true;
-      if (game.competitors.every(item => item.ended || item.disconnected || !this.connectedPlayer(item.playerId))) this.finishCompetitiveRound(now);
-      else this.changed('game.state');
+      competitor.disconnectDeadline = now + COMPETITIVE_DISCONNECT_GRACE_MS;
+      this.changed('game.state');
     }
   }
 
   playerReconnected(playerId, now = this.now()) {
     const game = this.game;
     if (!game || game.phase !== 'playing') return;
-    if (this.mode === 'teamwork' && game.paused) {
+    if (this.mode === 'teamwork' && game.paused && this.players.some(player => player.connected && !player.ended && !player.teamIdle)) {
       const shift = Math.max(0, now - game.pausedAt);
       const team = game.team;
       if (team.turnExpiresAt != null) team.turnExpiresAt += shift;
       if (team.autoDropDeadlineAt != null) team.autoDropDeadlineAt += shift;
       if (game.vote) game.vote.closesAt += shift;
-      for (const effect of game.activeEffects) effect.expiresAt += shift;
+      for (const effect of game.activeEffects) if (!effect.untilDrop) effect.expiresAt += shift;
       game.paused = false;
       game.pausedAt = null;
+      game.pauseReason = null;
       game.lastTickAt = now;
       if (team.turnActive && !this.connectedPlayer(team.currentPlayerId)) this.forfeitTeamTurn(now);
       else if (!team.turnActive && !game.vote) this.startTeamTurn(now, Boolean(team.moving));
@@ -790,16 +914,51 @@ class RoundEngine {
       this.changed('game.state');
       return;
     }
+    if (this.mode === 'competitive') {
+      const competitor = game.competitors.find(item => item.playerId === playerId);
+      if (competitor && !competitor.ended && competitor.disconnectDeadline != null) {
+        if (now >= competitor.disconnectDeadline) {
+          this.expireCompetitiveDisconnect(competitor);
+          if (this.competitiveRoundFinished()) this.finishCompetitiveRound(now);
+          else this.changed('game.state');
+          return;
+        }
+        competitor.disconnectDeadline = null;
+        competitor.disconnected = false;
+      }
+    }
     this.changed('game.state');
   }
 
-  pauseIfNoConnected(now = this.now()) {
-    if (this.mode !== 'teamwork' || this.players.some(player => player.connected && !player.ended)) return false;
-    this.game.paused = true;
-    this.game.pausedAt = now;
-    this.onEvent('round.paused', { reason: 'all-players-disconnected' });
-    this.changed('game.state');
+  pauseIfNoAvailable(now = this.now()) {
+    if (this.mode !== 'teamwork' || this.players.some(player => player.connected && !player.ended && !player.teamIdle)) return false;
+    if (!this.game.paused) {
+      this.game.paused = true;
+      this.game.pausedAt = now;
+      this.game.pauseReason = this.players.some(player => player.connected && !player.ended) ? 'all-players-idle' : 'all-players-disconnected';
+      this.onEvent('round.paused', { reason: this.game.pauseReason });
+      this.changed('game.state');
+    }
     return true;
+  }
+
+  teamReady(playerId, now = this.now()) {
+    const game = this.game;
+    const player = this.connectedPlayer(playerId);
+    if (this.mode !== 'teamwork' || !game || game.phase !== 'playing' || !player) return { ok: false, code: 'PLAYER_INACTIVE' };
+    if (!player.teamIdle) return { ok: false, code: 'ALREADY_READY' };
+    player.teamIdle = false;
+    if (game.paused) this.playerReconnected(playerId, now);
+    else this.changed('game.state');
+    return { ok: true };
+  }
+
+  hostSkipTeamTurn(turnId, now = this.now()) {
+    const game = this.game;
+    if (this.mode !== 'teamwork' || !game || game.phase !== 'playing' || game.paused || game.vote || !game.team.turnActive || Number(turnId) !== game.team.turnId)
+      return { ok: false, code: 'TURN_NOT_ACTIVE' };
+    this.forfeitTeamTurn(now, 'host-skip');
+    return { ok: true };
   }
 
   snapshot(now = this.now()) {
@@ -809,17 +968,21 @@ class RoundEngine {
       options: game.vote.options.slice(),
       counts: Core.countVotes(game.vote.votes, game.vote.options),
       totalVotes: game.vote.votes.size,
+      ...(this.mode === 'teamwork' ? { hostTiebreak: game.vote.hostTiebreak || null } : { hostChoice: game.vote.votes.get('competitive-host') || null }),
       remaining: Math.max(0, Math.ceil((game.vote.closesAt - now) / 1000)),
       duration: game.vote.duration
     } : null;
     const common = {
       mode: game.mode, phase: game.phase, roundNumber: game.roundNumber,
-      elapsed: game.elapsed, paused: game.paused, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
+      elapsed: game.elapsed, paused: game.paused, pauseReason: game.pauseReason, voteCancellationSequence: game.voteCancellationSequence, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
+      lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
       activeEffects: game.activeEffects.map(effect => ({
         id: effect.id, targetPlayerId: effect.targetPlayerId, duration: effect.duration,
         elapsed: Math.max(0, (now - effect.startedAt) / 1000),
-        remaining: Math.max(0, (effect.expiresAt - now) / 1000),
+        // Teamwork uses this positive value only to keep visual envelopes open; `untilDrop` marks it as non-countdown.
+        remaining: effect.untilDrop ? Math.max(0, effect.duration) : Math.max(0, (effect.expiresAt - now) / 1000),
+        ...(effect.untilDrop ? { untilDrop: true } : {}),
         ...(Number.isInteger(effect.dropsRemaining) ? { dropsRemaining: effect.dropsRemaining } : {}),
         ...(Number.isFinite(effect.tiltDirection) ? { tiltDirection: effect.tiltDirection } : {}),
         ...(Number.isFinite(effect.spotlightSide) ? { spotlightSide: effect.spotlightSide } : {})
@@ -854,7 +1017,7 @@ class RoundEngine {
       });
     }
     common.players ||= this.players.map(player => ({
-      id: player.id, name: player.name, color: player.color, connected: player.connected, ended: Boolean(player.ended),
+      id: player.id, name: player.name, color: player.color, connected: player.connected, idle: Boolean(player.teamIdle), ended: Boolean(player.ended),
       lastPositionSeq: Number.isInteger(player.lastPositionSeq) ? player.lastPositionSeq : -1,
       blocksPlaced: player.blocksPlaced || 0, perfects: player.perfects || 0, sabotageCount: player.sabotageCount || 0
     }));
@@ -869,5 +1032,5 @@ class RoundEngine {
 module.exports = {
   RoundEngine, SABOTAGE_IDS, TEAM_GLOBAL_EFFECTS, ROOM_GLOBAL_EFFECTS,
   FIRST_VOTE_AT, VOTE_CYCLE_SECONDS, VOTE_SECONDS, EFFECT_SECONDS, ROUND_SECONDS,
-  MAX_TURN_SECONDS, AUTO_DROP_GRACE_MS
+  MAX_TURN_SECONDS, AUTO_DROP_GRACE_MS, COMPETITIVE_DISCONNECT_GRACE_MS
 };
