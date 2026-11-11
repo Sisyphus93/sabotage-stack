@@ -690,3 +690,18 @@ describe('Optional position tone (A-04)', skipReason ? { skip: skipReason } : {}
     } finally { page.close(); if (restored) restored.close(); }
   });
 });
+
+describe('Stage overlay separation (A-06)', skipReason ? { skip: skipReason } : {}, () => {
+  test('the drop hint and chat flavour are outside the drawing surface', async () => {
+    const page = await boot(HTML);
+    try {
+      const d = page.document; const stage = d.getElementById('game-stage');
+      assert.equal(stage.contains(d.getElementById('canvas-hint')), false);
+      assert.equal(stage.contains(d.getElementById('chat-flavor-pop')), false);
+      d.getElementById('dev-mode-button').click();
+      d.querySelector('[data-dev-effect="zoom"]').click();
+      assert.equal(d.getElementById('canvas-hint').hidden, false);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

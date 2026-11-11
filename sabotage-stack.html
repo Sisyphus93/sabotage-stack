@@ -215,12 +215,12 @@ canvas { display: block; width: 100%; height: 100%; }
 .canvas-message.is-visible { opacity: 1; }
 #perfect-banner { top: 151px; border-color: var(--vermilion); color: var(--vermilion); font: 700 25px/1 var(--font-note); }
 .chat-flavor-pop {
-  position: absolute; right: 11px; bottom: 51px; max-width: 48%; padding: 7px 10px;
+  display: none; padding: 7px 10px;
   border: 1.5px solid var(--ink); border-radius: 9px; color: var(--ink); background: var(--paper-deep);
   font: 700 15px/1.1 var(--font-note); opacity: 0; transition: opacity .2s ease;
 }
-.chat-flavor-pop.is-visible { opacity: 1; }
-.canvas-hint { position: absolute; bottom: 11px; left: 50%; transform: translateX(-50%); color: var(--soft-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.chat-flavor-pop.is-visible { display: block; opacity: 1; }
+.canvas-hint { margin-top: 6px; color: var(--soft-ink); font-size: 11px; font-weight: 600; text-align: center; }
 .stage-vote-strip {
   position: absolute; inset: auto 4px 4px; z-index: 5; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
   padding: 3px; border: 1.5px solid var(--ink); border-radius: 8px; color: var(--ink); background: var(--paper); box-shadow: 2px 2px 0 var(--paper-deep);
@@ -1058,8 +1058,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
                 <div id="motion-chip" class="motion-chip">140 px/s</div>
                 <div id="canvas-toast" class="canvas-message" aria-hidden="true"></div>
                 <div id="perfect-banner" class="canvas-message" aria-hidden="true">PERFECT!</div>
-                <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
-                <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
                 <div id="stage-vote-strip" class="stage-vote-strip" role="group" aria-label="Chat vote options" hidden>
                   <button class="stage-vote-chip" data-option-index="0" type="button" disabled aria-label="Option 1">
                     <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
@@ -1073,6 +1071,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
                 </div>
               </div>
             </div>
+            <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
             <div id="control-row" class="control-row">
               <button id="drop-button" class="drop-button" type="button"><span id="drop-label">DROP</span><kbd id="drop-key">SPACE</kbd></button>
               <div id="control-help" class="control-help">One press, one drop.<br>Keep stacking during votes.</div>
@@ -1082,6 +1081,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           </section>
 
           <aside class="side-stack" aria-label="Live game information">
+            <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
             <section id="dev-panel" class="side-card dev-panel" aria-labelledby="dev-panel-title" hidden>
               <div class="card-heading"><span class="eyebrow">Practice</span><span class="timer-label">OFFLINE</span></div>
               <h3 id="dev-panel-title">Choose a sabotage.</h3>
