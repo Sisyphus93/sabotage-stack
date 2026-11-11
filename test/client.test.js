@@ -52,3 +52,37 @@ describe('Spotlight (real client page, real canvas, pixel-measured)', skipReason
     try { await page.sleep(300); assert.deepEqual(page.errors, []); } finally { page.close(); }
   });
 });
+
+// F-001: the playfield is the largest 360:520 box that fits the viewport, never a postage stamp.
+// jsdom does no layout, so the sizing contract is checked at the source and the scroll reset behaviourally.
+describe('Layout: the playfield keeps a minimum size (F-001)', skipReason ? { skip: skipReason } : {}, () => {
+  test('every height-driven stage width keeps its 240px floor', () => {
+    const html = fs.readFileSync(HTML, 'utf8');
+    const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+    // the theme rules also target .game-stage, but only the sizing rules read the viewport height
+    const rules = [...style.matchAll(/\.game-stage\s*\{([^}]*)\}/g)]
+      .map(match => match[1]).filter(body => body.includes('100dvh'));
+    assert.ok(rules.length >= 4, `expected the stage sizing rules in base and media queries, found ${rules.length}`);
+    for (const body of rules) {
+      const width = /width:\s*([^;]+);/.exec(body);
+      assert.ok(width, `.game-stage rule without a width: ${body.trim()}`);
+      assert.match(width[1], /max\(\s*calc\(100dvh/, `stage width must floor the viewport-height term: ${width[1]}`);
+      assert.match(width[1], /,\s*240px\s*\)/, `stage width floor is not 240px: ${width[1]}`);
+    }
+    const layout = /\.game-layout\s*\{([^}]*)\}/.exec(style)[1];
+    assert.match(layout, /align-items:\s*start/, 'the play card must not be centred against a taller side stack');
+  });
+
+  test('starting a game scrolls the new screen to the top', async () => {
+    const page = await boot(HTML);
+    try {
+      const { document } = page;
+      document.documentElement.scrollTop = 480; // the title screen was scrolled down before Play solo
+      document.getElementById('start-button').click();
+      await page.sleep(250);
+      assert.equal(document.body.dataset.screen, 'game');
+      assert.equal(document.documentElement.scrollTop, 0, 'the game screen should open at the top, not mid-board');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

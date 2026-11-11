@@ -170,14 +170,16 @@ h1 span { display: block; color: var(--vermilion); }
 .game-live { display: inline-flex; align-items: center; gap: 8px; color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
 .game-layout {
   min-height: calc(100dvh - 144px); display: grid; grid-template-columns: minmax(330px, 1fr) minmax(300px, 350px);
-  align-items: center; gap: clamp(16px, 2.5vw, 30px);
+  align-items: start; gap: clamp(16px, 2.5vw, 30px);
 }
 .play-card {
   min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: clamp(12px, 2vw, 20px); border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep);
 }
 .game-stage {
-  position: relative; width: min(100%, 420px, calc((100dvh - 212px) * .6923077)); aspect-ratio: 360 / 520;
+  /* Board = largest 360:520 box that leaves room for the chrome above it and the Drop row below it.
+     240px wide (≈347px tall) is the floor: below that the page scrolls instead of shrinking further. */
+  position: relative; width: min(100%, 420px, max(calc(100dvh - 264px), 240px) * .6923077); aspect-ratio: 360 / 520;
   overflow: hidden; border: 1.5px solid var(--ink); border-radius: 12px; background: var(--paper);
   box-shadow: 3px 3px 0 var(--paper-deep); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
@@ -210,7 +212,7 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 .chat-flavor-pop.is-visible { opacity: 1; }
 .canvas-hint { position: absolute; bottom: 11px; left: 50%; transform: translateX(-50%); color: var(--soft-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.control-row { width: min(100%, 420px); display: flex; align-items: center; gap: 12px; padding-top: 13px; }
+.control-row { width: 100%; max-width: 420px; display: flex; align-items: center; gap: 12px; padding-top: 13px; }
 .drop-button {
   min-width: 160px; min-height: 54px; border: 1.5px solid var(--ink); border-radius: 11px;
   display: flex; align-items: center; justify-content: center; gap: 13px; color: var(--paper); background: var(--ink);
@@ -339,8 +341,8 @@ canvas { display: block; width: 100%; height: 100%; }
   .screen-heading h2 { font-size: 22px; }
   .game-layout { min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
   .play-card { padding: 8px; border-radius: 13px; }
-  .game-stage { width: min(100%, calc((100dvh - 276px) * .6923077)); border-radius: 10px; }
-  .control-row { width: min(100%, calc((100dvh - 276px) * .6923077)); padding-top: 8px; gap: 8px; }
+  .game-stage { width: min(100%, max(calc(100dvh - 276px), 240px) * .6923077); border-radius: 10px; }
+  .control-row { width: 100%; max-width: 420px; padding-top: 8px; gap: 8px; }
   .drop-button { min-width: 145px; min-height: 48px; }
   .control-help { font-size: 11px; }
   .side-stack { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(0,.8fr); gap: 8px; }
@@ -383,8 +385,8 @@ canvas { display: block; width: 100%; height: 100%; }
   .brand-word { font-size: 16px; }
   .home-bottom { font-size: 11px; }
   .mode-pill { padding-left: 10px; padding-right: 9px; font-size: 11px; }
-  .game-stage { width: min(100%, calc((100dvh - 266px) * .6923077)); }
-  .control-row { width: min(100%, calc((100dvh - 266px) * .6923077)); }
+  .game-stage { width: min(100%, max(calc(100dvh - 266px), 240px) * .6923077); }
+  .control-row { width: 100%; }
   .side-stack { grid-template-columns: minmax(0,1fr) minmax(0,.72fr); }
   .drop-button { min-width: 130px; }
 }
@@ -392,7 +394,7 @@ canvas { display: block; width: 100%; height: 100%; }
   .app-shell { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); }
   .topbar { min-height: 40px; margin-bottom: 8px; }
   .game-layout, .result-layout { min-height: calc(100dvh - 105px); }
-  .game-stage { width: min(100%, calc((100dvh - 150px) * .6923077)); }
+  .game-stage { width: min(100%, max(calc(100dvh - 240px), 240px) * .6923077); }
   .results-frame { width: min(100%, calc((100dvh - 150px) * .6923077)); }
   .side-card { padding: 10px; }
 }
@@ -1701,6 +1703,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
 
     function setScreen(name) {
+      const changed = document.body.dataset.screen !== name;
       const screens = [['title', elements.title], ['lobby', elements.lobby], ['game', elements.game], ['results', elements.results]];
       for (const [key, node] of screens) {
         const active = key === name;
@@ -1708,6 +1711,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
+      // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
+      if (changed && name === 'game') document.documentElement.scrollTop = 0;
     }
     function mpSessionRead() {
       try {
