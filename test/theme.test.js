@@ -1,6 +1,7 @@
 'use strict';
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 let boot = null; let skipReason = null;
@@ -84,4 +85,11 @@ describe('Theme picker (Paper default, Sunset Stack ’94, Prime Time)', skipRea
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
+});
+
+test('select controls share the themed keyboard focus outline (A-08)', () => {
+  const html = fs.readFileSync(HTML, 'utf8');
+  assert.match(html, /button:focus-visible,\s*select:focus-visible,[^{]+\{\s*outline:\s*3px solid var\(--vermilion\);\s*outline-offset:\s*3px/s);
+  assert.match(html, /html\[data-theme="sunset"\] :focus-visible\s*\{\s*outline-color:\s*var\(--amber\)/);
+  assert.match(html, /html\[data-theme="primetime"\] :focus-visible\s*\{\s*outline-color:\s*var\(--amber\)/);
 });
