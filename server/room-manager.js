@@ -4,6 +4,9 @@ const crypto = require('node:crypto');
 const { RoundEngine } = require('./round-engine');
 
 const MAX_PLAYERS = 6;
+const MAX_SPECTATORS = 16;
+const SPECTATOR_RECONNECT_MS = 120_000;
+const HOST_ABSENCE_GRACE_MS = 10_000;
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const PLAYER_COLORS = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#7A6AA6', '#C96F8A']);
 const VALID_MODES = new Set(['teamwork', 'competitive']);
@@ -14,6 +17,9 @@ const MAX_ROOMS = 1000;
 const MESSAGE_BURST = 200;
 const MESSAGE_REFILL_PER_SECOND = 100;
 const MESSAGE_ABUSE_CLOSE_AFTER = 400;
+// Shared across connections so reconnecting cannot reset the guessing budget.
+const JOIN_FAILURE_LIMIT = 60;
+const JOIN_FAILURE_WINDOW_MS = 60_000;
 
 function cleanDisplayName(value) {
   if (typeof value !== 'string') return '';
@@ -42,8 +48,22 @@ function safeSend(socket, message) {
   }
 }
 
+// Structural patches keep long immutable stacks off the wire. Arrays that grow are
+// patched by index; shrinking arrays are replaced so reconstruction is unambiguous.
+function stateChanges(before, after, path = [], changes = []) {
+  if (Object.is(before, after)) return changes;
+  const arrays = Array.isArray(before) && Array.isArray(after);
+  const objects = before && after && typeof before === 'object' && typeof after === 'object' && !Array.isArray(before) && !Array.isArray(after);
+  if (arrays && after.length >= before.length) {
+    for (let i = 0; i < after.length; i += 1) stateChanges(before[i], after[i], path.concat(i), changes);
+  } else if (objects && Object.keys(before).every(key => Object.hasOwn(after, key))) {
+    for (const key of Object.keys(after)) stateChanges(before[key], after[key], path.concat(key), changes);
+  } else changes.push([path, after]);
+  return changes;
+}
+
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
@@ -52,6 +72,10 @@ class RoomManager {
     this.maxRooms = maxRooms;
     this.messageBurst = messageBurst;
     this.messageRefillPerSecond = messageRefillPerSecond;
+    this.joinFailureLimit = Math.max(1, joinFailureLimit);
+    this.joinFailureWindowMs = Math.max(1, joinFailureWindowMs);
+    this.joinFailures = 0;
+    this.joinFailureWindowStarted = this.now();
     this.budgets = new WeakMap();
     this.rooms = new Map();
     this.sessions = new Map();
@@ -106,6 +130,7 @@ class RoomManager {
       case 'room.join': return this.joinRoom(socket, message);
       case 'room.resume': return this.resumeRoom(socket, message);
       case 'client.preferences': return this.updateClientPreferences(socket, message);
+      case 'room.sync': return this.syncState(socket);
       case 'round.start': return this.startRound(socket);
       case 'round.rematch': return this.rematch(socket);
       case 'room.leave': return this.leaveRoom(socket);
@@ -129,11 +154,18 @@ class RoomManager {
     // A socket that was replaced by a newer connection (phone changed network, tab refreshed, laptop slept) closes late.
     // That must not mark the person disconnected, end their Competitive run, or silence the host's new socket.
     if (session.role === 'host' ? room.host.socket !== socket
+      : session.role === 'spectator' ? (room.spectators.find(item => item.id === session.spectatorId) || {}).socket !== socket
       : (room.players.find(item => item.id === session.playerId) || {}).socket !== socket) return;
     room.lastActivityAt = this.now();
     if (session.role === 'host') {
       room.host.connected = false;
       room.host.socket = null;
+      room.host.disconnectedAt = this.now();
+      room.host.absenceReadyBroadcast = false;
+      if (room.engine) room.engine.hostDisconnected();
+    } else if (session.role === 'spectator') {
+      const spectator = room.spectators.find(item => item.id === session.spectatorId);
+      if (spectator) { spectator.connected = false; spectator.socket = null; spectator.disconnectedAt = this.now(); }
     } else {
       const player = room.players.find(item => item.id === session.playerId);
       if (player) {
@@ -155,7 +187,7 @@ class RoomManager {
     const now = this.now();
     const room = {
       code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now,
-      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion) }, players: [], roundNumber: 0, game: null, engine: null,
+      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion), disconnectedAt: null, absenceReadyBroadcast: false }, players: [], spectators: [], roundNumber: 0, game: null, engine: null,
       bestTeamScore: 0
     };
     this.rooms.set(code, room);
@@ -166,10 +198,30 @@ class RoomManager {
 
   joinRoom(socket, message) {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before joining another.');
+    const now = this.now();
+    if (now - this.joinFailureWindowStarted >= this.joinFailureWindowMs || now < this.joinFailureWindowStarted) {
+      this.joinFailures = 0;
+      this.joinFailureWindowStarted = now;
+    }
+    if (this.joinFailures >= this.joinFailureLimit) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const room = this.rooms.get(code);
-    if (!room) return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
-    if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started.');
+    if (!room) {
+      this.joinFailures += 1;
+      return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
+    }
+    if (message.spectate === true) {
+      this.pruneSpectators(room, now);
+      if (room.spectators.length >= MAX_SPECTATORS) return this.error(socket, 'SPECTATORS_FULL', 'This room has reached its spectator limit.');
+      const spectator = { id: this.newId(), token: this.newToken(), socket, connected: true, disconnectedAt: null };
+      room.spectators.push(spectator);
+      room.lastActivityAt = now;
+      this.sessions.set(socket, { roomCode: code, role: 'spectator', spectatorId: spectator.id });
+      safeSend(socket, { type: 'room.joined', code, role: 'spectator', resumeToken: spectator.token, state: this.snapshot(room) });
+      this.broadcastState(room);
+      return;
+    }
+    if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started. Choose Watch as spectator to view it.');
     if (room.players.length >= MAX_PLAYERS) return this.error(socket, 'ROOM_FULL', 'This room already has six players.');
     const name = uniqueDisplayName(message.name, room.players);
     const player = {
@@ -191,6 +243,10 @@ class RoomManager {
     const room = this.rooms.get(session.roomCode);
     if (!room) return this.error(socket, 'ROOM_NOT_FOUND', 'That room is no longer available.');
     const reducedMotion = Boolean(message.reducedMotion);
+    if (session.role === 'spectator') {
+      safeSend(socket, { type: 'preferences.updated', reducedMotion });
+      return;
+    }
     if (session.role === 'host') {
       room.host.reducedMotion = reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = reducedMotion;
@@ -200,7 +256,8 @@ class RoomManager {
       player.reducedMotion = reducedMotion;
     }
     room.lastActivityAt = this.now();
-    return safeSend(socket, { type: 'preferences.updated', reducedMotion });
+    safeSend(socket, { type: 'preferences.updated', reducedMotion });
+    this.broadcastState(room);
   }
 
   resumeRoom(socket, message) {
@@ -213,11 +270,15 @@ class RoomManager {
 
     let role = null;
     let playerId = null;
+    let spectatorId = null;
+    this.pruneSpectators(room, this.now());
     if (this.tokensMatch(token, room.host.token)) {
       role = 'host';
       this.detachSuperseded(room.host.socket, socket);
       room.host.connected = true;
       room.host.socket = socket;
+      room.host.disconnectedAt = null;
+      room.host.absenceReadyBroadcast = false;
       if (typeof message.reducedMotion === 'boolean') room.host.reducedMotion = message.reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = Boolean(room.host.reducedMotion);
     } else {
@@ -231,10 +292,18 @@ class RoomManager {
         if (typeof message.reducedMotion === 'boolean') player.reducedMotion = message.reducedMotion;
         // The round engine restores a disconnected Competitive stack only within its grace window.
       }
+      if (!role) {
+        const spectator = room.spectators.find(item => this.tokensMatch(token, item.token));
+        if (spectator) {
+          role = 'spectator'; spectatorId = spectator.id;
+          this.detachSuperseded(spectator.socket, socket);
+          spectator.connected = true; spectator.socket = socket; spectator.disconnectedAt = null;
+        }
+      }
     }
     if (!role) return this.error(socket, 'INVALID_RESUME', 'Reconnect token was not recognized for this room.');
     room.lastActivityAt = this.now();
-    this.sessions.set(socket, { roomCode: code, role, playerId });
+    this.sessions.set(socket, { roomCode: code, role, playerId, spectatorId });
     if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
     const packet = { type: 'room.resumed', code, role, state: this.snapshot(room) };
     if (playerId) packet.playerId = playerId;
@@ -261,8 +330,12 @@ class RoomManager {
   }
 
   rematch(socket) {
-    const { room } = this.requireHost(socket);
-    if (!room) return;
+    const session = this.sessions.get(socket);
+    const room = session && this.rooms.get(session.roomCode);
+    if (!room) return this.error(socket, 'NOT_IN_ROOM', 'Join a room before starting a rematch.');
+    const player = session.role === 'player' && room.players.find(item => item.id === session.playerId && item.connected && item.socket === socket);
+    const host = session.role === 'host' && room.host.connected && room.host.socket === socket;
+    if (!host && !(player && this.canRematchWithoutHost(room))) return this.error(socket, 'HOST_ONLY', 'Wait for the host or until the host has been away for ten seconds.');
     if (room.phase !== 'results') return this.error(socket, 'ROUND_NOT_FINISHED', 'A rematch is available after the round ends.');
     room.roundNumber += 1;
     room.lastActivityAt = this.now();
@@ -277,6 +350,12 @@ class RoomManager {
     if (!room) { this.sessions.delete(socket); return; }
     if (session.role === 'host') {
       this.error(socket, 'HOST_CANNOT_LEAVE', 'The host can close the room from the stream view.');
+      return;
+    }
+    if (session.role === 'spectator') {
+      room.spectators = room.spectators.filter(item => item.id !== session.spectatorId);
+      this.sessions.delete(socket);
+      safeSend(socket, { type: 'room.left', code: room.code });
       return;
     }
     const index = room.players.findIndex(player => player.id === session.playerId);
@@ -301,6 +380,7 @@ class RoomManager {
       mode: room.mode,
       players: room.players,
       motionPrefersReduced: Boolean(room.host.reducedMotion),
+      isHostConnected: () => room.host.connected,
       now: this.now,
       random: this.random,
       onEvent: (type, payload) => this.broadcast(room, { type, code: room.code, ...payload }),
@@ -311,9 +391,7 @@ class RoomManager {
           // Stored on the engine's own results so the room snapshot below carries it too.
           if (engine.game && engine.game.results) engine.game.results.bestTeamScore = room.bestTeamScore;
         }
-        // One message per change. `room.state` already contains the complete game snapshot, so also sending a separate
-        // `game.state` doubled the bandwidth to every phone (about 52 KB each per change at height 40 with six racers).
-        this.broadcastState(room);
+        this.broadcastDelta(room);
       }
     });
     room.engine = engine;
@@ -393,8 +471,17 @@ class RoomManager {
   tick() {
     const now = this.now();
     for (const room of this.rooms.values()) {
+      this.pruneSpectators(room, now);
       if (room.engine && room.phase === 'playing') room.engine.tick(now);
+      if (!room.host.absenceReadyBroadcast && this.canRematchWithoutHost(room, now)) {
+        room.host.absenceReadyBroadcast = true;
+        this.broadcastState(room);
+      }
     }
+  }
+
+  pruneSpectators(room, now = this.now()) {
+    room.spectators = room.spectators.filter(item => item.connected || now - item.disconnectedAt < SPECTATOR_RECONNECT_MS);
   }
 
   closeRoomForHost(socket) {
@@ -406,7 +493,7 @@ class RoomManager {
   closeRoom(roomOrCode, reason = 'Room closed.') {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room || !this.rooms.has(room.code)) return false;
-    const sockets = [room.host.socket, ...room.players.map(player => player.socket)].filter(Boolean);
+    const sockets = [room.host.socket, ...room.players.map(player => player.socket), ...room.spectators.map(spectator => spectator.socket)].filter(Boolean);
     for (const socket of sockets) {
       safeSend(socket, { type: 'room.closed', code: room.code, reason });
       this.sessions.delete(socket);
@@ -428,12 +515,17 @@ class RoomManager {
     return closed;
   }
 
+  canRematchWithoutHost(room, now = this.now()) {
+    return !room.host.connected && room.host.disconnectedAt != null && now - room.host.disconnectedAt >= HOST_ABSENCE_GRACE_MS;
+  }
+
   snapshot(roomOrCode) {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room) return null;
     return {
-      code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber,
-      hostConnected: room.host.connected, bestTeamScore: room.bestTeamScore || 0,
+      code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber, revision: room.stateRevision || 0,
+      reducedMotion: Boolean(room.host.reducedMotion || room.players.some(player => player.connected && player.reducedMotion)),
+      hostConnected: room.host.connected, canRematchWithoutHost: this.canRematchWithoutHost(room), bestTeamScore: room.bestTeamScore || 0,
       players: room.players.map(player => ({
         id: player.id, name: player.name, color: player.color,
         connected: player.connected, ended: Boolean(player.ended)
@@ -444,12 +536,34 @@ class RoomManager {
   }
 
   broadcastState(room) {
-    this.broadcast(room, { type: 'room.state', state: this.snapshot(room) });
+    room.stateRevision = (room.stateRevision || 0) + 1;
+    room.lastBroadcastState = this.snapshot(room);
+    this.broadcast(room, { type: 'room.state', state: room.lastBroadcastState });
+  }
+
+  broadcastDelta(room) {
+    if (!room.lastBroadcastState) return this.broadcastState(room);
+    const previous = room.lastBroadcastState;
+    room.stateRevision = (room.stateRevision || 0) + 1;
+    const state = this.snapshot(room);
+    const delta = { type: 'room.delta', baseRevision: previous.revision, revision: state.revision, changes: stateChanges(previous, state) };
+    room.lastBroadcastState = state;
+    if (JSON.stringify(delta).length >= JSON.stringify({ type: 'room.state', state }).length) this.broadcast(room, { type: 'room.state', state });
+    else this.broadcast(room, delta);
+  }
+
+  syncState(socket) {
+    const session = this.sessions.get(socket);
+    const room = session && this.rooms.get(session.roomCode);
+    if (!room) return this.error(socket, 'NOT_IN_ROOM', 'Join a room first.');
+    // The baseline, not a fresh snapshot: subsequent deltas reference this exact revision.
+    safeSend(socket, { type: 'room.state', state: room.lastBroadcastState || this.snapshot(room) });
   }
 
   broadcast(room, message) {
     safeSend(room.host.socket, message);
     for (const player of room.players) if (player.connected) safeSend(player.socket, message);
+    for (const spectator of room.spectators) if (spectator.connected) safeSend(spectator.socket, message);
   }
 
   error(socket, code, message, details = null) {

@@ -503,3 +503,92 @@ describe('Teamwork idle turns (F-010)', () => {
     assert.equal(team.stack.length, 1);
   });
 });
+
+describe('Competitive host ballot (F-014)', () => {
+  test('host changes one ballot without affecting chat, invalid choices, or later votes', () => {
+    const { engine, clock } = makeEngine('competitive', 160);
+    engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ voterId: 'chat-1', option: first }).ok, true);
+    assert.equal(engine.castManualVote(second).ok, true);
+    assert.equal(engine.castManualVote('not-an-option').code, 'INVALID_OPTION');
+    assert.equal(engine.snapshot().vote.totalVotes, 2);
+    assert.equal(engine.snapshot().vote.counts[first], 1);
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    assert.equal(engine.snapshot().vote.hostChoice, second);
+    engine.resolveVote(clock.t);
+    engine.openVote(clock.t);
+    assert.equal(engine.snapshot().vote.hostChoice, null);
+    assert.equal(engine.snapshot().vote.totalVotes, 0);
+  });
+});
+
+describe('Effect rebalance (F-019)', () => {
+  test('helpful Calipers and Superglue are not harsh, while the roster stays intact', () => {
+    assert.equal(Core.SABOTAGE_IDS.length, 16);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('calipers'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('superglue'), false);
+    assert.equal(Core.HARSH_SABOTAGE_IDS.includes('rollercoaster'), true);
+  });
+  test('Rollercoaster accelerates as it rises, including on the authoritative server', () => {
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.3) - 1.6) < 1e-9);
+    assert.ok(Math.abs(Core.rollercoasterSpeedMultiplier(.9) - 1) < 1e-9);
+    for (const mode of ['teamwork', 'competitive']) {
+      const { engine, clock } = makeEngine(mode);
+      const actor = mode === 'teamwork' ? engine.game.team : engine.game.competitors[0];
+      const id = mode === 'teamwork' ? actor.currentPlayerId : actor.playerId;
+      actor.moving.rollerPhase = 0;
+      engine.addEffect('rollercoaster', id, clock.t);
+      const base = Core.speedForHeight(actor.stack.length - 1);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 300) - base * 1.6) < 1e-9);
+      assert.ok(Math.abs(engine.movementSpeed(actor.stack, actor, id, clock.t + 900) - base) < 1e-9);
+      engine.motionPrefersReduced = true;
+      assert.equal(engine.movementSpeed(actor.stack, actor, id, clock.t + 300), base);
+    }
+  });
+});
+
+describe('Peekaboo opacity (F-025)', () => {
+  test('fades once and stays hidden until the next cycle', () => {
+    assert.equal(Core.peekabooOpacity(.30), 1);
+    assert.ok(Math.abs(Core.peekabooOpacity(.33) - .5) < 1e-9);
+    for (const time of [.35, .37, .385, .39, .55, .699]) assert.equal(Core.peekabooOpacity(time), 0, `time ${time}`);
+    assert.equal(Core.peekabooOpacity(.7), 1);
+    let prior = 1;
+    for (let time = .31; time < .7; time += .001) {
+      const opacity = Core.peekabooOpacity(time);
+      assert.ok(opacity <= prior + 1e-9, `unexpected flash at ${time}`);
+      prior = opacity;
+    }
+  });
+});
+
+describe('Chat adapter bounds and namespaces (F-029)', () => {
+  test('platform and host identities cannot collide, and chat voters can change their vote', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'Twitch', voterId: 'competitive-host', option: second }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'youtube', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.game.vote.votes.size, 3);
+    assert.equal(engine.snapshot().vote.hostChoice, first);
+    assert.equal(engine.game.vote.votes.get('chat:twitch:competitive-host'), first);
+  });
+  test('rejects invalid identities and limits distinct voters and repeated updates per ballot', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const option = engine.game.vote.options[0];
+    for (const voterId of ['', 'x'.repeat(129), 123]) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId, option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'bad:platform', voterId: 'a', option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: 'bad' }).code, 'INVALID_OPTION');
+    for (let i = 0; i < 20; i++) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).code, 'CHAT_VOTE_LIMIT');
+    for (let i = 1; i < 1000; i++) engine.game.vote.chatVoteUpdates.set(`chat:twitch:v${i}`, 1);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'new', option }).code, 'CHAT_VOTER_LIMIT');
+    assert.equal(engine.castManualVote(option).ok, true, 'chat limits do not block the host');
+    engine.game.vote = null; engine.openVote(clock.t);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: engine.game.vote.options[0] }).ok, true);
+  });
+});
