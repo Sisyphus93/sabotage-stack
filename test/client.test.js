@@ -510,3 +510,64 @@ describe('Practice entry point (F-020)', skipReason ? { skip: skipReason } : {},
     } finally { page.close(); }
   });
 });
+
+describe('Connection wait and recovery (F-021)', skipReason ? { skip: skipReason } : {}, () => {
+  test('stalled host connection offers retry and solo, ignores the old socket, and clears timers', async () => {
+    const sockets = [];
+    class HangingSocket {
+      constructor() { this.readyState = 0; this.handlers = {}; sockets.push(this); }
+      addEventListener(type, handler) { this.handlers[type] = handler; }
+      close() { this.readyState = 3; if (this.handlers.close) this.handlers.close(); }
+      send() {}
+    }
+    const page = await boot(HTML, { WebSocketImpl: HangingSocket });
+    try {
+      const { window, document: d } = page;
+      const originalSet = window.setTimeout.bind(window); const originalClear = window.clearTimeout.bind(window);
+      const waits = new Map(); let id = 100000;
+      window.setTimeout = (fn, ms, ...args) => ms === 5000 || ms === 30000 ? (waits.set(++id, { fn, ms }), id) : originalSet(fn, ms, ...args);
+      window.clearTimeout = handle => { waits.delete(handle); originalClear(handle); };
+      d.getElementById('teamwork-button').click();
+      assert.equal(d.getElementById('teamwork-button').disabled, true);
+      assert.match(d.getElementById('connection-mode-label').textContent, /connecting/);
+      assert.doesNotMatch(d.getElementById('connection-mode-label').textContent, /reconnecting/);
+      [...waits.values()].find(item => item.ms === 5000).fn();
+      assert.match(d.getElementById('multiplayer-status').textContent, /Waking the server/);
+      [...waits.values()].find(item => item.ms === 30000).fn();
+      assert.equal(d.getElementById('host-connection-actions').hidden, false);
+      d.querySelector('#host-connection-actions [data-connection-retry]').click();
+      assert.equal(sockets.length, 2);
+      assert.equal(sockets[0].readyState, 3);
+      assert.equal(waits.size, 2);
+      sockets[0].handlers.message({ data: JSON.stringify({ type: 'room.created', code: 'ABCD' }) });
+      assert.ok(d.getElementById('title-screen').classList.contains('is-active'));
+      [...waits.values()].find(item => item.ms === 30000).fn();
+      d.querySelector('#host-connection-actions [data-connection-solo]').click();
+      assert.equal(d.body.dataset.screen, 'game');
+      assert.equal(sockets[1].readyState, 3);
+      assert.equal(waits.size, 0);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('closing a stalled join cancels its socket', async () => {
+    const sockets = [];
+    class HangingSocket {
+      constructor() { this.readyState = 0; this.handlers = {}; sockets.push(this); }
+      addEventListener(type, handler) { this.handlers[type] = handler; }
+      close() { this.readyState = 3; if (this.handlers.close) this.handlers.close(); }
+      send() {}
+    }
+    const page = await boot(HTML, { WebSocketImpl: HangingSocket });
+    try {
+      const d = page.document;
+      d.getElementById('join-game-button').click();
+      d.getElementById('join-room-code').value = 'ABCD'; d.getElementById('join-display-name').value = 'Player';
+      d.getElementById('join-form').dispatchEvent(new page.window.Event('submit', { bubbles: true, cancelable: true }));
+      assert.equal(d.querySelector('#join-form [type="submit"]').disabled, true);
+      d.getElementById('cancel-join').click();
+      assert.equal(sockets[0].readyState, 3);
+      assert.equal(d.querySelector('#join-form [type="submit"]').disabled, false);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

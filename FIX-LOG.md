@@ -32,7 +32,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-018 | P2 | quick |  | The perfect window is a flat ±3 px that players cannot see; difficulty rises through speed alone | fixed, awaiting your check | fix(F-018), single commit on this branch | |
 | F-019 | P2 | larger | yes | Effect set: four speed effects look like normal play, one helper is classed as harsh, two are near-neutral, and Spotlight hides almost everything | fixed, awaiting your check | fix(F-019), single commit on this branch | |
 | F-020 | P2 | quick |  | Developer tooling is in the player's path: DEV lab on the title and in the live game header, 'BUILD 01' in the heading | fixed, awaiting your check | fix(F-020), single commit on this branch | |
-| F-021 | P2 | quick |  | If the socket hangs, 'Connecting to the game server…' stays forever with no timeout, progress or way out | todo | | |
+| F-021 | P2 | quick |  | If the socket hangs, 'Connecting to the game server…' stays forever with no timeout, progress or way out | fixed, awaiting your check | fix(F-021), single commit on this branch | |
 | F-022 | P2 | quick |  | Decision-critical text is 9-11 px on phones | todo | | |
 | F-023 | P2 | larger |  | Every drop re-sends the whole room: room.state reached 30 KB with about 100 blocks | todo | | |
 | F-024 | P3 | quick |  | Teamwork: 'up to 3 drops' effects cover one drop in practice, except Crumble | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-021, connection wait:** initial host/join attempts show a five-second wake-up message, then Retry and Play solo at 30 seconds; duplicate submissions are disabled while waiting. Cancelling or starting solo closes the pending socket, and stale socket events are ignored. Reconnect backoff is unchanged. Node 22.22.3: `npm test` passed 104/104; targeted stalled socket tests passed after the stale error guard.
 
 - **F-020, Practice:** the title opens a scoreless Practice mode with player-facing copy; the in-run shortcut and Build 01 label are removed. Existing sandbox functionality remains available from the title. Node 22.22.3: `npm test` passed 102/102, including the entry/exit and solo HUD regression check.
 
