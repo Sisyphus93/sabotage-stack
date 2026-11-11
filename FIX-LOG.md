@@ -37,7 +37,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-023 | P2 | larger |  | Every drop re-sends the whole room: room.state reached 30 KB with about 100 blocks | fixed, awaiting your check | fix(F-023), single commit on this branch | |
 | F-024 | P3 | quick |  | Teamwork: 'up to 3 drops' effects cover one drop in practice, except Crumble | fixed, awaiting your check | fix(F-024), single commit on this branch | |
 | F-025 | P3 | quick |  | Peekaboo fades out, flashes back for 40 ms, then cuts to hidden | fixed, awaiting your check | fix(F-025), single commit on this branch | |
-| F-026 | P3 | quick |  | Copy and HUD drift: repeated speed in the chip, '+1 TEAM BONUS' in Competitive, 'Turn timer' on the round clock, and more | todo | | |
+| F-026 | P3 | quick |  | Copy and HUD drift: repeated speed in the chip, '+1 TEAM BONUS' in Competitive, 'Turn timer' on the round clock, and more | fixed, awaiting your check | fix(F-026), single commit on this branch | |
 | F-027 | P3 | quick |  | The sound setting is forgotten on reload | todo | | |
 | F-028 | P3 | quick |  | axe: one contrast miss, no h1 outside the title screen, labels on role-less elements | todo | | |
 | F-029 | P3 | larger |  | Vote adapter seam (not wired to a live source): no voter namespacing or caps, and it shares ids with the host's clicks | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-026, multiplayer copy and HUD:** removed duplicate speed and solo perfect toast, corrected Competitive perfect/round timer and host guidance, player singular, fallback turn capitalization and results wording; Competitive host stage chips no longer cover player names (status remains in the side panel). Node 22.22.3: `npm test` passed 112/112, including both modes end-to-end. Visual host-board placement should be checked.
 
 - **F-025, Peekaboo:** removed the unintended reappearance after the fade and corrected the visible-duration description; shared core was synced. Node 22.22.3: `npm test` passed 110/110, including millisecond-sampled monotonic fade coverage. Motion-sensitive visual playtesting is still advisable.
 

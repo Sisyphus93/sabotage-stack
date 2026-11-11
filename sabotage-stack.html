@@ -194,6 +194,7 @@ h1 span { display: block; color: var(--vermilion); }
 canvas { display: block; width: 100%; height: 100%; }
 #game-canvas { touch-action: none; cursor: crosshair; }
 .canvas-hud { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.game-stage.competitive-host .height-chip, .game-stage.competitive-host .motion-chip { display: none; }
 .height-chip {
   position: absolute; top: 12px; left: 12px; min-width: 70px; display: flex; flex-direction: column; gap: 1px;
   padding: 6px 9px 7px; border: 1.5px solid var(--ink); border-radius: 9px; color: var(--ink); background: var(--paper);
@@ -1756,7 +1757,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
-      gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
@@ -2179,7 +2180,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (message.type === 'block.perfect' || message.type === 'block.land') {
         playCue(message.type === 'block.perfect' ? 'block.perfect' : 'block.land');
         if (message.playerId === multiplayer.playerId && message.type === 'block.perfect') {
-          setToast('PERFECT DROP · +1 TEAM BONUS', 1.25);
+          setToast(game && game.mode === 'teamwork' ? 'PERFECT DROP · +1 TEAM BONUS' : 'PERFECT DROP', 1.25);
           announceGame(`Perfect drop. Height ${Number(message.height) || 0}.`);
         }
         const height = Number(message.height) || 0;
@@ -2354,7 +2355,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       const stats = document.createElement('span'); stats.className = 'player-connection';
       if (Number.isFinite(player.height)) stats.textContent = `${player.height} high · ${player.perfects || 0}★`;
-      else if (Number.isFinite(player.blocksPlaced)) stats.textContent = `${player.blocksPlaced} blocks · ${player.perfects || 0}★`;
+      else if (Number.isFinite(player.blocksPlaced)) stats.textContent = `${player.blocksPlaced} ${player.blocksPlaced === 1 ? 'block' : 'blocks'} · ${player.perfects || 0}★`;
       else stats.textContent = '';
       if (stats.textContent) li.append(stats);
       const currentId = state && state.game && state.game.team ? state.game.team.currentPlayerId : null;
@@ -2438,7 +2439,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : 'Idle players are skipped until ready.')
           : multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every connected, active stack.' : 'Build your own tower. Room votes hit every connected, active stack.';
         const seconds = g.mode === 'teamwork' ? g.vote ? g.vote.remaining : g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining : g.remainingSeconds;
-        elements.mpTurnTimerLabel.textContent = g.mode === 'teamwork' && g.vote ? 'Vote closes' : 'Turn timer';
+        elements.mpTurnTimerLabel.textContent = g.mode === 'competitive' ? 'Round timer' : g.vote ? 'Vote closes' : 'Turn timer';
         elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(seconds || 0))}s`;
       } else {
         elements.mpTurnHeading.textContent = 'Waiting for the round';
@@ -3195,7 +3196,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         game.statusMessage = 'Perfect drop! The block snapped into line.';
       }
       if (outcome.perfect) {
-        setToast('PERFECT! +1 CLEAN DROP', 1.25);
         if (!game.devMode) announceGame(`Perfect drop. Height ${heightOf(game)}.`);
       }
       if (!game.devMode) {
@@ -4091,7 +4091,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const players = result.players || [];
         const winners = new Set(result.winnerIds || []);
         const maxHeight = Math.max(0, ...players.map(player => Number(player.height) || 0));
-        if (heading) heading.textContent = winners.size > 1 ? 'A shared lead. Magnificent.' : 'One tower survived the chaos.';
+        if (heading) heading.textContent = winners.size > 1 ? 'A shared lead. Magnificent.' : 'The tallest stack takes the lead.';
         appendResultHeading(winners.size > 1 ? 'It’s a tie at the top.' : 'The stacks, ranked.', 'Every stack uses the same scale and baseline. Fallen pieces sit below the shared baseline.');
         const grid = document.createElement('div'); grid.className = 'multiplayer-result-grid';
         players.forEach((player, index) => {
@@ -4307,6 +4307,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function syncHud(force = false) {
       if (!game) return;
+      elements.gameStage.classList.toggle('competitive-host', Boolean(game.multiplayer && game.mode === 'competitive' && multiplayer.role === 'host'));
       if (game.devMode) {
         elements.stageVoteStrip.hidden = true;
         const normal = devSelectedId === 'normal';
@@ -4353,8 +4354,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.controlRow.hidden = false;
       elements.drop.hidden = false;
       elements.canvasHint.hidden = false;
-      elements.controlHelp.innerHTML = game.multiplayer && game.mode === 'teamwork'
-        ? (multiplayer.role === 'host' ? 'Take turns building.<br>Only tied votes come to you.' : 'Take turns building.<br>Vote on your phone between turns.')
+      elements.controlHelp.innerHTML = game.multiplayer && multiplayer.role === 'host'
+        ? (game.mode === 'teamwork' ? 'Take turns building.<br>Only tied votes come to you.' : 'Watch the stacks.<br>Choose one sabotage per vote.')
+        : game.multiplayer && game.mode === 'teamwork' ? 'Take turns building.<br>Vote on your phone between turns.'
         : 'One press, one drop.<br>Keep stacking during votes.';
       elements.canvasHint.textContent = 'Tap anywhere to drop';
       elements.drop.setAttribute('aria-label', 'Drop the moving block');
@@ -4380,7 +4382,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.roundStatus.textContent = game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
       if (game.multiplayer) {
         elements.mpCard.hidden = false;
-        const turnName = game.currentPlayerName || 'the next player';
+        const turnName = game.currentPlayerName || 'Next player';
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
         elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
         if (game.paused) {
@@ -4396,6 +4398,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.mpTurnTimer.textContent = game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
             : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
         } else {
+          elements.mpTurnTimerLabel.textContent = 'Round timer';
           const self = (game.remotePlayers || []).find(player => player.playerId === multiplayer.playerId);
           elements.mpTurnStatus.textContent = multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every active stack.'
             : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.';
@@ -4441,8 +4444,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.dropLabel.textContent = 'DROP';
           const speed = Math.round(gameSpeed());
           const id = game.activeEffect && game.activeEffect.id;
-          const name = id ? effectById(id).name.toUpperCase() : `${speed} PX/S`;
-          const motion = `${name} · ${speed} PX/S`;
+          const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
           elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
         } else {
           elements.drop.disabled = true;
@@ -4477,8 +4479,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.dropLabel.textContent = 'DROP';
         const speed = Math.round(gameSpeed());
         const id = game.activeEffect && game.activeEffect.id;
-        const name = id ? effectById(id).name.toUpperCase() : `${speed} PX/S`;
-        const motion = `${name} · ${speed} PX/S`;
+        const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
         elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
       }
       if (game.activeEffect) {

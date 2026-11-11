@@ -451,3 +451,26 @@ describe('Room delta recovery (F-023)', skipReason ? { skip: skipReason } : {}, 
     } finally { await r.close(); }
   });
 });
+
+describe('Mode-specific HUD copy (F-026)', skipReason ? { skip: skipReason } : {}, () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: labels, host view, and perfect toast match the mode`, async () => {
+    const r = await startRoom(mode);
+    try {
+      const hd = r.host.document; const pd = r.players[0].document;
+      assert.equal(hd.getElementById('game-stage').classList.contains('competitive-host'), mode === 'competitive');
+      assert.match(hd.getElementById('control-help').textContent, mode === 'competitive' ? /Watch the stacks/ : /Take turns/);
+      assert.equal(hd.getElementById('multiplayer-turn-timer-label').textContent, mode === 'competitive' ? 'Round timer' : 'Turn timer');
+      const id = r.room.players[0].id;
+      r.room.players[0].socket.send(JSON.stringify({ type: 'block.perfect', playerId: id, height: 1 }));
+      await sleep(100);
+      assert.equal(pd.getElementById('canvas-toast').textContent, mode === 'teamwork' ? 'PERFECT DROP · +1 TEAM BONUS' : 'PERFECT DROP');
+      assert.doesNotMatch(pd.getElementById('motion-chip').textContent, /(\d+ PX\/S) · \1/);
+      if (mode === 'competitive') {
+        for (const competitor of r.room.engine.game.competitors) { competitor.collapsed = true; competitor.ended = true; }
+        r.room.engine.finishCompetitiveRound(Date.now()); await sleep(250);
+        assert.doesNotMatch(hd.getElementById('results-heading').textContent, /survived/);
+      }
+      for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});
