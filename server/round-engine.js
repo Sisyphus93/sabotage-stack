@@ -363,9 +363,10 @@ class RoundEngine {
   castManualVote(option) {
     const game = this.game;
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
-    const event = { voterId: `manual-${++this.manualVoteSequence}`, option };
-    game.vote.votes = Core.recordVote(game.vote.votes, event, game.vote.options);
-    if (!game.vote.votes.has(event.voterId)) return { ok: false, code: 'INVALID_OPTION' };
+    const event = { voterId: this.mode === 'competitive' ? 'competitive-host' : `manual-${++this.manualVoteSequence}`, option };
+    const next = Core.recordVote(game.vote.votes, event, game.vote.options);
+    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.votes = next;
     this.onEvent('vote.updated', { counts: Core.countVotes(game.vote.votes, game.vote.options), totalVotes: game.vote.votes.size });
     this.changed('game.state');
     return { ok: true };
@@ -929,7 +930,7 @@ class RoundEngine {
       options: game.vote.options.slice(),
       counts: Core.countVotes(game.vote.votes, game.vote.options),
       totalVotes: game.vote.votes.size,
-      ...(this.mode === 'teamwork' ? { hostTiebreak: game.vote.hostTiebreak || null } : {}),
+      ...(this.mode === 'teamwork' ? { hostTiebreak: game.vote.hostTiebreak || null } : { hostChoice: game.vote.votes.get('competitive-host') || null }),
       remaining: Math.max(0, Math.ceil((game.vote.closesAt - now) / 1000)),
       duration: game.vote.duration
     } : null;

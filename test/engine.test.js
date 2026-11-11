@@ -503,3 +503,24 @@ describe('Teamwork idle turns (F-010)', () => {
     assert.equal(team.stack.length, 1);
   });
 });
+
+describe('Competitive host ballot (F-014)', () => {
+  test('host changes one ballot without affecting chat, invalid choices, or later votes', () => {
+    const { engine, clock } = makeEngine('competitive', 160);
+    engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ voterId: 'chat-1', option: first }).ok, true);
+    assert.equal(engine.castManualVote(second).ok, true);
+    assert.equal(engine.castManualVote('not-an-option').code, 'INVALID_OPTION');
+    assert.equal(engine.snapshot().vote.totalVotes, 2);
+    assert.equal(engine.snapshot().vote.counts[first], 1);
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    assert.equal(engine.snapshot().vote.hostChoice, second);
+    engine.resolveVote(clock.t);
+    engine.openVote(clock.t);
+    assert.equal(engine.snapshot().vote.hostChoice, null);
+    assert.equal(engine.snapshot().vote.totalVotes, 0);
+  });
+});

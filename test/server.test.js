@@ -183,7 +183,7 @@ describe('Teamwork vote routing (F-008)', () => {
     assert.equal(engine.game.lastVote.tiebreak, 'host');
   });
 
-  test('Competitive keeps host manual votes and rejects player ballots', () => {
+  test('Competitive accepts one changeable host ballot and rejects player ballots', () => {
     const { manager, host, players, room } = makeRoom('competitive');
     const engine = room.engine;
     engine.openVote(manager.now());
@@ -192,7 +192,10 @@ describe('Teamwork vote routing (F-008)', () => {
     assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY', 'a Competitive player keeps the original host-only route');
     manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
     manager.receive(host, JSON.stringify({ type: 'vote.cast', option: second }));
-    assert.equal(engine.game.vote.votes.size, 2, 'Competitive host clicks retain their existing separate-ballot behavior');
+    assert.equal(engine.game.vote.votes.size, 1, 'host changes the existing ballot');
+    assert.equal(engine.snapshot().vote.hostChoice, second);
+    assert.equal(engine.snapshot().vote.counts[first], 0);
+    assert.equal(engine.snapshot().vote.counts[second], 1);
     assert.equal(Object.hasOwn(engine.snapshot().vote, 'hostTiebreak'), false);
   });
 });

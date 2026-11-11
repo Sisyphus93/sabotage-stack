@@ -184,7 +184,13 @@ describe('Teamwork votes pause between turns (F-008)', skipReason ? { skip: skip
       const hostButtons = [...r.host.document.querySelectorAll('.vote-option')];
       hostButtons[0].click(); await sleep(100);
       hostButtons[1].click(); await sleep(100);
-      assert.equal(engine.game.vote.votes.size, 2, 'the existing Competitive host ballot behavior is unchanged');
+      assert.equal(engine.game.vote.votes.size, 1, 'the host changes one Competitive ballot');
+      assert.equal(engine.snapshot().vote.hostChoice, engine.game.vote.options[1]);
+      assert.equal(hostButtons[0].getAttribute('aria-pressed'), 'false');
+      assert.equal(hostButtons[1].getAttribute('aria-pressed'), 'true');
+      assert.match(r.host.document.getElementById('vote-subtitle').textContent, /Vote counted/);
+      assert.match(r.host.document.getElementById('vote-help').textContent, /one vote/i);
+      assert.match(r.players[0].document.getElementById('vote-help').textContent, /host has one/i);
       for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
     } finally { await r.close(); }
   });

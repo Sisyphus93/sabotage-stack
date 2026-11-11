@@ -4021,6 +4021,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         total += 3;
       }
       const soloChoice = voting && !remoteVote ? game.vote.votes.get('you') : null;
+      const hostChoice = voting && remoteVote && game.mode === 'competitive' && multiplayer.role === 'host' ? game.vote.hostChoice : null;
       elements.stageVoteStrip.hidden = !voting;
       elements.stageVoteStrip.setAttribute('aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
       for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
@@ -4035,6 +4036,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const canChoose = !remoteVote || hostCanVote || teammateCanVote;
         const isHostTieBreak = hostCanChooseTieBreak && game.vote.hostTiebreak === id;
         const isSoloPick = Boolean(id && soloChoice === id);
+        const isCompetitivePick = Boolean(id && hostChoice === id);
         const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
         if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
         const name = button.querySelector('.vote-name, .stage-vote-name');
@@ -4043,20 +4045,20 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const description = button.querySelector('.vote-description');
         const pickTag = button.querySelector('.vote-pick');
         if (description) { description.textContent = sabotage ? VOTE_EFFECT_HINTS[sabotage.id] || '' : ''; description.hidden = !sabotage; }
-        if (pickTag) pickTag.hidden = !isSoloPick;
+        if (pickTag) { pickTag.hidden = !(isSoloPick || isCompetitivePick); pickTag.textContent = isCompetitivePick ? 'Your pick' : 'Your pick ×4'; }
         name.textContent = sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote';
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
         if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
         button.disabled = !voting || !canChoose;
         button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
-        button.classList.toggle('is-your-pick', isSoloPick);
-        if (voting && !remoteVote) button.setAttribute('aria-pressed', String(isSoloPick));
+        button.classList.toggle('is-your-pick', isSoloPick || isCompetitivePick);
+        if (voting && (!remoteVote || (game.mode === 'competitive' && multiplayer.role === 'host'))) button.setAttribute('aria-pressed', String(isSoloPick || isCompetitivePick));
         else button.removeAttribute('aria-pressed');
         const choiceLabel = teamworkVote
           ? hostCanChooseTieBreak ? 'Set the tie-break to' : multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId ? 'Unavailable while you are on turn:' : 'Vote for'
           : remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for';
-        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${VOTE_EFFECT_HINTS[sabotage.id] || ''} ${votes} votes${isSoloPick ? ', your pick worth four votes' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
+        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${VOTE_EFFECT_HINTS[sabotage.id] || ''} ${votes} votes${isSoloPick ? ', your pick worth four votes' : isCompetitivePick ? ', your pick' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
         if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
       }
       if (voting) {
@@ -4080,8 +4082,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           const tiebreak = game.vote.hostTiebreak ? ` · Host tie-break: ${effectById(game.vote.hostTiebreak)?.name || 'selected'}` : '';
           elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
         } else {
-          elements.voteHelp.textContent = 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
-          elements.voteSubtitle.textContent = !remoteVote && soloChoice
+          elements.voteHelp.textContent = remoteVote
+            ? multiplayer.role === 'host' ? 'You have one vote. Click a choice or press 1, 2, or 3; change it until the vote closes.' : 'The host has one changeable vote. The block keeps moving.'
+            : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
+          elements.voteSubtitle.textContent = hostChoice
+            ? `Vote counted: ${effectById(hostChoice)?.name || 'your pick'}. You can change it.`
+            : !remoteVote && soloChoice
             ? `Vote counted: ${effectById(soloChoice)?.name || 'your pick'} ×4. You can change it.`
             : multiplayer.active && multiplayer.role !== 'host'
               ? 'The block keeps moving. The host is choosing the room vote.'
@@ -4098,6 +4104,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : 'Pick a sabotage when voting opens.';
         elements.voteHelp.textContent = teamworkRoomVote
           ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : 'Vote once during a between-turn pause; change your choice until it closes.'
+          : remoteVote ? (multiplayer.role === 'host' ? 'You have one vote; change it until voting closes.' : 'The host has one changeable vote.')
           : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
         elements.voteState.textContent = `Vote opens in ${seconds} seconds`;
         elements.voteProgress.style.width = '0%';
