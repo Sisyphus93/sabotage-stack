@@ -18,7 +18,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-004 | P1 | larger |  | On phones the vote and effect cards are below the fold, and the play card blocks scrolling to them | fixed, awaiting your check | fix(F-004), single commit on this branch | |
 | F-005 | P1 | quick |  | The Room button bounces straight back to the game, so nobody can leave or close a live room | fixed, awaiting your check | fix(F-005), single commit on this branch | |
 | F-006 | P1 | quick |  | Competitive: a sub-second disconnect permanently ends your stack | fixed, awaiting your check | fix(F-006), single commit on this branch | |
-| F-007 | P1 | larger | yes | Competitive: every sabotage hits the leader; everyone else never experiences one | todo | | |
+| F-007 | P1 | larger | yes | Competitive: every sabotage hits the leader; everyone else never experiences one | fixed, awaiting your check | fix(F-007), single commit on this branch | |
 | F-008 | P1 | larger | yes | Teamwork: play stops for every 5-second vote, players cannot vote, and the UI says the block keeps moving | todo | | |
 | F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | todo | | |
 | F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | todo | | |
@@ -67,6 +67,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
 
+- **F-007, Competitive sabotage targeting:** the owner chose every connected, non-ended competitor, including the leader, receiving the selected effect for its normal duration. Each room member sees an accessible announcement naming the effect and all targets. Vote cadence remains unchanged.
 - **F-006, Competitive disconnect grace:** a disconnected player's mover freezes for 10 s; the stack remains eligible if they resume before the deadline and is marked ended only after timeout. Teamwork disconnect handling is unchanged.
 - **F-005, navigation:** remember the selected lobby view for the current room phase; ordinary snapshots refresh lobby data without changing screens. Back to round clears the preference, while a phase transition follows the new game/results screen.
 - **F-004, touch/layout:** the mobile stage vote strip appears only during a live vote and mirrors the full vote choices, counts, and accessible labels. The stage motion chip shows the active effect and seconds remaining. Vertical page pan is enabled on surrounding UI; `touch-action: none` remains deliberately limited to the canvas and Drop button so taps retain their game actions.

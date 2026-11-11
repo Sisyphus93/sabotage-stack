@@ -58,6 +58,7 @@ class RoundEngine {
     this.game = {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
+      lastSabotage: null, sabotageSequence: 0,
       activeEffects: [], pendingSabotage: null, paused: false, pausedAt: null,
       team: this.mode === 'teamwork' ? {
         stack: [Core.makeBase()], fallen: [], perfects: 0, score: 0,
@@ -388,14 +389,7 @@ class RoundEngine {
     const id = game.pendingSabotage;
     if (!id) return;
     const active = game.competitors.filter(item => !item.ended && this.connectedPlayer(item.playerId));
-    let targets = [];
-    if (ROOM_GLOBAL_EFFECTS.has(id)) targets = active;
-    else if (active.length) {
-      const maxHeight = Math.max(...active.map(item => item.stack.length - 1));
-      const leaders = active.filter(item => item.stack.length - 1 === maxHeight);
-      const chosen = leaders[Math.floor(Math.max(0, Math.min(.999999999, Number(this.random()) || 0)) * leaders.length)];
-      targets = chosen ? [chosen] : [];
-    }
+    const targets = active;
     if (ROOM_GLOBAL_EFFECTS.has(id) && targets.length) this.addEffect(id, null, now);
     for (const target of targets) {
       if (!ROOM_GLOBAL_EFFECTS.has(id)) this.addEffect(id, target.playerId, now);
@@ -403,6 +397,10 @@ class RoundEngine {
       const player = this.player(target.playerId);
       if (player) player.sabotageCount = target.sabotageCount;
     }
+    game.lastSabotage = targets.length ? {
+      id, sequence: ++game.sabotageSequence,
+      targetPlayerIds: targets.map(target => target.playerId)
+    } : null;
     game.pendingSabotage = null;
     this.changed('game.state');
   }
@@ -847,6 +845,7 @@ class RoundEngine {
     const common = {
       mode: game.mode, phase: game.phase, roundNumber: game.roundNumber,
       elapsed: game.elapsed, paused: game.paused, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
+      lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
       activeEffects: game.activeEffects.map(effect => ({
         id: effect.id, targetPlayerId: effect.targetPlayerId, duration: effect.duration,
