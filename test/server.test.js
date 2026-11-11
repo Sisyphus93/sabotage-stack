@@ -293,3 +293,79 @@ describe('Teamwork idle controls authorization (F-010)', () => {
     } finally { for (const client of clients) client.ws.terminate(); await app.close(); }
   });
 });
+
+describe('Host absence (F-015)', () => {
+  function setup(mode) {
+    const clock = { t: 1_000_000 };
+    const manager = new RoomManager({ now: () => clock.t, random: rng(71), idleLimitMs: 1e12 });
+    const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+    const host = socket(), players = [socket(), socket()];
+    manager.connect(host); players.forEach(player => manager.connect(player));
+    manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const created = host.sent.find(m => m.type === 'room.created');
+    players.forEach((p, i) => manager.receive(p, JSON.stringify({ type: 'room.join', code: created.code, name: `P${i}` })));
+    manager.receive(host, JSON.stringify({ type: 'round.start' }));
+    return { manager, host, players, room: manager.rooms.get(created.code), created, clock, socket };
+  }
+
+  test('Competitive cancels a live vote, skips later votes, and resumes voting when the host returns', () => {
+    const { manager, host, players, room, created, clock, socket } = setup('competitive');
+    const engine = room.engine;
+    engine.openVote(clock.t);
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: engine.game.vote.options[0] }));
+    manager.disconnect(host);
+    assert.equal(room.host.connected, false);
+    assert.equal(engine.game.vote, null);
+    assert.equal(engine.game.lastVote, null);
+    assert.equal(engine.game.activeEffects.length, 0);
+    assert.ok(players[0].sent.some(m => m.type === 'vote.cancelled'));
+    clock.t += 12000; manager.tick();
+    assert.equal(engine.game.vote, null, 'no vote opens while host is absent');
+    assert.ok(engine.game.nextVoteAt > engine.game.elapsed, 'skipped vote advances the cadence');
+    const replacement = socket(); manager.connect(replacement);
+    manager.receive(replacement, JSON.stringify({ type: 'room.resume', code: created.code, resumeToken: created.resumeToken }));
+    assert.equal(room.host.connected, true);
+    assert.equal(engine.openVote(clock.t), true);
+    manager.receive(replacement, JSON.stringify({ type: 'vote.cast', option: engine.game.vote.options[0] }));
+    assert.equal(engine.game.vote.votes.size, 1);
+  });
+
+  test('Teamwork keeps player voting and removes the absent host tie-break', () => {
+    const { manager, host, players, room, clock } = setup('teamwork');
+    const engine = room.engine;
+    engine.game.team.turnActive = false; engine.game.team.currentPlayerId = null;
+    engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.disconnect(host);
+    assert.equal(engine.snapshot().vote.hostTiebreak, null);
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: second }));
+    assert.equal(engine.snapshot().vote.counts[second], 1);
+    engine.resolveVote(clock.t);
+    assert.equal(engine.game.lastVote.winner, second);
+  });
+
+  test('a connected player can rematch after ten seconds, but reconnecting host restores exclusivity', () => {
+    const { manager, host, players, room, created, clock, socket } = setup('competitive');
+    room.engine.finishCompetitiveRound(clock.t);
+    manager.disconnect(host);
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY');
+    clock.t += 9999; manager.tick();
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, false);
+    clock.t += 1; manager.tick();
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, true);
+    assert.ok(players[0].sent.some(m => m.type === 'room.state' && m.state.canRematchWithoutHost));
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(room.phase, 'playing');
+    assert.equal(room.roundNumber, 2);
+    room.engine.finishCompetitiveRound(clock.t);
+    const replacement = socket(); manager.connect(replacement);
+    manager.receive(replacement, JSON.stringify({ type: 'room.resume', code: created.code, resumeToken: created.resumeToken }));
+    assert.equal(manager.snapshot(room).canRematchWithoutHost, false);
+    manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY');
+    manager.receive(replacement, JSON.stringify({ type: 'round.rematch' }));
+    assert.equal(room.roundNumber, 3);
+  });
+});

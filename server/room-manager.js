@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { RoundEngine } = require('./round-engine');
 
 const MAX_PLAYERS = 6;
+const HOST_ABSENCE_GRACE_MS = 10_000;
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const PLAYER_COLORS = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#7A6AA6', '#C96F8A']);
 const VALID_MODES = new Set(['teamwork', 'competitive']);
@@ -134,6 +135,9 @@ class RoomManager {
     if (session.role === 'host') {
       room.host.connected = false;
       room.host.socket = null;
+      room.host.disconnectedAt = this.now();
+      room.host.absenceReadyBroadcast = false;
+      if (room.engine) room.engine.hostDisconnected();
     } else {
       const player = room.players.find(item => item.id === session.playerId);
       if (player) {
@@ -155,7 +159,7 @@ class RoomManager {
     const now = this.now();
     const room = {
       code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now,
-      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion) }, players: [], roundNumber: 0, game: null, engine: null,
+      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion), disconnectedAt: null, absenceReadyBroadcast: false }, players: [], roundNumber: 0, game: null, engine: null,
       bestTeamScore: 0
     };
     this.rooms.set(code, room);
@@ -218,6 +222,8 @@ class RoomManager {
       this.detachSuperseded(room.host.socket, socket);
       room.host.connected = true;
       room.host.socket = socket;
+      room.host.disconnectedAt = null;
+      room.host.absenceReadyBroadcast = false;
       if (typeof message.reducedMotion === 'boolean') room.host.reducedMotion = message.reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = Boolean(room.host.reducedMotion);
     } else {
@@ -261,8 +267,12 @@ class RoomManager {
   }
 
   rematch(socket) {
-    const { room } = this.requireHost(socket);
-    if (!room) return;
+    const session = this.sessions.get(socket);
+    const room = session && this.rooms.get(session.roomCode);
+    if (!room) return this.error(socket, 'NOT_IN_ROOM', 'Join a room before starting a rematch.');
+    const player = session.role === 'player' && room.players.find(item => item.id === session.playerId && item.connected && item.socket === socket);
+    const host = session.role === 'host' && room.host.connected && room.host.socket === socket;
+    if (!host && !(player && this.canRematchWithoutHost(room))) return this.error(socket, 'HOST_ONLY', 'Wait for the host or until the host has been away for ten seconds.');
     if (room.phase !== 'results') return this.error(socket, 'ROUND_NOT_FINISHED', 'A rematch is available after the round ends.');
     room.roundNumber += 1;
     room.lastActivityAt = this.now();
@@ -301,6 +311,7 @@ class RoomManager {
       mode: room.mode,
       players: room.players,
       motionPrefersReduced: Boolean(room.host.reducedMotion),
+      isHostConnected: () => room.host.connected,
       now: this.now,
       random: this.random,
       onEvent: (type, payload) => this.broadcast(room, { type, code: room.code, ...payload }),
@@ -394,6 +405,10 @@ class RoomManager {
     const now = this.now();
     for (const room of this.rooms.values()) {
       if (room.engine && room.phase === 'playing') room.engine.tick(now);
+      if (!room.host.absenceReadyBroadcast && this.canRematchWithoutHost(room, now)) {
+        room.host.absenceReadyBroadcast = true;
+        this.broadcastState(room);
+      }
     }
   }
 
@@ -428,12 +443,16 @@ class RoomManager {
     return closed;
   }
 
+  canRematchWithoutHost(room, now = this.now()) {
+    return !room.host.connected && room.host.disconnectedAt != null && now - room.host.disconnectedAt >= HOST_ABSENCE_GRACE_MS;
+  }
+
   snapshot(roomOrCode) {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room) return null;
     return {
       code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber,
-      hostConnected: room.host.connected, bestTeamScore: room.bestTeamScore || 0,
+      hostConnected: room.host.connected, canRematchWithoutHost: this.canRematchWithoutHost(room), bestTeamScore: room.bestTeamScore || 0,
       players: room.players.map(player => ({
         id: player.id, name: player.name, color: player.color,
         connected: player.connected, ended: Boolean(player.ended)

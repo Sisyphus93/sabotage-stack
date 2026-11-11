@@ -1062,6 +1062,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="card-heading"><span id="multiplayer-mode-label" class="eyebrow">Room</span><span id="multiplayer-room-code" class="timer-label">----</span></div>
               <h3 id="multiplayer-turn-heading">Your turn</h3>
               <p id="multiplayer-turn-status" class="vote-title">Waiting for the round to start.</p>
+              <p id="multiplayer-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
               <p id="multiplayer-sabotage-announcement" class="mp-sabotage-announcement" role="status" aria-live="polite" hidden></p>
               <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
               <button id="team-skip-button" class="button" type="button" hidden>Skip current turn</button>
@@ -1115,6 +1116,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading">A tower of ambition.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span>Results</span></div>
         </div>
+        <p id="results-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
         <div id="multiplayer-results" class="multiplayer-results" hidden></div>
         <div id="solo-result-layout" class="result-layout">
           <div class="results-frame">
@@ -1712,6 +1714,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       joinButton: document.getElementById('join-game-button'), joinDialog: document.getElementById('join-dialog'), joinForm: document.getElementById('join-form'), joinCode: document.getElementById('join-room-code'), joinName: document.getElementById('join-display-name'), joinStatus: document.getElementById('join-status'), closeJoin: document.getElementById('close-join'), cancelJoin: document.getElementById('cancel-join'),
       hostModeButtons: Array.from(document.querySelectorAll('[data-host-mode]')), modeLabel: document.getElementById('connection-mode-label'), gameModeKicker: document.getElementById('game-mode-kicker'), multiplayerStatus: document.getElementById('multiplayer-status'),
       roomMode: document.getElementById('room-mode-label'), roomConnection: document.getElementById('room-connection-status'), roomCode: document.getElementById('room-code-display'), roomInviteHint: document.getElementById('room-invite-hint'), roomPlayerCount: document.getElementById('room-player-count'), roomPlayers: document.getElementById('room-player-list'), roomStatus: document.getElementById('room-lobby-status'), roomStart: document.getElementById('room-start-button'), roomReturn: document.getElementById('room-return-button'), roomRematch: document.getElementById('room-rematch-button'), roomLeave: document.getElementById('room-leave-button'), roomClose: document.getElementById('room-close-button'), copyRoomLink: document.getElementById('copy-room-link'),
+      mpHostStatus: document.getElementById('multiplayer-host-status'), resultsHostStatus: document.getElementById('results-host-status'),
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
@@ -2124,6 +2127,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       multiplayer.positionSequence = 0;
       multiplayer.sessionBest = 0;
       elements.mpCard.hidden = true;
+      elements.mpHostStatus.hidden = true;
+      elements.resultsHostStatus.hidden = true;
       elements.mpResults.hidden = true;
       elements.soloResultLayout.hidden = false;
       elements.again.textContent = 'Play again';
@@ -2262,19 +2267,30 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.roomStart.hidden = !host || state.phase !== 'lobby';
       elements.roomStart.disabled = !state.canStart || !multiplayer.connected;
       elements.roomReturn.hidden = state.phase !== 'playing';
-      elements.roomRematch.hidden = !host || state.phase !== 'results';
+      const canRematch = multiplayer.connected && (host || (multiplayer.role === 'player' && state.canRematchWithoutHost));
+      elements.roomRematch.hidden = state.phase !== 'results' || !canRematch;
+      elements.roomRematch.disabled = !canRematch;
       elements.roomLeave.hidden = host;
       elements.roomClose.hidden = !host;
       elements.copyRoomLink.hidden = !host;
       elements.roomConnection.textContent = multiplayer.connected ? 'Connected' : 'Reconnecting…';
+      const hostAway = !state.hostConnected;
+      const awayText = state.phase === 'results'
+        ? (state.canRematchWithoutHost ? 'Host disconnected. Any connected player can start a rematch.' : 'Host disconnected. Players can start a rematch after the host has been away for 10 seconds.')
+        : state.mode === 'competitive' ? 'Host disconnected. Competitive votes are skipped until the host returns.'
+        : 'Host disconnected. Teammates can vote; tied votes are random until the host returns.';
+      for (const status of [elements.mpHostStatus, elements.resultsHostStatus]) {
+        status.hidden = !hostAway;
+        if (status.textContent !== (hostAway ? awayText : '')) status.textContent = hostAway ? awayText : '';
+      }
       if (state.phase === 'lobby') {
         elements.roomStatus.textContent = !state.hostConnected ? 'The host is reconnecting. The room will stay open.'
           : state.canStart ? 'Everyone is in. The host can start when ready.'
           : 'Waiting for at least two connected players. The room locks when the host starts.';
       } else if (state.phase === 'playing') {
-        elements.roomStatus.textContent = state.game && state.game.paused ? (state.game.pauseReason === 'all-players-idle' ? 'Round paused until a player is ready.' : 'Round paused until someone reconnects.') : 'The round is live. Use Back to round to return to play.';
+        elements.roomStatus.textContent = hostAway ? awayText : state.game && state.game.paused ? (state.game.pauseReason === 'all-players-idle' ? 'Round paused until a player is ready.' : 'Round paused until someone reconnects.') : 'The round is live. Use Back to round to return to play.';
       } else {
-        elements.roomStatus.textContent = host ? 'Round complete. Start a rematch when the crew is ready.' : 'Round complete. Waiting for the host to start a rematch.';
+        elements.roomStatus.textContent = hostAway ? awayText : host ? 'Round complete. Start a rematch when the crew is ready.' : 'Round complete. Waiting for the host to start a rematch.';
       }
       if (state.phase === 'playing' && state.game) {
         const g = state.game;
@@ -2331,6 +2347,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         multiplayer: true, mode: remote.mode, phase: remote.phase, roundNumber: remote.roundNumber, elapsed: remote.elapsed || 0,
         nextVoteAt: (remote.elapsed || 0) + (remote.nextVoteIn || 0),
         vote: remote.vote ? { ...remote.vote, votes: new Map() } : null,
+        voteCancellationSequence: remote.voteCancellationSequence || 0,
         activeEffect: active ? { ...active } : null,
         pendingEffect: pending ? { ...pending } : null,
         lastVote: remote.lastVote || null, statusMessage: remote.paused ? 'The round is paused.' : '',
@@ -2380,7 +2397,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       if (newRound) resetGameAnnouncements();
       if (remote.vote && (newRound || !previous.vote)) announceVoteOptions(remote.vote.options);
-      if (!newRound && previous.vote && !remote.vote && remote.lastVote && remote.lastVote.winner) announceVoteWinner(remote.lastVote.winner);
+      if (!newRound && previous.vote && !remote.vote && previous.voteCancellationSequence === (remote.voteCancellationSequence || 0) && remote.lastVote && remote.lastVote.winner) announceVoteWinner(remote.lastVote.winner);
       if (team && team.turnActive && team.currentPlayerId && (newRound || previous.currentTurnId !== team.turnId)) {
         announceGame(team.currentPlayerId === multiplayer.playerId ? `Your turn. ${Math.max(0, Math.ceil(team.turnRemaining || 0))} seconds to drop.` : `${team.currentPlayerName || 'A player'}’s turn.`);
       }
@@ -3876,8 +3893,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.soloResultLayout.hidden = true;
       elements.mpResults.hidden = false;
       elements.mpResults.replaceChildren();
-      elements.again.textContent = multiplayer.role === 'host' ? 'Rematch' : 'Host rematches';
-      elements.again.disabled = multiplayer.role !== 'host' || !multiplayer.connected;
+      const canRematch = multiplayer.connected && (multiplayer.role === 'host' || (multiplayer.role === 'player' && multiplayer.room && multiplayer.room.canRematchWithoutHost));
+      elements.again.textContent = canRematch ? 'Rematch' : 'Waiting for rematch';
+      elements.again.disabled = !canRematch;
       elements.resultsMenu.textContent = 'Return to room';
       const heading = document.getElementById('results-heading');
       const eyebrow = elements.results.querySelector('.eyebrow');
@@ -3926,8 +3944,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       actions.className = 'result-actions multiplayer-result-actions';
       const rematch = document.createElement('button');
       rematch.type = 'button'; rematch.className = 'button button-primary';
-      rematch.textContent = multiplayer.role === 'host' ? 'Rematch' : 'Host rematches';
-      rematch.disabled = multiplayer.role !== 'host' || !multiplayer.connected;
+      rematch.textContent = canRematch ? 'Rematch' : 'Waiting for rematch';
+      rematch.disabled = !canRematch;
       rematch.addEventListener('click', handleAgain);
       const roomButton = document.createElement('button');
       roomButton.type = 'button'; roomButton.className = 'button'; roomButton.textContent = 'Return to room';
@@ -4077,7 +4095,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             elements.voteSubtitle.textContent = 'The tower pauses between turns. Reconnecting…';
           } else {
             elements.voteHelp.textContent = 'Choose one option. You can change your vote until the vote closes.';
-            elements.voteSubtitle.textContent = 'The tower pauses between turns. Pick one option for the room.';
+            elements.voteSubtitle.textContent = multiplayer.room && !multiplayer.room.hostConnected ? 'The tower pauses between turns. Host disconnected; tied votes are random.' : 'The tower pauses between turns. Pick one option for the room.';
           }
           const tiebreak = game.vote.hostTiebreak ? ` · Host tie-break: ${effectById(game.vote.hostTiebreak)?.name || 'selected'}` : '';
           elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
@@ -4097,16 +4115,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.voteProgress.style.width = `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`;
       } else if (game.phase === 'playing') {
         const seconds = Math.max(0, Math.ceil(game.nextVoteAt - game.elapsed));
-        elements.voteCountdown.textContent = `Next vote in ${seconds}s`;
+        const hostAwayCompetitive = remoteVote && game.mode === 'competitive' && multiplayer.room && !multiplayer.room.hostConnected;
+        elements.voteCountdown.textContent = hostAwayCompetitive ? 'Voting paused' : `Next vote in ${seconds}s`;
         const teamworkRoomVote = remoteVote && game.mode === 'teamwork';
         elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage
-          : teamworkRoomVote ? 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.'
-          : 'Pick a sabotage when voting opens.';
+          : teamworkRoomVote ? (multiplayer.room && !multiplayer.room.hostConnected ? 'Host disconnected. Players vote; tied votes are random.' : 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.')
+          : hostAwayCompetitive ? 'Host disconnected. Competitive votes are skipped until the host returns.' : 'Pick a sabotage when voting opens.';
         elements.voteHelp.textContent = teamworkRoomVote
           ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : 'Vote once during a between-turn pause; change your choice until it closes.'
           : remoteVote ? (multiplayer.role === 'host' ? 'You have one vote; change it until voting closes.' : 'The host has one changeable vote.')
           : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
-        elements.voteState.textContent = `Vote opens in ${seconds} seconds`;
+        elements.voteState.textContent = hostAwayCompetitive ? 'Voting paused while host is away' : `Vote opens in ${seconds} seconds`;
         elements.voteProgress.style.width = '0%';
       } else {
         elements.voteCountdown.textContent = 'Closed';
@@ -4627,7 +4646,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         newGame();
         return;
       }
-      if (multiplayer.role === 'host' && multiplayer.connected) sendMultiplayer({ type: 'round.rematch' });
+      if (multiplayer.connected && (multiplayer.role === 'host' || (multiplayer.role === 'player' && multiplayer.room && multiplayer.room.canRematchWithoutHost))) sendMultiplayer({ type: 'round.rematch' });
     }
     function closeToMenu() {
       if (multiplayer.active && game && game.multiplayer) { returnToRoom(); return; }

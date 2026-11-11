@@ -30,13 +30,14 @@ function randomDrunkTarget(mode, random) {
 }
 
 class RoundEngine {
-  constructor({ mode, players, now = Date.now, random = Math.random, motionPrefersReduced = false, onEvent = () => {}, onChange = () => {} }) {
+  constructor({ mode, players, now = Date.now, random = Math.random, motionPrefersReduced = false, isHostConnected = () => true, onEvent = () => {}, onChange = () => {} }) {
     if (!['teamwork', 'competitive'].includes(mode)) throw new TypeError('Unknown round mode.');
     this.mode = mode;
     this.players = players;
     this.now = now;
     this.random = random;
     this.motionPrefersReduced = Boolean(motionPrefersReduced);
+    this.isHostConnected = isHostConnected;
     this.onEvent = onEvent;
     this.onChange = onChange;
     this.manualVoteSequence = 0;
@@ -59,7 +60,7 @@ class RoundEngine {
     this.game = {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
-      lastSabotage: null, sabotageSequence: 0,
+      lastSabotage: null, sabotageSequence: 0, voteCancellationSequence: 0,
       activeEffects: [], pendingSabotage: null, teamSabotageQueue: [], paused: false, pausedAt: null, pauseReason: null,
       team: this.mode === 'teamwork' ? {
         stack: [Core.makeBase()], fallen: [], perfects: 0, score: 0,
@@ -336,6 +337,12 @@ class RoundEngine {
   openVote(now = this.now()) {
     const game = this.game;
     if (!game || game.phase !== 'playing' || game.vote) return false;
+    if (this.mode === 'competitive' && !this.isHostConnected()) {
+      game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(this.currentHeight());
+      this.onEvent('vote.skipped', { reason: 'host-disconnected' });
+      this.changed('game.state');
+      return false;
+    }
     game.vote = {
       options: Core.pickOptions(this.votePool(), this.random, game.lastSabotageWinner, this.motionReductionEnabled()),
       votes: new Map(), ...(this.mode === 'teamwork' ? { hostTiebreak: null } : {}),
@@ -346,6 +353,20 @@ class RoundEngine {
     this.onEvent('vote.open', { options: game.vote.options.slice(), closesAt: game.vote.closesAt });
     this.changed('game.state');
     return true;
+  }
+
+  hostDisconnected() {
+    const game = this.game;
+    if (!game || game.phase !== 'playing' || !game.vote) return;
+    if (this.mode === 'competitive') {
+      game.vote = null;
+      game.voteCancellationSequence += 1;
+      this.onEvent('vote.cancelled', { reason: 'host-disconnected' });
+      this.changed('game.state');
+    } else if (game.vote.hostTiebreak) {
+      game.vote.hostTiebreak = null;
+      this.changed('game.state');
+    }
   }
 
   votePool() {
@@ -936,7 +957,7 @@ class RoundEngine {
     } : null;
     const common = {
       mode: game.mode, phase: game.phase, roundNumber: game.roundNumber,
-      elapsed: game.elapsed, paused: game.paused, pauseReason: game.pauseReason, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
+      elapsed: game.elapsed, paused: game.paused, pauseReason: game.pauseReason, voteCancellationSequence: game.voteCancellationSequence, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
       lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
       activeEffects: game.activeEffects.map(effect => ({

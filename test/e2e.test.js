@@ -366,3 +366,35 @@ describe('Teamwork turn warning (F-011)', skipReason ? { skip: skipReason } : {}
     } finally { await r.close(); }
   });
 });
+
+describe('Host absence recovery (F-015)', skipReason ? { skip: skipReason } : {}, () => {
+  test('players see host absence, skipped votes, and a player rematch after the grace period', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const engine = r.room.engine, page = r.players[0];
+      engine.openVote(Date.now()); await sleep(120);
+      assert.ok(engine.game.vote);
+      r.app.roomManager.disconnect(r.room.host.socket); await sleep(250);
+      assert.equal(engine.game.vote, null);
+      assert.equal(page.document.getElementById('multiplayer-host-status').hidden, false);
+      assert.match(page.document.getElementById('multiplayer-host-status').textContent, /Host disconnected.*votes are skipped/);
+      assert.match(page.document.getElementById('vote-countdown').textContent, /Voting paused/);
+      engine.finishCompetitiveRound(Date.now()); await sleep(300);
+      assert.equal(page.document.body.dataset.screen, 'results');
+      assert.match(page.document.getElementById('results-host-status').textContent, /10 seconds/);
+      let button = page.document.querySelector('.multiplayer-result-actions .button-primary');
+      assert.equal(button.disabled, true);
+      r.room.host.disconnectedAt -= 10000;
+      r.app.roomManager.tick(); await sleep(300);
+      assert.match(page.document.getElementById('results-host-status').textContent, /Any connected player can start a rematch/);
+      button = page.document.querySelector('.multiplayer-result-actions .button-primary');
+      assert.equal(button.disabled, false);
+      button.click(); await sleep(350);
+      assert.equal(r.room.phase, 'playing');
+      assert.equal(r.room.roundNumber, 2);
+      assert.equal(page.document.body.dataset.screen, 'game');
+      assert.match(page.document.getElementById('multiplayer-host-status').textContent, /Host disconnected/);
+      for (const p of r.players) assert.deepEqual(p.errors, []);
+    } finally { await r.close(); }
+  });
+});
