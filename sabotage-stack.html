@@ -574,7 +574,7 @@ html[data-theme="sunset"] .stage-vote-strip, html[data-theme="sunset"] .stage-vo
 html[data-theme="sunset"] .height-chip, html[data-theme="sunset"] .motion-chip, html[data-theme="sunset"] .canvas-message, html[data-theme="sunset"] .chat-flavor-pop { border-width: 2px; background: #170B33; }
 html[data-theme="sunset"] .height-chip strong { font-size: 17px; }
 html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
-html[data-theme="sunset"] .motion-chip { font-size: 17px; }
+html[data-theme="sunset"] .motion-chip { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html[data-theme="sunset"] #perfect-banner { font-size: 26px; }
 html[data-theme="sunset"] .drop-button { border: 3px solid var(--amber); background: #FF6B35; color: #24102E; box-shadow: 6px 6px 0 #170B33; font-family: var(--font-head); font-size: 13px; }
 html[data-theme="sunset"] .drop-button kbd { border-color: rgba(36,16,46,.65); color: #24102E; font-family: var(--font-ui); font-size: 16px; }
@@ -805,7 +805,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   html:is([data-theme]) .motion-chip, html:is([data-theme]) .vote-footer, html:is([data-theme]) .vote-help,
   html:is([data-theme]) .control-help, html:is([data-theme]) .stat-box span, html:is([data-theme]) .height-chip span,
   html:is([data-theme]) .canvas-hint, html:is([data-theme]) .eyebrow, html:is([data-theme]) .game-live { font-size: 12px; }
-  html[data-theme="sunset"] .motion-chip, html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
+  html[data-theme="sunset"] .motion-chip { font-size: 15px; }
+  html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
   html[data-theme="sunset"] .control-help, html[data-theme="primetime"] .control-help { font-size: 15px; }
   html[data-theme="primetime"] .vote-footer, html[data-theme="primetime"] .vote-help { font-size: 17px; }
   html:is([data-theme]) .effect-name { font-size: 17px; overflow-wrap: anywhere; }

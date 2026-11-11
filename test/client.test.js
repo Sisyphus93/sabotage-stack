@@ -705,3 +705,12 @@ describe('Stage overlay separation (A-06)', skipReason ? { skip: skipReason } : 
     } finally { page.close(); }
   });
 });
+
+describe('Sunset motion chip (A-07)', () => {
+  test('keeps its speed and effect status to a single compact line', () => {
+    const html = fs.readFileSync(HTML, 'utf8');
+    const rule = /html\[data-theme="sunset"\] \.motion-chip\s*\{([^}]*)\}/.exec(html);
+    assert.ok(rule); assert.match(rule[1], /white-space:\s*nowrap/);
+    assert.match(rule[1], /font-size:\s*15px/); assert.match(rule[1], /text-overflow:\s*ellipsis/);
+  });
+});

@@ -55,7 +55,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | A-04 | P3 | | | No non-visual way to play: sound is off by default and no cue encodes the mover's position. Idea: an optional pitch sweep for position. | fixed, awaiting your check | fix(A-04), single commit on this branch | |
 | A-05 | P3 | | | Player colours 2 and 4 (teal #2F8478, vermilion #D5472F) have nearly equal luminance; a likely red-green confusion pair where no name is adjacent. | fixed, awaiting your check | fix(A-05), single commit on this branch | |
 | A-06 | P3 | | | Macro Zoom draws blocks over the bottom hint; the chat flavour pop overlaps the tower. | fixed, awaiting your check | fix(A-06), single commit on this branch | |
-| A-07 | P3 | | | In Sunset the speed and effect chip wraps to two lines and covers more of the stage. | todo | | |
+| A-07 | P3 | | | In Sunset the speed and effect chip wraps to two lines and covers more of the stage. | fixed, awaiting your check | fix(A-07), single commit on this branch | |
 | A-08 | P3 | | | #theme-select keeps the browser's default focus ring instead of the themed one. | todo | | |
 | A-09 | P3 | | | Late joiners get a clear 'This room has already started.' but no way to watch. Idea: spectator join. | todo | | |
 | A-10 | P3 | | | The context menu is disabled on every button, which also removes long-press actions for assistive tools. | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-07, Sunset chip:** status stays on one compact line, truncating visually if necessary; full text remains in the DOM and the effect card. Node 22.22.3: `npm test` passed 127/127; verify real font fitting at 360 × 640 and 390 × 844.
 
 - **A-06, overlays:** the drop hint now sits below the board and chat flavour sits in the side information area, so neither covers the tower. Node 22.22.3: `npm test` passed 126/126; verify phone layout and control positioning visually.
 
