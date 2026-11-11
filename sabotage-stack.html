@@ -1814,7 +1814,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
     const multiplayer = {
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
-      socket: null, connected: false, room: null, remoteGame: null, pendingAction: null,
+      socket: null, connected: false, room: null, remoteGame: null, pendingAction: null, deltaBaseline: null, syncPending: false,
       explicitLeave: false, reconnectTimer: null, reconnectDelay: 800, pingTimer: null, connectionTimers: [],
       positionSequence: 0, lastPositionSentAt: 0, dropPending: false, lobbyViewPhase: null,
       dropRequestPrefix: Math.random().toString(36).slice(2, 10), dropRequestSequence: 0,
@@ -2126,6 +2126,33 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         applyRoomSnapshot(message.state);
         return;
       }
+      if (message.type === 'room.delta') {
+        const baseline = multiplayer.deltaBaseline;
+        if (baseline && Number.isInteger(message.revision) && message.revision <= baseline.revision) return;
+        if (!baseline || baseline.revision !== message.baseRevision || !Array.isArray(message.changes)) {
+          if (!multiplayer.syncPending) multiplayer.syncPending = sendMultiplayer({ type: 'room.sync' });
+          return;
+        }
+        try {
+          const next = JSON.parse(JSON.stringify(baseline));
+          for (const change of message.changes) {
+            if (!Array.isArray(change) || !Array.isArray(change[0]) || !change[0].length) throw new Error('Invalid delta');
+            let target = next;
+            for (const key of change[0].slice(0, -1)) {
+              if (key === '__proto__' || key === 'constructor' || key === 'prototype' || !target || typeof target !== 'object') throw new Error('Invalid delta path');
+              target = target[key];
+            }
+            const key = change[0][change[0].length - 1];
+            if (key === '__proto__' || key === 'constructor' || key === 'prototype' || !target || typeof target !== 'object') throw new Error('Invalid delta path');
+            target[key] = change[1];
+          }
+          if (next.revision !== message.revision) throw new Error('Invalid delta revision');
+          applyRoomSnapshot(next);
+        } catch (_) {
+          if (!multiplayer.syncPending) multiplayer.syncPending = sendMultiplayer({ type: 'room.sync' });
+        }
+        return;
+      }
       if (message.type === 'room.state' || message.type === 'round.started') {
         applyRoomSnapshot(message.state);
         return;
@@ -2224,6 +2251,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       multiplayer.playerId = null;
       multiplayer.resumeToken = null;
       multiplayer.room = null;
+      multiplayer.deltaBaseline = null;
+      multiplayer.syncPending = false;
       multiplayer.remoteGame = null;
       multiplayer.lobbyViewPhase = null;
       multiplayer.pendingAction = null;
@@ -2287,6 +2316,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!state || typeof state !== 'object') return;
       const keepLobby = multiplayer.lobbyViewPhase !== null && multiplayer.lobbyViewPhase === state.phase;
       if (!keepLobby) multiplayer.lobbyViewPhase = null;
+      multiplayer.deltaBaseline = Number.isInteger(state.revision) ? JSON.parse(JSON.stringify(state)) : null;
+      multiplayer.syncPending = false;
       multiplayer.room = state;
       refreshMotionState();
       multiplayer.code = state.code || multiplayer.code;

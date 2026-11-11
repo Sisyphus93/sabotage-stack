@@ -224,7 +224,7 @@ describe('abuse limits', () => {
 });
 
 describe('broadcast', () => {
-  test('one state change sends one message per socket, carrying the whole game', () => {
+  test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
     let t = 1e9; const rm = new RoomManager({ now: () => t, random: rng(3), idleLimitMs: 1e12 });
     const mk = () => ({ readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)); } });
     const host = mk(); const players = [mk(), mk()]; rm.connect(host); players.forEach(p => rm.connect(p));
@@ -235,7 +235,12 @@ describe('broadcast', () => {
     for (const s of [host, ...players]) s.sent.length = 0;
     rm.rooms.get(code).engine.changed('game.state');
     for (const s of [host, ...players]) {
-      assert.equal(s.sent.length, 1); assert.equal(s.sent[0].type, 'room.state'); assert.ok(s.sent[0].state.game && s.sent[0].state.game.phase === 'playing');
+      assert.equal(s.sent.length, 1); assert.equal(s.sent[0].type, 'room.delta');
+      assert.ok(Array.isArray(s.sent[0].changes));
+      rm.receive(s, JSON.stringify({ type: 'room.sync' }));
+      assert.equal(s.sent[1].type, 'room.state');
+      assert.equal(s.sent[1].state.revision, s.sent[0].revision);
+      assert.equal(s.sent[1].state.game.phase, 'playing');
     }
   });
 });
@@ -388,4 +393,34 @@ describe('Multiplayer minimum player count (F-016)', () => {
       assert.equal(manager.snapshot(code).phase, 'playing');
     });
   }
+});
+
+describe('Incremental room updates (F-023)', () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: long stacks reconstruct exactly and avoid repeated tower payloads`, () => {
+    const rm = new RoomManager({ now: () => 1000000, random: rng(7) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); const players = [mk(), mk()]; rm.connect(host); players.forEach(s => rm.connect(s));
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const room = [...rm.rooms.values()][0];
+    players.forEach((p, i) => rm.receive(p, JSON.stringify({ type: 'room.join', code: room.code, name: `Player ${i}` })));
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    const stacks = mode === 'teamwork' ? [room.engine.game.team.stack] : room.engine.game.competitors.map(c => c.stack);
+    for (const stack of stacks) for (let level = 1; level <= 100; level++) stack.push({ left: 80, right: 280, level, color: '#E3A33B', placer: 'Player' });
+    rm.broadcastState(room);
+    const baseline = JSON.parse(JSON.stringify(room.lastBroadcastState));
+    host.sent.length = 0;
+    stacks[0].push({ left: 81, right: 279, level: 101, color: '#E3A33B', placer: 'Player' });
+    room.engine.changed('game.state');
+    const delta = host.sent[0];
+    assert.equal(delta.type, 'room.delta');
+    assert.equal(delta.baseRevision, baseline.revision);
+    for (const [path, value] of delta.changes) {
+      let target = baseline;
+      for (const key of path.slice(0, -1)) target = target[key];
+      target[path[path.length - 1]] = value;
+    }
+    assert.deepEqual(baseline, room.lastBroadcastState);
+    const fullBytes = Buffer.byteLength(JSON.stringify({ type: 'room.state', state: room.lastBroadcastState }));
+    assert.ok(Buffer.byteLength(JSON.stringify(delta)) < fullBytes / 3, 'delta should be substantially smaller than the full state');
+  });
 });

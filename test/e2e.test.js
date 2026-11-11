@@ -433,3 +433,21 @@ describe('Room reduced motion (F-017)', skipReason ? { skip: skipReason } : {}, 
     } finally { await r.close(); }
   });
 });
+
+describe('Room delta recovery (F-023)', skipReason ? { skip: skipReason } : {}, () => {
+  test('a client detecting a missing revision requests a full baseline and keeps receiving updates', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const socket = r.room.host.socket; const originalSend = socket.send.bind(socket); const sent = [];
+      socket.send = (data, ...args) => { sent.push(JSON.parse(String(data))); return originalSend(data, ...args); };
+      const revision = r.room.stateRevision;
+      socket.send(JSON.stringify({ type: 'room.delta', baseRevision: revision + 10, revision: revision + 11, changes: [] }));
+      await sleep(300);
+      assert.ok(sent.some(message => message.type === 'room.state' && message.state.revision >= revision), 'full recovery snapshot was sent');
+      r.room.engine.addEffect('turbo', r.room.players[0].id, Date.now()); r.room.engine.changed('game.state');
+      await sleep(300);
+      assert.match(r.host.document.getElementById('motion-chip').textContent, /TURBO/i);
+      assert.deepEqual(r.host.errors, []);
+    } finally { await r.close(); }
+  });
+});

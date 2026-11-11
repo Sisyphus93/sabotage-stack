@@ -43,6 +43,20 @@ function safeSend(socket, message) {
   }
 }
 
+// Structural patches keep long immutable stacks off the wire. Arrays that grow are
+// patched by index; shrinking arrays are replaced so reconstruction is unambiguous.
+function stateChanges(before, after, path = [], changes = []) {
+  if (Object.is(before, after)) return changes;
+  const arrays = Array.isArray(before) && Array.isArray(after);
+  const objects = before && after && typeof before === 'object' && typeof after === 'object' && !Array.isArray(before) && !Array.isArray(after);
+  if (arrays && after.length >= before.length) {
+    for (let i = 0; i < after.length; i += 1) stateChanges(before[i], after[i], path.concat(i), changes);
+  } else if (objects && Object.keys(before).every(key => Object.hasOwn(after, key))) {
+    for (const key of Object.keys(after)) stateChanges(before[key], after[key], path.concat(key), changes);
+  } else changes.push([path, after]);
+  return changes;
+}
+
 class RoomManager {
   constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND } = {}) {
     this.now = now;
@@ -107,6 +121,7 @@ class RoomManager {
       case 'room.join': return this.joinRoom(socket, message);
       case 'room.resume': return this.resumeRoom(socket, message);
       case 'client.preferences': return this.updateClientPreferences(socket, message);
+      case 'room.sync': return this.syncState(socket);
       case 'round.start': return this.startRound(socket);
       case 'round.rematch': return this.rematch(socket);
       case 'room.leave': return this.leaveRoom(socket);
@@ -323,9 +338,7 @@ class RoomManager {
           // Stored on the engine's own results so the room snapshot below carries it too.
           if (engine.game && engine.game.results) engine.game.results.bestTeamScore = room.bestTeamScore;
         }
-        // One message per change. `room.state` already contains the complete game snapshot, so also sending a separate
-        // `game.state` doubled the bandwidth to every phone (about 52 KB each per change at height 40 with six racers).
-        this.broadcastState(room);
+        this.broadcastDelta(room);
       }
     });
     room.engine = engine;
@@ -452,7 +465,7 @@ class RoomManager {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room) return null;
     return {
-      code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber,
+      code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber, revision: room.stateRevision || 0,
       reducedMotion: Boolean(room.host.reducedMotion || room.players.some(player => player.connected && player.reducedMotion)),
       hostConnected: room.host.connected, canRematchWithoutHost: this.canRematchWithoutHost(room), bestTeamScore: room.bestTeamScore || 0,
       players: room.players.map(player => ({
@@ -465,7 +478,28 @@ class RoomManager {
   }
 
   broadcastState(room) {
-    this.broadcast(room, { type: 'room.state', state: this.snapshot(room) });
+    room.stateRevision = (room.stateRevision || 0) + 1;
+    room.lastBroadcastState = this.snapshot(room);
+    this.broadcast(room, { type: 'room.state', state: room.lastBroadcastState });
+  }
+
+  broadcastDelta(room) {
+    if (!room.lastBroadcastState) return this.broadcastState(room);
+    const previous = room.lastBroadcastState;
+    room.stateRevision = (room.stateRevision || 0) + 1;
+    const state = this.snapshot(room);
+    const delta = { type: 'room.delta', baseRevision: previous.revision, revision: state.revision, changes: stateChanges(previous, state) };
+    room.lastBroadcastState = state;
+    if (JSON.stringify(delta).length >= JSON.stringify({ type: 'room.state', state }).length) this.broadcast(room, { type: 'room.state', state });
+    else this.broadcast(room, delta);
+  }
+
+  syncState(socket) {
+    const session = this.sessions.get(socket);
+    const room = session && this.rooms.get(session.roomCode);
+    if (!room) return this.error(socket, 'NOT_IN_ROOM', 'Join a room first.');
+    // The baseline, not a fresh snapshot: subsequent deltas reference this exact revision.
+    safeSend(socket, { type: 'room.state', state: room.lastBroadcastState || this.snapshot(room) });
   }
 
   broadcast(room, message) {
