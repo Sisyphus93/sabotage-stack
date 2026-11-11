@@ -1,0 +1,283 @@
+{
+  "console": [],
+  "throttled4x": {
+    "normal": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "turbo": {
+      "n": 286,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 66.7,
+      "over33ms": 4,
+      "over50ms": 1
+    },
+    "drunk": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "slowmo": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "magnet": {
+      "n": 301,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "portal": {
+      "n": 296,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 33.4,
+      "over33ms": 1,
+      "over50ms": 0
+    },
+    "rollercoaster": {
+      "n": 301,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "pisa": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "earthquake": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "spotlight": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "peekaboo": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "zoom": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "double": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "accordion": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "crumble": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "superglue": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "calipers": {
+      "n": 300,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    }
+  },
+  "unthrottled": {
+    "normal": {
+      "n": 151,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "turbo": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "drunk": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "slowmo": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "magnet": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "portal": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "rollercoaster": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "pisa": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "earthquake": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "spotlight": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "peekaboo": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "zoom": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "double": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "accordion": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "crumble": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "superglue": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    },
+    "calipers": {
+      "n": 150,
+      "p50": 16.7,
+      "p95": 16.7,
+      "max": 16.8,
+      "over33ms": 0,
+      "over50ms": 0
+    }
+  },
+  "env": {
+    "cpus": 2,
+    "note": "headless-shell, software rendering, shared 2-vCPU sandbox"
+  }
+}

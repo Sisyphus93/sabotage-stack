@@ -1,0 +1,1759 @@
+{
+  "console": [],
+  "meta": {
+    "devButtons": [
+      {
+        "id": "normal",
+        "label": "Preview Normal mode with no sabotage active",
+        "text": "Normal — no sabotage",
+        "w": 340,
+        "h": 48
+      },
+      {
+        "id": "turbo",
+        "label": "Preview Turbo Mode",
+        "text": "Turbo Mode",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "drunk",
+        "label": "Preview Drunk Block",
+        "text": "Drunk Block",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "slowmo",
+        "label": "Preview Slow-to-Dart",
+        "text": "Slow-to-Dart",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "magnet",
+        "label": "Preview Gravity Slingshot",
+        "text": "Gravity Slingshot",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "portal",
+        "label": "Preview Portal Walls",
+        "text": "Portal Walls",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "rollercoaster",
+        "label": "Preview The Rollercoaster",
+        "text": "The Rollercoaster",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "pisa",
+        "label": "Preview The Pisa Tilt",
+        "text": "The Pisa Tilt",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "earthquake",
+        "label": "Preview Earthquake",
+        "text": "Earthquake",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "spotlight",
+        "label": "Preview Spotlight",
+        "text": "Spotlight",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "peekaboo",
+        "label": "Preview Peekaboo",
+        "text": "Peekaboo",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "zoom",
+        "label": "Preview Macro Zoom",
+        "text": "Macro Zoom",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "double",
+        "label": "Preview The Shell Game",
+        "text": "The Shell Game",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "accordion",
+        "label": "Preview The Accordion",
+        "text": "The Accordion",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "crumble",
+        "label": "Preview Crumble",
+        "text": "Crumble",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "superglue",
+        "label": "Preview Chat Bribe: Superglue",
+        "text": "Chat Bribe: Superglue",
+        "w": 167,
+        "h": 48
+      },
+      {
+        "id": "calipers",
+        "label": "Preview Drafting Calipers",
+        "text": "Drafting Calipers",
+        "w": 167,
+        "h": 48
+      }
+    ],
+    "devReach": "title #dev-mode-button visible: true",
+    "normalCtx": {
+      "w": 346,
+      "h": 500.65625,
+      "mm": false,
+      "anims": 0
+    },
+    "reducedCtx": {
+      "w": 346,
+      "h": 500.65625,
+      "mm": true,
+      "anims": 0
+    }
+  },
+  "shots": [
+    {
+      "id": "normal",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "turbo",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "drunk",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "slowmo",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "magnet",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "portal",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "rollercoaster",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "pisa",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "earthquake",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "spotlight",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "peekaboo",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "zoom",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "double",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "accordion",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "crumble",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "superglue",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "calipers",
+      "theme": "paper",
+      "vp": "390x844"
+    },
+    {
+      "id": "normal",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "turbo",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "drunk",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "slowmo",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "magnet",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "portal",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "rollercoaster",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "pisa",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "earthquake",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "spotlight",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "peekaboo",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "zoom",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "double",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "accordion",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "crumble",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "superglue",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "calipers",
+      "theme": "sunset",
+      "vp": "390x844"
+    },
+    {
+      "id": "normal",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "turbo",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "drunk",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "slowmo",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "magnet",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "portal",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "rollercoaster",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "pisa",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "earthquake",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "spotlight",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "peekaboo",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "zoom",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "double",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "accordion",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "crumble",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "superglue",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "calipers",
+      "theme": "primetime",
+      "vp": "390x844"
+    },
+    {
+      "id": "normal",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "turbo",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "drunk",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "slowmo",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "magnet",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "portal",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "rollercoaster",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "pisa",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "earthquake",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "spotlight",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "peekaboo",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "zoom",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "double",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "accordion",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "crumble",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "superglue",
+      "theme": "paper",
+      "vp": "1280x800"
+    },
+    {
+      "id": "calipers",
+      "theme": "paper",
+      "vp": "1280x800"
+    }
+  ],
+  "sample": {
+    "normal": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "turbo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "drunk": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "slowmo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.003,
+      "p95ChangedArea": 0.003,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "magnet": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.003,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "portal": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.72,
+      "meanLumMax": 0.722,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "rollercoaster": {
+      "frames": 193,
+      "seconds": 3.22,
+      "fps": 60,
+      "maxChangedArea": 0.007,
+      "p95ChangedArea": 0.007,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.728,
+      "anyMotionMean": 0.007,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "pisa": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.026,
+      "p95ChangedArea": 0.024,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 144,
+        "maxFlashesIn1s": 12
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.728,
+      "anyMotionMean": 0.041,
+      "towerMovingFrames": 0.97,
+      "towerMotionMean": 0.089
+    },
+    "earthquake": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.079,
+      "p95ChangedArea": 0.065,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 180,
+        "maxFlashesIn1s": 19
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.729,
+      "anyMotionMean": 0.061,
+      "towerMovingFrames": 0.99,
+      "towerMotionMean": 0.131
+    },
+    "spotlight": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.039,
+      "meanLumMax": 0.045,
+      "anyMotionMean": 0,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "peekaboo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.017,
+      "p95ChangedArea": 0.016,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 29,
+        "maxFlashesIn1s": 3
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.732,
+      "anyMotionMean": 0.004,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "zoom": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.004,
+      "p95ChangedArea": 0.003,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.615,
+      "meanLumMax": 0.63,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0.01,
+      "towerMotionMean": 0
+    },
+    "double": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.716,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.003,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "accordion": {
+      "frames": 193,
+      "seconds": 3.22,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.728,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "crumble": {
+      "frames": 193,
+      "seconds": 3.22,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "superglue": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.003,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "calipers": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    }
+  },
+  "sampleReduced": {
+    "normal": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "turbo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "drunk": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "slowmo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.003,
+      "p95ChangedArea": 0.003,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "magnet": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.003,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "portal": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.72,
+      "meanLumMax": 0.722,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "rollercoaster": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "pisa": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "earthquake": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "spotlight": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.039,
+      "meanLumMax": 0.045,
+      "anyMotionMean": 0,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "peekaboo": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "zoom": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.004,
+      "p95ChangedArea": 0.003,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.615,
+      "meanLumMax": 0.63,
+      "anyMotionMean": 0.002,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "double": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.002,
+      "p95ChangedArea": 0.002,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.716,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.003,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "accordion": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "crumble": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "superglue": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.724,
+      "meanLumMax": 0.725,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    },
+    "calipers": {
+      "frames": 192,
+      "seconds": 3.2,
+      "fps": 60,
+      "maxChangedArea": 0.001,
+      "p95ChangedArea": 0.001,
+      "wcagAreaThreshold": 0.126,
+      "flashWcagArea": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashQuarterCanvas": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "flashLocal1pct": {
+        "events": 0,
+        "maxFlashesIn1s": 0
+      },
+      "meanLumMin": 0.723,
+      "meanLumMax": 0.724,
+      "anyMotionMean": 0.001,
+      "towerMovingFrames": 0,
+      "towerMotionMean": 0
+    }
+  },
+  "sabotages": [
+    {
+      "id": "turbo",
+      "name": "Turbo Mode",
+      "category": "kinetic",
+      "caption": "The next lap is arriving a little faster.",
+      "effect": "Moving-block speed increases to ×1.7 for 5 seconds."
+    },
+    {
+      "id": "drunk",
+      "name": "Drunk Block",
+      "category": "kinetic",
+      "caption": "That block has found a very wobbly rhythm.",
+      "effect": "Alternates between ×0.25–0.45 stumbles and ×1.55–1.9 lurches, holding each beat for 0.55–0.70 seconds."
+    },
+    {
+      "id": "slowmo",
+      "name": "Slow-to-Dart",
+      "category": "kinetic",
+      "caption": "Easy… easy… now!",
+      "effect": "Creeps at ×0.3 for 0.78 seconds, then lunges at ×2.5 on a 1.4-second cycle."
+    },
+    {
+      "id": "magnet",
+      "name": "Gravity Slingshot",
+      "category": "kinetic",
+      "caption": "The stack centre is a launch point.",
+      "effect": "The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls."
+    },
+    {
+      "id": "portal",
+      "name": "Portal Walls",
+      "category": "trajectory",
+      "caption": "The edges are not the end of the road.",
+      "effect": "For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing."
+    },
+    {
+      "id": "rollercoaster",
+      "name": "The Rollercoaster",
+      "category": "trajectory",
+      "caption": "Mind the air gap, darling.",
+      "effect": "The mover bobs from the landing line up to 45 px above it; no hidden sideways drift."
+    },
+    {
+      "id": "earthquake",
+      "name": "Earthquake",
+      "category": "trajectory",
+      "caption": "The foundations have a few objections.",
+      "effect": "The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged."
+    },
+    {
+      "id": "pisa",
+      "name": "The Pisa Tilt",
+      "category": "trajectory",
+      "caption": "Architecture is subjective, really.",
+      "effect": "The view eases into a gentle sway of up to 16° for 5 seconds."
+    },
+    {
+      "id": "spotlight",
+      "name": "Spotlight",
+      "category": "optical",
+      "caption": "One corner of the stage is under observation.",
+      "effect": "Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower."
+    },
+    {
+      "id": "peekaboo",
+      "name": "Peekaboo",
+      "category": "optical",
+      "caption": "Now you see it… now you don’t.",
+      "effect": "The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds."
+    },
+    {
+      "id": "zoom",
+      "name": "Macro Zoom",
+      "category": "optical",
+      "caption": "Extreme close-up. Don’t blink.",
+      "effect": "A 1.85× view locks onto the top platform; wall rebounds can leave the frame."
+    },
+    {
+      "id": "double",
+      "name": "The Shell Game",
+      "category": "optical",
+      "caption": "Follow the cracked block.",
+      "effect": "A decoy travels in the opposite direction; a small crack marks the real mover."
+    },
+    {
+      "id": "accordion",
+      "name": "The Accordion",
+      "category": "geometry",
+      "caption": "Wide, narrow, wide again.",
+      "effect": "Breathes between 45% and 100% of the supporting tower width on a 0.8-second cycle."
+    },
+    {
+      "id": "crumble",
+      "name": "Crumble",
+      "category": "geometry",
+      "caption": "Perfects keep the stone intact.",
+      "effect": "For the next 3 drops (up to 8 seconds), perfects do not crumble; other landings lose up to 5 px from each edge."
+    },
+    {
+      "id": "superglue",
+      "name": "Chat Bribe: Superglue",
+      "category": "geometry",
+      "caption": "Chat took pity… or is setting up a bigger fall.",
+      "effect": "The next 3 drops (up to 8 seconds) get a 14 px perfect window."
+    },
+    {
+      "id": "calipers",
+      "name": "Drafting Calipers",
+      "category": "geometry",
+      "caption": "The drafting arms have closed in.",
+      "effect": "For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges."
+    }
+  ],
+  "devText": {
+    "normal": {
+      "desc": "Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.",
+      "chip": "NORMAL · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Normal mode: no sabotage is active. Use manual Drop to establish a baseline, or simulate a clean landing.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "turbo": {
+      "desc": "Moving-block speed increases to ×1.7 for 5 seconds.",
+      "chip": "PREVIEW · TURBO MODE · 298 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Turbo Mode. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "drunk": {
+      "desc": "Alternates between ×0.25–0.45 stumbles and ×1.55–1.9 lurches, holding each beat for 0.55–0.70 seconds.",
+      "chip": "PREVIEW · DRUNK BLOCK · 217 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Drunk Block. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "slowmo": {
+      "desc": "Creeps at ×0.3 for 0.78 seconds, then lunges at ×2.5 on a 1.4-second cycle.",
+      "chip": "PREVIEW · SLOW-TO-DART · 352 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Slow-to-Dart. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "magnet": {
+      "desc": "The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.",
+      "chip": "PREVIEW · GRAVITY SLINGSHOT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Gravity Slingshot. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "portal": {
+      "desc": "For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.",
+      "chip": "PREVIEW · PORTAL WALLS · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Portal Walls. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "rollercoaster": {
+      "desc": "The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.",
+      "chip": "PREVIEW · THE ROLLERCOASTER · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Rollercoaster. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "pisa": {
+      "desc": "The view eases into a gentle sway of up to 16° for 5 seconds.",
+      "chip": "PREVIEW · THE PISA TILT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Pisa Tilt. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "earthquake": {
+      "desc": "The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.",
+      "chip": "PREVIEW · EARTHQUAKE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Earthquake. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "spotlight": {
+      "desc": "Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.",
+      "chip": "PREVIEW · SPOTLIGHT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Spotlight. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "peekaboo": {
+      "desc": "The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.",
+      "chip": "PREVIEW · PEEKABOO · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Peekaboo. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "zoom": {
+      "desc": "A 1.85× view locks onto the top platform; wall rebounds can leave the frame.",
+      "chip": "PREVIEW · MACRO ZOOM · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Macro Zoom. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "double": {
+      "desc": "A decoy travels in the opposite direction; a small crack marks the real mover.",
+      "chip": "PREVIEW · THE SHELL GAME · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Shell Game. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "accordion": {
+      "desc": "Breathes between 45% and 100% of the supporting tower width on a 0.8-second cycle.",
+      "chip": "PREVIEW · THE ACCORDION · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Accordion. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "crumble": {
+      "desc": "For the next 3 drops (up to 8 seconds), perfects do not crumble; other landings lose up to 5 px from each edge.",
+      "chip": "PREVIEW · CRUMBLE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Crumble. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "superglue": {
+      "desc": "The next 3 drops (up to 8 seconds) get a 14 px perfect window.",
+      "chip": "PREVIEW · CHAT BRIBE: SUPERGLUE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Chat Bribe: Superglue. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "calipers": {
+      "desc": "For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges.",
+      "chip": "PREVIEW · DRAFTING CALIPERS · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Drafting Calipers. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion follows your system preference. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    }
+  },
+  "devTextReduced": {
+    "normal": {
+      "desc": "Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.",
+      "chip": "NORMAL · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Normal mode: no sabotage is active. Use manual Drop to establish a baseline, or simulate a clean landing.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "turbo": {
+      "desc": "Moving-block speed increases to ×1.7 for 5 seconds.",
+      "chip": "PREVIEW · TURBO MODE · 298 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Turbo Mode. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "drunk": {
+      "desc": "Alternates between ×0.25–0.45 stumbles and ×1.55–1.9 lurches, holding each beat for 0.55–0.70 seconds.",
+      "chip": "PREVIEW · DRUNK BLOCK · 48 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Drunk Block. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "slowmo": {
+      "desc": "Creeps at ×0.3 for 0.78 seconds, then lunges at ×2.5 on a 1.4-second cycle.",
+      "chip": "PREVIEW · SLOW-TO-DART · 438 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Slow-to-Dart. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "magnet": {
+      "desc": "The mover whips up to ×2.1 speed over the tower centre and returns to normal near the walls.",
+      "chip": "PREVIEW · GRAVITY SLINGSHOT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Gravity Slingshot. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "portal": {
+      "desc": "For the next 3 drops (up to 8 seconds), the mover wraps through open side portals instead of bouncing.",
+      "chip": "PREVIEW · PORTAL WALLS · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Portal Walls. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "rollercoaster": {
+      "desc": "The mover bobs from the landing line up to 45 px above it; no hidden sideways drift.",
+      "chip": "PREVIEW · THE ROLLERCOASTER · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Rollercoaster. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "pisa": {
+      "desc": "The view eases into a gentle sway of up to 16° for 5 seconds.",
+      "chip": "PREVIEW · THE PISA TILT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Pisa Tilt. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "earthquake": {
+      "desc": "The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.",
+      "chip": "PREVIEW · EARTHQUAKE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Earthquake. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "spotlight": {
+      "desc": "Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.",
+      "chip": "PREVIEW · SPOTLIGHT · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Spotlight. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "peekaboo": {
+      "desc": "The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.",
+      "chip": "PREVIEW · PEEKABOO · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Peekaboo. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "zoom": {
+      "desc": "A 1.85× view locks onto the top platform; wall rebounds can leave the frame.",
+      "chip": "PREVIEW · MACRO ZOOM · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Macro Zoom. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "double": {
+      "desc": "A decoy travels in the opposite direction; a small crack marks the real mover.",
+      "chip": "PREVIEW · THE SHELL GAME · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Shell Game. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "accordion": {
+      "desc": "Breathes between 45% and 100% of the supporting tower width on a 0.8-second cycle.",
+      "chip": "PREVIEW · THE ACCORDION · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing The Accordion. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "crumble": {
+      "desc": "For the next 3 drops (up to 8 seconds), perfects do not crumble; other landings lose up to 5 px from each edge.",
+      "chip": "PREVIEW · CRUMBLE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Crumble. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "superglue": {
+      "desc": "The next 3 drops (up to 8 seconds) get a 14 px perfect window.",
+      "chip": "PREVIEW · CHAT BRIBE: SUPERGLUE · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Chat Bribe: Superglue. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    },
+    "calipers": {
+      "desc": "For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges.",
+      "chip": "PREVIEW · DRAFTING CALIPERS · 175 PX/S",
+      "name": "No sabotage active",
+      "caption": "First vote at 8s, then every 10s (7s from height 25). Keep stacking.",
+      "feedback": "Previewing Drafting Calipers. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.",
+      "panel": "Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion is reduced. Exit with Menu or Esc.",
+      "hint": "Tap the stage or press Space to test-drop"
+    }
+  }
+}

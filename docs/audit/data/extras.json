@@ -1,0 +1,353 @@
+{
+  "console": [],
+  "errors": [],
+  "digits": {
+    "focusDropButton_Digit1": {
+      "focus": "drop-button",
+      "key": "Digit1",
+      "voteRegistered": false
+    },
+    "focusCanvas_Digit2": {
+      "focus": "game-canvas",
+      "key": "Digit2",
+      "voteRegistered": false
+    },
+    "focusBody_Digit3": {
+      "focus": "BODY",
+      "key": "Digit3",
+      "voteRegistered": true
+    },
+    "focusBody_Numpad1": {
+      "focus": "BODY",
+      "key": "Numpad1",
+      "voteRegistered": true
+    },
+    "focusMenuButton_Digit2": {
+      "focus": "menu-button",
+      "key": "Digit2",
+      "voteRegistered": false
+    }
+  },
+  "pick": {
+    "registered": true,
+    "before": {
+      "styles": [
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "1 Spotlight 0",
+          "label": "Vote for Spotlight, 0 votes"
+        },
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "2 Turbo Mode 1",
+          "label": "Vote for Turbo Mode, 1 votes"
+        },
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "3 Crumble 0",
+          "label": "Vote for Crumble, 0 votes"
+        }
+      ],
+      "txt": {
+        "state": "1 vote counted",
+        "sub": "The block keeps moving. Pick one to cast a vote.",
+        "count": "Closes in 5s"
+      }
+    },
+    "after": {
+      "styles": [
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "1 Spotlight 0",
+          "label": "Vote for Spotlight, 0 votes"
+        },
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "2 Turbo Mode 6",
+          "label": "Vote for Turbo Mode, 6 votes"
+        },
+        {
+          "cls": "vote-option",
+          "pressed": null,
+          "border": "rgba(42, 37, 32, 0.48)",
+          "bg": "rgb(244, 237, 223)",
+          "shadow": "none",
+          "text": "3 Crumble 0",
+          "label": "Vote for Crumble, 0 votes"
+        }
+      ],
+      "txt": {
+        "state": "6 votes counted",
+        "sub": "The block keeps moving. Pick one to cast a vote.",
+        "count": "Closes in 5s"
+      }
+    }
+  },
+  "touch": {
+    "drags": [
+      {
+        "label": "game: drag starting on header text",
+        "scrolledTo": 225
+      },
+      {
+        "label": "game: drag starting on control help text",
+        "scrolledTo": 0
+      },
+      {
+        "label": "game: drag starting on canvas",
+        "scrolledTo": 0
+      },
+      {
+        "label": "game: drag starting on Drop button",
+        "scrolledTo": 0
+      }
+    ],
+    "tapCanvasDrops": 1,
+    "screen": "game",
+    "css": {
+      "canvas": "none",
+      "drop": "none",
+      "body": "auto",
+      "html": "auto",
+      "bodyOverflow": "auto",
+      "vote": "none"
+    }
+  },
+  "hostClose": {
+    "hostGameButtons": [
+      "sound-toggle:Sound off",
+      "menu-button:Room",
+      "drop-button:HOST VIEWSPACE",
+      "?:1Waiting for vote0",
+      "?:2Waiting for vote0",
+      "?:3Waiting for vote0"
+    ],
+    "hostLobbyMidRound": {
+      "screen": "game",
+      "buttons": [],
+      "status": "The round is live. Use Back to round to return to play."
+    },
+    "dialogs": [],
+    "hostAfter": {
+      "screen": "game",
+      "status": "Connecting to the game server…",
+      "conn": "Competitive · connected",
+      "round": "Round live",
+      "turnH": "Room standings",
+      "turnS": "Everyone builds independently. The host view compares all stacks.",
+      "drop": "HOST VIEW",
+      "toast": "",
+      "lobby": "The round is live. Use Back to round to return to play.",
+      "roomConn": "Connected",
+      "voteSub": "Pick a sabotage when voting opens.",
+      "hostConnected": true,
+      "focus": "BODY",
+      "hostMention": [
+        "HOST VIEW",
+        "The host view compares all stacks"
+      ]
+    },
+    "p1After": {
+      "screen": "game",
+      "status": "",
+      "conn": "Competitive · connected",
+      "round": "Round live",
+      "turnH": "Your stack",
+      "turnS": "Build your own tower. The host sees everyone’s stacks.",
+      "drop": "DROP",
+      "toast": "PERFECT DROP · +1 TEAM BONUS",
+      "lobby": "The round is live. Use Back to round to return to play.",
+      "roomConn": "Connected",
+      "voteSub": "Pick a sabotage when voting opens.",
+      "hostConnected": true,
+      "focus": "BODY",
+      "hostMention": [
+        "The host sees everyone’s stacks"
+      ]
+    },
+    "p1Live": [
+      {
+        "t": 6036,
+        "region": "multiplayer-player-list",
+        "live": "polite",
+        "hiddenAncestor": false,
+        "text": "AdaYou7 high · 7★ReadyBo8 high · 8★Ready"
+      },
+      {
+        "t": 6037,
+        "region": "room-player-list",
+        "live": "polite",
+        "hiddenAncestor": true,
+        "text": "AdaYou8 high · 8★ReadyBo8 high · 8★Ready"
+      },
+      {
+        "t": 6037,
+        "region": "multiplayer-player-list",
+        "live": "polite",
+        "hiddenAncestor": false,
+        "text": "AdaYou8 high · 8★ReadyBo8 high · 8★Ready"
+      }
+    ],
+    "p1Events": [
+      {
+        "t": 1017,
+        "dir": "ws",
+        "type": "socket.new"
+      },
+      {
+        "t": 1027,
+        "dir": "ws",
+        "type": "socket.open"
+      }
+    ]
+  },
+  "hostGone": {
+    "before": {
+      "screen": "game",
+      "status": "",
+      "conn": "Teamwork · connected",
+      "round": "Round live",
+      "turnH": "Bo's turn",
+      "turnS": "Shared tower · fixed player order",
+      "drop": "WAIT YOUR TURN",
+      "toast": "PERFECT DROP · +1 TEAM BONUS",
+      "lobby": "The round is live. Use Back to round to return to play.",
+      "roomConn": "Connected",
+      "voteSub": "Pick a sabotage when voting opens.",
+      "hostConnected": true,
+      "focus": "BODY",
+      "hostMention": []
+    },
+    "after1s": {
+      "screen": "game",
+      "status": "",
+      "conn": "Teamwork · connected",
+      "round": "Round live",
+      "turnH": "Your turn",
+      "turnS": "Move the block and drop before the timer runs out.",
+      "drop": "DROP",
+      "toast": "PERFECT DROP · +1 TEAM BONUS",
+      "lobby": "The round is live. Use Back to round to return to play.",
+      "roomConn": "Connected",
+      "voteSub": "Pick a sabotage when voting opens.",
+      "hostConnected": false,
+      "focus": "BODY",
+      "hostMention": []
+    },
+    "after17s": {
+      "screen": "game",
+      "status": "",
+      "conn": "Teamwork · connected",
+      "round": "Round live",
+      "turnH": "the next player's turn",
+      "turnS": "Shared tower · fixed player order",
+      "drop": "WAIT YOUR TURN",
+      "toast": "PERFECT DROP · +1 TEAM BONUS",
+      "lobby": "The round is live. Use Back to round to return to play.",
+      "roomConn": "Connected",
+      "voteSub": "The block keeps moving. The host is choosing the room vote.",
+      "hostConnected": false,
+      "focus": "BODY",
+      "hostMention": [
+        "The host is choosing the room vote"
+      ]
+    },
+    "votes": [
+      {
+        "t": 10,
+        "type": "vote.open",
+        "options": [
+          "accordion",
+          "slowmo",
+          "zoom"
+        ]
+      },
+      {
+        "t": 15,
+        "type": "sabotage.active"
+      },
+      {
+        "t": 15,
+        "type": "vote.resolved",
+        "winner": "slowmo",
+        "counts": {
+          "accordion": 0,
+          "slowmo": 0,
+          "zoom": 0
+        }
+      },
+      {
+        "t": 20,
+        "type": "vote.open",
+        "options": [
+          "crumble",
+          "magnet",
+          "zoom"
+        ]
+      }
+    ],
+    "height": 32
+  },
+  "lateJoin": {
+    "status": "This room has already started.",
+    "dialogOpen": true
+  },
+  "zoom": {
+    "320x256": {
+      "canvas": [
+        0,
+        1
+      ],
+      "stage": [
+        2,
+        3
+      ],
+      "scrollW": 341,
+      "vw": 320
+    },
+    "320x480": {
+      "canvas": [
+        146,
+        212
+      ],
+      "stage": [
+        148,
+        214
+      ],
+      "scrollW": 320,
+      "vw": 320
+    },
+    "640x400": {
+      "canvas": [
+        84,
+        122
+      ],
+      "stage": [
+        86,
+        124
+      ],
+      "scrollW": 640,
+      "vw": 640
+    }
+  }
+}

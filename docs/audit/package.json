@@ -1,0 +1,13 @@
+{
+  "name": "sabotage-stack-audit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Read-only audit tooling for Sabotage Stack. Nothing here touches the game repo.",
+  "type": "commonjs",
+  "dependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "playwright": "^1.65.0",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.35.5"
+  }
+}
