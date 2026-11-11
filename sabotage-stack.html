@@ -459,6 +459,9 @@ html:not([data-theme]) #effect-label, html[data-theme="paper"] #effect-label { c
 .multiplayer-result-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 10px; }
 .teamwork-result-canvas { display: block; width: min(100%,360px); height: auto; margin: 8px auto 12px; border: 1px solid var(--line-light); border-radius: 8px; background: var(--paper); }
 .teamwork-result-legend { max-width: 620px; margin-inline: auto; }
+.teamwork-placements { max-width: 620px; margin: 12px auto; color: var(--ink); font-size: 14px; }
+.teamwork-placements summary { cursor: pointer; font-weight: 700; }
+.teamwork-placements li { margin: 5px 0; }
 .multiplayer-result-card { min-width: 0; padding: 10px; border: 1.5px solid var(--ink); border-radius: 10px; background: var(--paper-deep); }
 .multiplayer-result-card.is-winner { box-shadow: 3px 3px 0 var(--amber); }
 .multiplayer-result-card h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 4px; color: var(--ink); font: 650 17px/1.1 var(--font-head); overflow-wrap: anywhere; }
@@ -4149,7 +4152,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (heading) heading.textContent = result.score > 0 ? 'The crew kept it up.' : 'The tower met the floor.';
         appendResultHeading(`Team score · ${result.score}`, `Shared height ${result.height} · ${result.perfects} perfect ${result.perfects === 1 ? 'drop' : 'drops'} · Session best ${multiplayer.sessionBest}.`);
         const canvas = document.createElement('canvas'); canvas.className = 'teamwork-result-canvas'; canvas.setAttribute('role', 'img');
-        canvas.setAttribute('aria-label', `Shared teamwork tower at height ${result.height}. Player colors and perfect drops are shown.`);
+        canvas.setAttribute('aria-label', `Shared teamwork tower at height ${result.height}. Player names label the blocks; the list below provides each placement in order.`);
         elements.mpResults.append(canvas);
         drawMultiplayerStack(canvas, result.blocks || [], result.fallen || [], (result.blocks || []).length - 1, result.collapseLevel, true);
         const legend = document.createElement('ul'); legend.className = 'room-player-list teamwork-result-legend';
@@ -4160,6 +4163,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           li.append(dot, text); legend.append(li);
         }
         elements.mpResults.append(legend);
+        const placements = document.createElement('details'); placements.className = 'teamwork-placements';
+        const summary = document.createElement('summary'); summary.textContent = 'Who placed each block';
+        const list = document.createElement('ol');
+        for (const block of result.blocks || []) {
+          if (!block || block.placer === 'Base' || !block.placer) continue;
+          const item = document.createElement('li');
+          item.textContent = `Block ${Number(block.level) || list.children.length + 1}: ${block.placer}${block.perfect ? ' · perfect' : ''}`;
+          list.append(item);
+        }
+        if (!list.children.length) { const item = document.createElement('li'); item.textContent = 'No blocks placed.'; list.append(item); }
+        placements.append(summary, list); elements.mpResults.append(placements);
       } else {
         const players = result.players || [];
         const winners = new Set(result.winnerIds || []);

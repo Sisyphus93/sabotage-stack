@@ -529,3 +529,23 @@ describe('Multiplayer results focus (A-02)', skipReason ? { skip: skipReason } :
     } finally { await r.close(); }
   });
 });
+
+describe('Player identity without colour (A-05)', skipReason ? { skip: skipReason } : {}, () => {
+  test('Teamwork results give a named placement list as well as the coloured tower', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const stack = r.room.engine.game.team.stack;
+      stack.push({ left: 80, right: 280, width: 200, level: 1, placer: 'Ann', color: '#2F8478', perfect: true });
+      stack.push({ left: 81, right: 279, width: 198, level: 2, placer: 'Bob', color: '#D5472F', perfect: false });
+      r.room.engine.finishTeamRound(Date.now()); await sleep(300);
+      for (const page of [r.host, ...r.players]) {
+        const list = page.document.querySelector('.teamwork-placements');
+        assert.ok(list);
+        assert.match(list.textContent, /Block 1: Ann · perfect/);
+        assert.match(list.textContent, /Block 2: Bob/);
+        assert.match(page.document.querySelector('.teamwork-result-canvas').getAttribute('aria-label'), /names label the blocks/);
+        assert.deepEqual(page.errors, []);
+      }
+    } finally { await r.close(); }
+  });
+});

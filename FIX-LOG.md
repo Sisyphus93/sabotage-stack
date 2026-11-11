@@ -53,7 +53,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | A-02 | P3 | | | Multiplayer results leave focus on <body>; solo moves it to Play again. | fixed, awaiting your check | fix(A-02), single commit on this branch | |
 | A-03 | P3 | | | Room codes are four letters from 24 (331,776); join attempts are limited only by the per-socket rate limit and there is no kick, so a stranger could reach an open lobby. Note-only; not tested. | fixed, awaiting your check | fix(A-03), single commit on this branch | |
 | A-04 | P3 | | | No non-visual way to play: sound is off by default and no cue encodes the mover's position. Idea: an optional pitch sweep for position. | fixed, awaiting your check | fix(A-04), single commit on this branch | |
-| A-05 | P3 | | | Player colours 2 and 4 (teal #2F8478, vermilion #D5472F) have nearly equal luminance; a likely red-green confusion pair where no name is adjacent. | todo | | |
+| A-05 | P3 | | | Player colours 2 and 4 (teal #2F8478, vermilion #D5472F) have nearly equal luminance; a likely red-green confusion pair where no name is adjacent. | fixed, awaiting your check | fix(A-05), single commit on this branch | |
 | A-06 | P3 | | | Macro Zoom draws blocks over the bottom hint; the chat flavour pop overlaps the tower. | todo | | |
 | A-07 | P3 | | | In Sunset the speed and effect chip wraps to two lines and covers more of the stage. | todo | | |
 | A-08 | P3 | | | #theme-select keeps the browser's default focus ring instead of the themed one. | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-05, non-colour identity:** the live Teamwork board already labels placed blocks with player names; results now also offer an ordered, named placement list, including perfect drops, rather than requiring colour discrimination. Colours remain unchanged. Node 22.22.3: `npm test` passed 125/125; canvas-label readability and colour-vision usability need human verification.
 
 - **A-04, optional position tone:** owner approved the idea. A separate saved opt-in, available on the title and during play, emits a quiet pitch relative to the tower centre when Sound is on; 440 Hz is aligned, lower is left and higher is right. It stops outside active play and can reveal visually hidden movers. Node 22.22.3: `npm test` passed 124/124 with a mocked AudioContext. This is not a claim of complete non-visual accessibility: real listening and testing with blind players are needed, including timing, calibration and other game information.
 
