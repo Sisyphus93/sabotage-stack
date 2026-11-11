@@ -60,6 +60,29 @@ describe('one sabotage at a time', () => {
   }
 });
 
+describe('Competitive sabotage targeting (F-007)', () => {
+  test('every connected, unfinished competitor gets the full effect, not only the leader', () => {
+    const { engine, clock, players } = makeEngine('competitive', 17, 4);
+    const [leader, trailing, offline, finished] = engine.game.competitors;
+    leader.stack.push({ ...leader.stack[0] }, { ...leader.stack[0] }, { ...leader.stack[0] });
+    players[2].connected = false;
+    offline.disconnected = true;
+    players[3].ended = true;
+    finished.ended = true;
+
+    engine.game.pendingSabotage = 'turbo';
+    engine.applyCompetitiveSabotage(clock.t);
+
+    const effects = engine.game.activeEffects.filter(effect => effect.id === 'turbo');
+    assert.deepEqual(effects.map(effect => effect.targetPlayerId), ['a', 'b'], 'the leader and every other connected, unfinished competitor are targeted');
+    assert.ok(effects.every(effect => effect.duration === 5 && effect.expiresAt === clock.t + 5000), 'each target receives the normal full duration');
+    assert.deepEqual([leader.sabotageCount, trailing.sabotageCount, offline.sabotageCount, finished.sabotageCount], [1, 1, 0, 0]);
+    assert.deepEqual(engine.snapshot().lastSabotage, {
+      id: 'turbo', sequence: 1, targetPlayerIds: ['a', 'b']
+    }, 'the snapshot identifies all players who were hit');
+  });
+});
+
 describe('landing is what the player saw, independent of network timing', () => {
   // The player's screen trails the server by the one-way latency L; they press when it shows the block centred and the
   // packet takes another L. The server only ticks every 100 ms, at an arbitrary phase relative to the packet.

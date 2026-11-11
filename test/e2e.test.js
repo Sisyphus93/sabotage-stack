@@ -80,6 +80,35 @@ for (const mode of ['competitive', 'teamwork']) {
   });
 }
 
+describe('Competitive sabotage targeting (F-007)', skipReason ? { skip: skipReason } : {}, () => {
+  test('all active stacks receive the full effect and every room member sees who was hit', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const engine = r.room.engine;
+      engine.game.pendingSabotage = 'turbo';
+      engine.applyCompetitiveSabotage(Date.now());
+      await sleep(200);
+
+      const active = engine.game.competitors.filter(item => !item.ended && engine.connectedPlayer(item.playerId));
+      const effects = engine.game.activeEffects.filter(effect => effect.id === 'turbo');
+      assert.deepEqual(effects.map(effect => effect.targetPlayerId), active.map(item => item.playerId));
+      assert.ok(effects.every(effect => effect.duration === 5), 'each active stack receives the normal effect duration');
+      assert.deepEqual(engine.snapshot().lastSabotage.targetPlayerIds, active.map(item => item.playerId));
+
+      for (const page of [r.host, ...r.players]) {
+        const announcement = page.document.getElementById('multiplayer-sabotage-announcement');
+        assert.equal(announcement.hidden, false);
+        assert.equal(announcement.getAttribute('role'), 'status');
+        assert.equal(announcement.getAttribute('aria-live'), 'polite');
+        assert.match(announcement.textContent, /Turbo Mode/);
+        assert.match(announcement.textContent, /all active players/);
+        assert.match(announcement.textContent, /Ann, Bob/);
+        assert.deepEqual(page.errors, []);
+      }
+    } finally { await r.close(); }
+  });
+});
+
 describe('Room navigation during live rounds (F-005)', skipReason ? { skip: skipReason } : {}, () => {
   test('host and player stay in the room lobby until Back to round or a phase change', async () => {
     const r = await startRoom('competitive');
