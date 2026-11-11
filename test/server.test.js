@@ -424,3 +424,27 @@ describe('Incremental room updates (F-023)', () => {
     assert.ok(Buffer.byteLength(JSON.stringify(delta)) < fullBytes / 3, 'delta should be substantially smaller than the full state');
   });
 });
+
+describe('Room-code guessing limit (A-03)', () => {
+  test('failed attempts share a bounded server-wide budget across connections and recover after the window', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(9), joinFailureLimit: 3, joinFailureWindowMs: 60_000 });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const code = [...rm.rooms.keys()][0];
+    for (let i = 0; i < 3; i++) {
+      const socket = mk(); rm.connect(socket);
+      rm.receive(socket, JSON.stringify({ type: 'room.join', code: 'ZZZZ', name: 'Guest' }));
+      assert.equal(socket.sent.at(-1).code, 'ROOM_NOT_FOUND');
+      rm.disconnect(socket);
+    }
+    const player = mk(); rm.connect(player);
+    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
+    assert.equal(player.sent.at(-1).code, 'JOIN_RATE_LIMITED', 'even a valid guess is blocked while the shared budget is exhausted');
+    assert.equal(rm.rooms.get(code).players.length, 0);
+    now += 60_000;
+    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
+    assert.ok(player.sent.some(message => message.type === 'room.joined'));
+    assert.equal(rm.rooms.get(code).players.length, 1);
+  });
+});

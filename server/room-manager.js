@@ -15,6 +15,9 @@ const MAX_ROOMS = 1000;
 const MESSAGE_BURST = 200;
 const MESSAGE_REFILL_PER_SECOND = 100;
 const MESSAGE_ABUSE_CLOSE_AFTER = 400;
+// Shared across connections so reconnecting cannot reset the guessing budget.
+const JOIN_FAILURE_LIMIT = 60;
+const JOIN_FAILURE_WINDOW_MS = 60_000;
 
 function cleanDisplayName(value) {
   if (typeof value !== 'string') return '';
@@ -58,7 +61,7 @@ function stateChanges(before, after, path = [], changes = []) {
 }
 
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
@@ -67,6 +70,10 @@ class RoomManager {
     this.maxRooms = maxRooms;
     this.messageBurst = messageBurst;
     this.messageRefillPerSecond = messageRefillPerSecond;
+    this.joinFailureLimit = Math.max(1, joinFailureLimit);
+    this.joinFailureWindowMs = Math.max(1, joinFailureWindowMs);
+    this.joinFailures = 0;
+    this.joinFailureWindowStarted = this.now();
     this.budgets = new WeakMap();
     this.rooms = new Map();
     this.sessions = new Map();
@@ -185,9 +192,18 @@ class RoomManager {
 
   joinRoom(socket, message) {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before joining another.');
+    const now = this.now();
+    if (now - this.joinFailureWindowStarted >= this.joinFailureWindowMs || now < this.joinFailureWindowStarted) {
+      this.joinFailures = 0;
+      this.joinFailureWindowStarted = now;
+    }
+    if (this.joinFailures >= this.joinFailureLimit) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const room = this.rooms.get(code);
-    if (!room) return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
+    if (!room) {
+      this.joinFailures += 1;
+      return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
+    }
     if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started.');
     if (room.players.length >= MAX_PLAYERS) return this.error(socket, 'ROOM_FULL', 'This room already has six players.');
     const name = uniqueDisplayName(message.name, room.players);
