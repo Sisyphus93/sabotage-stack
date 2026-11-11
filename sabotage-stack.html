@@ -1177,7 +1177,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <ol class="how-steps">
         <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. A small tick marks the centre of the top block. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected player lands. Portal Walls, Superglue and Calipers last for that same player’s next 3 landings; Crumble lasts for the next 3 team landings. There is no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <section aria-labelledby="multiplayer-how-heading">
@@ -2809,7 +2809,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!sabotage) return;
       const teamwork = game && game.multiplayer && game.mode === 'teamwork';
       const effect = teamwork ? sabotage.effect.replace(/ \(up to 8 seconds\)/g, '').replace(/ for 5 seconds/g, '') : sabotage.effect;
-      const duration = teamwork ? (Core.DROP_COUNTED_IDS.includes(id) ? ' In Teamwork, three affected landings, with no time limit.' : ' In Teamwork, until the affected landing.') : '';
+      const duration = teamwork ? (id === 'crumble' ? ' In Teamwork, the next three team landings, with no time limit.' : Core.DROP_COUNTED_IDS.includes(id) ? ' In Teamwork, the affected player’s next three landings, with no time limit.' : ' In Teamwork, until the affected player lands.') : '';
       announceGame(`Vote winner: ${sabotage.name}. ${effect}${duration}`);
     }
     function announceEffectEnd(id) {
@@ -4535,7 +4535,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const name = document.createElement('strong');
         name.textContent = sabotage.name;
         const description = document.createElement('span');
-        description.textContent = sabotage.effect + ' Teamwork: ' + (['crumble', 'portal', 'superglue', 'calipers'].includes(sabotage.id) ? 'lasts for 3 affected landings without a time limit.' : 'lasts until the affected player lands a block.');
+        description.textContent = sabotage.effect + ' Teamwork: ' + (sabotage.id === 'crumble' ? 'lasts for 3 affected landings without a time limit. These are the next 3 team landings.' : ['portal', 'superglue', 'calipers'].includes(sabotage.id) ? 'lasts for 3 affected landings without a time limit. These are the affected player’s next 3 landings.' : 'lasts until the affected player lands a block.');
         copy.append(name, description);
         li.append(icon, copy);
         elements.sabotageList.append(li);

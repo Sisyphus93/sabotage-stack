@@ -35,7 +35,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-021 | P2 | quick |  | If the socket hangs, 'Connecting to the game server…' stays forever with no timeout, progress or way out | fixed, awaiting your check | fix(F-021), single commit on this branch | |
 | F-022 | P2 | quick |  | Decision-critical text is 9-11 px on phones | fixed, awaiting your check | fix(F-022), single commit on this branch | |
 | F-023 | P2 | larger |  | Every drop re-sends the whole room: room.state reached 30 KB with about 100 blocks | fixed, awaiting your check | fix(F-023), single commit on this branch | |
-| F-024 | P3 | quick |  | Teamwork: 'up to 3 drops' effects cover one drop in practice, except Crumble | todo | | |
+| F-024 | P3 | quick |  | Teamwork: 'up to 3 drops' effects cover one drop in practice, except Crumble | fixed, awaiting your check | fix(F-024), single commit on this branch | |
 | F-025 | P3 | quick |  | Peekaboo fades out, flashes back for 40 ms, then cuts to hidden | todo | | |
 | F-026 | P3 | quick |  | Copy and HUD drift: repeated speed in the chip, '+1 TEAM BONUS' in Competitive, 'Turn timer' on the round clock, and more | todo | | |
 | F-027 | P3 | quick |  | The sound setting is forgotten on reload | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-024, Teamwork durations:** F-009 already removed the time cap and made all four effects last three affected landings, so the original one-drop inference no longer applies. The guide and spoken vote explanation now clarify that Portal, Superglue and Calipers follow the same player across turns while Crumble covers three team landings; no rules changed. Node 22.22.3: `npm test` passed 109/109.
 
 - **F-023, bandwidth:** with owner approval for the note-only item, game changes use revisioned structural room deltas, falling back to a full state if smaller; full snapshots remain for joins, resumes, starts and explicit recovery. Clients request a full baseline on a gap or invalid delta. Long-stack tests reconstruct both modes exactly and require deltas under one third of snapshot size; end-to-end coverage exercises recovery. Owner approved updating the old full-state-per-change assertion. Node 22.22.3: `npm test` passed 108/108. Six-player real-network load and CPU costs have not been measured; cached older clients must refresh after deployment.
 

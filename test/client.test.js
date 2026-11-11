@@ -584,3 +584,20 @@ describe('Phone text sizing (F-022)', () => {
     assert.match(css, /\.vote-name\s*\{[^}]*white-space:\s*normal/);
   });
 });
+
+describe('Teamwork effect duration explanation (F-024)', skipReason ? { skip: skipReason } : {}, () => {
+  test('the guide distinguishes one player’s three landings from three team landings', async () => {
+    const page = await boot(HTML);
+    try {
+      const items = [...page.document.querySelectorAll('#sabotage-list li')];
+      for (const name of ['Portal Walls', 'Chat Bribe: Superglue', 'Drafting Calipers']) {
+        const item = items.find(node => node.textContent.includes(name));
+        assert.ok(item, name); assert.match(item.textContent, /affected player’s next 3 landings/);
+      }
+      const crumble = items.find(node => node.querySelector('strong').textContent === 'Crumble');
+      assert.match(crumble.textContent, /next 3 team landings/);
+      assert.match(page.document.getElementById('how-dialog').textContent, /forfeited turn does not count/);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
