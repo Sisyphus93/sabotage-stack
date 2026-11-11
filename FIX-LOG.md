@@ -14,7 +14,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 |---|---|---|---|---|---|---|---|
 | F-001 | P0 | larger |  | The playfield shrinks to nothing on short or zoomed viewports, and overflows a 1280×800 laptop | verified | fix(F-001), single commit on this branch | yes |
 | F-002 | P1 | quick |  | Forced auto-drop (3.5 s solo, 10 s Teamwork) cannot be adjusted; an untouched solo run is over in 11 seconds | fixed, awaiting your check | fix(F-002), single commit on this branch | |
-| F-003 | P1 | quick |  | Vote keys 1/2/3 do nothing while the Drop button or the canvas has focus, which is the default | todo | | |
+| F-003 | P1 | quick |  | Vote keys 1/2/3 do nothing while the Drop button or the canvas has focus, which is the default | fixed, awaiting your check | fix(F-003), single commit on this branch | |
 | F-004 | P1 | larger |  | On phones the vote and effect cards are below the fold, and the play card blocks scrolling to them | todo | | |
 | F-005 | P1 | quick |  | The Room button bounces straight back to the game, so nobody can leave or close a live room | todo | | |
 | F-006 | P1 | quick |  | Competitive: a sub-second disconnect permanently ends your stack | todo | | |
@@ -67,6 +67,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
 
+- **F-003, related finding:** removed the blanket interactive-target guard for vote digits while keeping the typing-target guard; 1/2/3 and numpad digits now vote from Drop, canvas, and Menu focus. The Space key path is unchanged; Space activating a focused control remains F-012.
 - **F-002, decision and scope:** the owner chose option B. Solo auto-drop now offers persisted 3.5 s (default), 10 s, and Off. The non-default runs are labelled Assisted in the game header and results; the selected auto-drop timer pauses during the first 2 s of every vote. The Teamwork server's separate 10 s turn timer was left unchanged; see F-009 for the related Teamwork timing question. Assisted scores still contribute to the per-session best, and the result is explicitly tagged Assisted.
 - **F-001, commit hash:** AGENTS.md asks for the hash of the fix in the F-001 row of the same commit, which is circular (writing the hash into the commit changes the hash). The row names the commit instead; `git log --oneline -1` on this branch prints the hash.
 - **F-001, what changed and why:** the board is now the largest 360:520 box that still leaves room for the chrome above it and the Drop row below it, with a 240 px floor; the play card is top-aligned instead of centred against the taller side stack (that centring was what pushed the board and Drop below the fold on a 1280×800 laptop); `.control-row` follows the card instead of the stage, which removes the horizontal scroll at 400 % zoom; and entering the game now scrolls the new screen to the top. Two intended consequences: the board is ~9 % smaller at 1280×800 (405 → 369 px wide) in exchange for Drop staying on screen, and below the 240 px floor (≈347 px tall) a short viewport scrolls instead of shrinking further, so at 200 %/400 % zoom and in phone landscape the whole board is reached with a small scroll.

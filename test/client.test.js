@@ -156,3 +156,47 @@ describe('Solo auto-drop assist choices (F-002)', skipReason ? { skip: skipReaso
     } finally { page.close(); }
   });
 });
+
+// F-003: vote shortcuts must work when the game's normal controls hold keyboard focus.
+describe('Keyboard vote shortcuts work from interactive focus (F-003)', skipReason ? { skip: skipReason } : {}, () => {
+  test('digits and numpad digits vote from Drop, canvas, and Menu; typing controls keep their keys', async () => {
+    const page = await boot(HTML, {
+      storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' },
+      manualAnimationFrame: true
+    });
+    try {
+      page.document.getElementById('start-button').click();
+      page.advanceAnimation(8200); // open the first vote without an auto-drop
+      const buttons = [...page.document.querySelectorAll('.vote-option')];
+      assert.ok(buttons.every(button => !button.disabled), 'the first vote should be open');
+      const counts = () => buttons.map(button => Number(button.querySelector('.vote-count').textContent));
+      const shortcuts = [
+        [page.document.getElementById('drop-button'), 'Digit1', '1', 0],
+        [page.document.getElementById('game-canvas'), 'Digit2', '2', 1],
+        [page.document.getElementById('menu-button'), 'Digit3', '3', 2],
+        [page.document.getElementById('drop-button'), 'Numpad1', '1', 0]
+      ];
+      let previousChoice = null;
+      for (const [target, code, key, choice] of shortcuts) {
+        target.focus();
+        const before = counts();
+        const event = new page.window.KeyboardEvent('keydown', { code, key, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+        const after = counts();
+        const expected = before.map((count, index) => count + (index === choice ? 4 : 0) - (index === previousChoice ? 4 : 0));
+        assert.deepEqual(after, expected, `${code} with focus on #${target.id} should move the player's weighted vote to option ${choice + 1}`);
+        assert.equal(event.defaultPrevented, true);
+        previousChoice = choice;
+      }
+
+      const select = page.document.getElementById('theme-select');
+      select.focus();
+      const beforeTypingTarget = counts();
+      const typingKey = new page.window.KeyboardEvent('keydown', { code: 'Digit1', key: '1', bubbles: true, cancelable: true });
+      select.dispatchEvent(typingKey);
+      assert.deepEqual(counts(), beforeTypingTarget, 'digits in a typing/select control must not cast a vote');
+      assert.equal(typingKey.defaultPrevented, false);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
