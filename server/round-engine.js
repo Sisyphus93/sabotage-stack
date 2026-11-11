@@ -15,6 +15,7 @@ const VOTE_SECONDS = 5;
 const EFFECT_SECONDS = 5;
 const DROP_EFFECT_SECONDS = 8;
 const ROUND_SECONDS = 90;
+const COMPETITIVE_DISCONNECT_GRACE_MS = 10_000;
 const SABOTAGE_IDS = Core.SABOTAGE_IDS;
 const DROP_COUNTED_EFFECTS = new Set(Core.DROP_COUNTED_IDS);
 const TEAM_GLOBAL_EFFECTS = new Set(['crumble']);
@@ -70,7 +71,7 @@ class RoundEngine {
         playerId: player.id,
         stack: [{ ...Core.makeBase(), color: player.color, placer: player.name }],
         fallen: [], perfects: 0, sabotageCount: 0, collapsed: false, disconnected: !player.connected,
-        ended: !player.connected, collapseLevel: null, moving: this.makeMover([{ ...Core.makeBase(), color: player.color }], true, player.color, false),
+        ended: !player.connected, disconnectDeadline: null, collapseLevel: null, moving: this.makeMover([{ ...Core.makeBase(), color: player.color }], true, player.color, false),
         nextSpawnFromLeft: false, lastPositionSeq: -1,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1
       })) : null,
@@ -110,6 +111,18 @@ class RoundEngine {
 
   connectedPlayer(id) { return this.players.find(player => player.id === id && player.connected && !player.ended) || null; }
   player(id) { return this.players.find(player => player.id === id) || null; }
+  expireCompetitiveDisconnect(competitor) {
+    if (!competitor || competitor.ended || competitor.disconnectDeadline == null) return false;
+    competitor.disconnectDeadline = null;
+    competitor.disconnected = true;
+    competitor.ended = true;
+    const player = this.player(competitor.playerId);
+    if (player) player.ended = true;
+    return true;
+  }
+  competitiveRoundFinished() {
+    return this.game.competitors.every(competitor => competitor.ended || competitor.collapsed);
+  }
   teamMover() { return this.game && this.game.team ? this.game.team.moving : null; }
   effectApplies(effect, playerId = null) { return effect.targetPlayerId == null || effect.targetPlayerId === playerId; }
   effectFor(id, playerId = null, now = this.now()) {
@@ -555,7 +568,7 @@ class RoundEngine {
       competitor.moving = this.nextCompetitorMover(competitor, player, now);
       this.onEvent(outcome.perfect ? 'block.perfect' : 'block.land', { playerId, height: competitor.stack.length - 1 });
     }
-    if (game.competitors.every(item => item.ended || item.disconnected || !this.connectedPlayer(item.playerId))) this.finishCompetitiveRound(now);
+    if (this.competitiveRoundFinished()) this.finishCompetitiveRound(now);
     else this.changed('game.state');
     return { ok: true, outcome: clone(outcome), authoritativeX: landing.left, collapsed: Boolean(competitor.collapsed) };
   }
@@ -685,6 +698,15 @@ class RoundEngine {
     let changed = game.activeEffects.length !== oldEffects;
 
     if (this.mode === 'competitive') {
+      for (const competitor of game.competitors) {
+        if (competitor.disconnectDeadline != null && now >= competitor.disconnectDeadline) {
+          changed = this.expireCompetitiveDisconnect(competitor) || changed;
+        }
+      }
+      if (this.competitiveRoundFinished()) {
+        this.finishCompetitiveRound(now);
+        return true;
+      }
       if (now >= game.endsAt) {
         this.finishCompetitiveRound(now);
         return true;
@@ -761,13 +783,10 @@ class RoundEngine {
       return;
     }
     const competitor = game.competitors.find(item => item.playerId === playerId);
-    if (competitor && !competitor.ended) {
+    if (competitor && !competitor.ended && !competitor.collapsed && competitor.disconnectDeadline == null) {
       competitor.disconnected = true;
-      competitor.ended = true;
-      const player = this.player(playerId);
-      if (player) player.ended = true;
-      if (game.competitors.every(item => item.ended || item.disconnected || !this.connectedPlayer(item.playerId))) this.finishCompetitiveRound(now);
-      else this.changed('game.state');
+      competitor.disconnectDeadline = now + COMPETITIVE_DISCONNECT_GRACE_MS;
+      this.changed('game.state');
     }
   }
 
@@ -789,6 +808,19 @@ class RoundEngine {
       this.onEvent('round.resumed', {});
       this.changed('game.state');
       return;
+    }
+    if (this.mode === 'competitive') {
+      const competitor = game.competitors.find(item => item.playerId === playerId);
+      if (competitor && !competitor.ended && competitor.disconnectDeadline != null) {
+        if (now >= competitor.disconnectDeadline) {
+          this.expireCompetitiveDisconnect(competitor);
+          if (this.competitiveRoundFinished()) this.finishCompetitiveRound(now);
+          else this.changed('game.state');
+          return;
+        }
+        competitor.disconnectDeadline = null;
+        competitor.disconnected = false;
+      }
     }
     this.changed('game.state');
   }
@@ -869,5 +901,5 @@ class RoundEngine {
 module.exports = {
   RoundEngine, SABOTAGE_IDS, TEAM_GLOBAL_EFFECTS, ROOM_GLOBAL_EFFECTS,
   FIRST_VOTE_AT, VOTE_CYCLE_SECONDS, VOTE_SECONDS, EFFECT_SECONDS, ROUND_SECONDS,
-  MAX_TURN_SECONDS, AUTO_DROP_GRACE_MS
+  MAX_TURN_SECONDS, AUTO_DROP_GRACE_MS, COMPETITIVE_DISCONNECT_GRACE_MS
 };

@@ -227,7 +227,7 @@ class RoomManager {
         player.connected = true;
         player.socket = socket;
         if (typeof message.reducedMotion === 'boolean') player.reducedMotion = message.reducedMotion;
-        // A disconnected Competitive stack stays ended; reconnecting only restores spectator access.
+        // The round engine restores a disconnected Competitive stack only within its grace window.
       }
     }
     if (!role) return this.error(socket, 'INVALID_RESUME', 'Reconnect token was not recognized for this room.');

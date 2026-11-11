@@ -86,6 +86,58 @@ describe('connection handover', () => {
   });
 });
 
+describe('Competitive disconnect grace (F-006)', () => {
+  test('a player can resume before the grace deadline and continue their frozen stack', async () => {
+    const { app, url } = await listen();
+    let host; let player; let other; let resumed;
+    try {
+      host = await connect(url);
+      host.send({ type: 'room.create', mode: 'competitive' });
+      await sleep(80);
+      const created = host.inbox.find(message => message.type === 'room.created');
+
+      player = await connect(url);
+      player.send({ type: 'room.join', code: created.code, name: 'Ada' });
+      await sleep(80);
+      const joined = player.inbox.find(message => message.type === 'room.joined');
+      other = await connect(url);
+      other.send({ type: 'room.join', code: created.code, name: 'Bo' });
+      await sleep(80);
+      host.send({ type: 'round.start' });
+      await sleep(120);
+
+      const room = app.roomManager.rooms.get(created.code);
+      const roomPlayer = room.players.find(item => item.id === joined.playerId);
+      const competitor = room.engine.game.competitors.find(item => item.playerId === joined.playerId);
+      const stackHeight = competitor.stack.length;
+      player.ws.terminate();
+      await sleep(120);
+      assert.equal(roomPlayer.connected, false);
+      assert.equal(competitor.ended, false, 'the Competitive stack remains active during the grace window');
+      assert.equal(competitor.disconnected, true);
+      assert.equal(roomPlayer.ended, false);
+      const frozenLeft = competitor.moving.left;
+      await sleep(120);
+      assert.equal(competitor.moving.left, frozenLeft, 'the mover must stay frozen while its player is offline');
+
+      resumed = await connect(url);
+      resumed.send({ type: 'room.resume', code: created.code, resumeToken: joined.resumeToken });
+      await sleep(120);
+      assert.equal(roomPlayer.connected, true);
+      assert.equal(competitor.ended, false);
+      assert.equal(competitor.disconnected, false);
+      assert.equal(competitor.disconnectDeadline, null);
+      assert.equal(competitor.stack.length, stackHeight, 'reconnecting must preserve the tower height');
+      assert.equal(room.engine.connectedPlayer(joined.playerId), roomPlayer);
+      await sleep(120);
+      assert.notEqual(competitor.moving.left, frozenLeft, 'the mover continues after the player resumes');
+    } finally {
+      for (const client of [host, player, other, resumed]) if (client && client.ws.readyState < 2) client.ws.terminate();
+      await app.close();
+    }
+  });
+});
+
 describe('abuse limits', () => {
   const socket = () => ({ readyState: 1, sent: [], closed: false, send(m) { this.sent.push(JSON.parse(m)); }, close() { this.closed = true; } });
   test('legitimate traffic (20 msg/s, plus a 150-message burst) is never limited', () => {

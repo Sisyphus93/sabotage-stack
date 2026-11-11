@@ -1,7 +1,7 @@
 'use strict';
 const { test, describe } = require('node:test');
 const assert = require('node:assert/strict');
-const { RoundEngine } = require('../server/round-engine');
+const { RoundEngine, COMPETITIVE_DISCONNECT_GRACE_MS } = require('../server/round-engine');
 const Core = require('../shared/game-core');
 const { rng } = require('./helpers/rng');
 
@@ -135,6 +135,79 @@ describe('pause and resume', () => {
     for (const p of players) { p.connected = true; engine.playerReconnected(p.id, clock.t); }
     engine.tick(clock.t + 100);
     assert.ok(Math.abs(engine.game.team.moving.left - before) < 60);
+  });
+});
+
+describe('Competitive disconnect grace (F-006)', () => {
+  const GRACE_MS = COMPETITIVE_DISCONNECT_GRACE_MS;
+
+  test('a reconnect within ten seconds restores the frozen mover', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const competitor = engine.game.competitors.find(item => item.playerId === 'a');
+    const initialLeft = competitor.moving.left;
+
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    assert.equal(competitor.ended, false, 'a temporary disconnect must not end the stack');
+    assert.equal(competitor.disconnected, true, 'other players can see that the stack is offline');
+    assert.equal(players[0].ended, false);
+    assert.equal(competitor.disconnectDeadline, clock.t + GRACE_MS);
+
+    clock.t += 1_000;
+    engine.tick(clock.t);
+    assert.equal(competitor.moving.left, initialLeft, 'the disconnected mover is frozen during the grace period');
+    assert.equal(engine.game.phase, 'playing');
+
+    players[0].connected = true;
+    engine.playerReconnected('a', clock.t);
+    assert.equal(competitor.ended, false);
+    assert.equal(competitor.disconnected, false);
+    assert.equal(competitor.disconnectDeadline, null);
+    clock.t += 50;
+    engine.tick(clock.t);
+    assert.notEqual(competitor.moving.left, initialLeft, 'the mover resumes after reconnection');
+  });
+
+  test('a reconnect processed after the deadline is forfeited even before the next engine tick', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const competitor = engine.game.competitors.find(item => item.playerId === 'a');
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    clock.t += GRACE_MS;
+    players[0].connected = true;
+    engine.playerReconnected('a', clock.t);
+
+    assert.equal(competitor.ended, true);
+    assert.equal(competitor.disconnected, true);
+    assert.equal(competitor.disconnectDeadline, null);
+    assert.equal(players[0].ended, true);
+    assert.equal(engine.connectedPlayer('a'), null, 'the expired player can only watch the live round');
+  });
+
+  test('an unresumed stack ends only at the grace deadline, even if every other stack has ended', () => {
+    const { engine, clock, players } = makeEngine('competitive');
+    const disconnected = engine.game.competitors.find(item => item.playerId === 'a');
+    const finished = engine.game.competitors.find(item => item.playerId === 'b');
+    finished.ended = true;
+    finished.collapsed = true;
+    players[1].ended = true;
+
+    players[0].connected = false;
+    engine.playerDisconnected('a', clock.t);
+    assert.equal(engine.game.phase, 'playing', 'a stack in its grace period keeps the round alive');
+    clock.t += GRACE_MS - 1;
+    engine.tick(clock.t);
+    assert.equal(disconnected.ended, false);
+    assert.equal(engine.game.phase, 'playing', 'the player can still reconnect just before the deadline');
+
+    clock.t += 1;
+    engine.tick(clock.t);
+    assert.equal(disconnected.ended, true);
+    assert.equal(disconnected.disconnected, true);
+    assert.equal(disconnected.disconnectDeadline, null);
+    assert.equal(players[0].ended, true);
+    assert.equal(engine.game.phase, 'results');
+    assert.equal(engine.game.results.players.find(player => player.id === 'a').disconnected, true);
   });
 });
 
