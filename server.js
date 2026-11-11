@@ -1,9 +1,11 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const zlib = require('node:zlib');
 const { WebSocketServer, WebSocket } = require('ws');
 const { RoomManager } = require('./server/room-manager');
 
@@ -38,6 +40,26 @@ function originIsSameHost(request) {
   catch (_) { return false; }
 }
 
+function preferredEncoding(header) {
+  const accepted = String(header || '').toLowerCase().split(',').map(part => part.trim().split(';'))
+    .filter(([, quality]) => !/^\s*q=0(\.0*)?\s*$/.test(quality || '')).map(([name]) => name.trim());
+  if (accepted.includes('br')) return 'br';
+  if (accepted.includes('gzip')) return 'gzip';
+  return null;
+}
+// Compressing 1.4 MB on every request would be wasteful: keep the result until the page bytes change.
+const pageCompressionCache = new Map();
+function compressedPage(html, encoding) {
+  const digest = crypto.createHash('sha1').update(html).digest('hex');
+  const cached = pageCompressionCache.get(encoding);
+  if (cached && cached.digest === digest) return cached.body;
+  const body = encoding === 'br'
+    ? zlib.brotliCompressSync(html, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: html.length } })
+    : zlib.gzipSync(html, { level: 6 });
+  pageCompressionCache.set(encoding, { digest, body });
+  return body;
+}
+
 function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error } = {}) {
   const htmlPath = path.join(root, 'sabotage-stack.html');
   const server = http.createServer((request, response) => {
@@ -58,14 +80,20 @@ function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager()
           response.end('The game page could not be loaded.');
           return;
         }
-        response.writeHead(200, {
+        // The page embeds its fonts and the 3D view, so it is sent compressed whenever the browser allows it.
+        const encoding = preferredEncoding(request.headers['accept-encoding']);
+        const body = encoding ? compressedPage(html, encoding) : html;
+        const headers = {
           'Content-Type': 'text/html; charset=utf-8',
-          'Content-Length': html.length,
+          'Content-Length': body.length,
           'Cache-Control': 'no-store',
           'X-Content-Type-Options': 'nosniff',
-          'Referrer-Policy': 'same-origin'
-        });
-        response.end(html);
+          'Referrer-Policy': 'same-origin',
+          Vary: 'Accept-Encoding'
+        };
+        if (encoding) headers['Content-Encoding'] = encoding;
+        response.writeHead(200, headers);
+        response.end(body);
       });
       return;
     }
