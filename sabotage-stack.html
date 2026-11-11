@@ -988,7 +988,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           <section class="side-card room-player-card" aria-labelledby="room-players-heading">
             <div class="card-heading"><span class="eyebrow">Players</span><span id="room-player-count" class="timer-label">0 / 6</span></div>
             <h3 id="room-players-heading">The crew</h3>
-            <ul id="room-player-list" class="room-player-list" aria-live="polite"></ul>
+            <ul id="room-player-list" class="room-player-list"></ul>
             <p id="room-lobby-status" class="room-status" role="status" aria-live="polite">Waiting for players to join.</p>
             <div class="room-actions">
               <button id="room-start-button" class="button button-primary" type="button" disabled>Start round</button>
@@ -1015,7 +1015,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
                   <span>HEIGHT</span><strong id="height-display">0</strong>
                 </div>
                 <div id="motion-chip" class="motion-chip">140 px/s</div>
-                <div id="canvas-toast" class="canvas-message" role="status" aria-live="polite"></div>
+                <div id="canvas-toast" class="canvas-message" aria-hidden="true"></div>
                 <div id="perfect-banner" class="canvas-message" aria-hidden="true">PERFECT!</div>
                 <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
                 <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
@@ -1059,7 +1059,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
               <button id="team-skip-button" class="button" type="button" hidden>Skip current turn</button>
               <button id="team-ready-button" class="button button-primary" type="button" hidden>I’m ready to play</button>
-              <ul id="multiplayer-player-list" class="room-player-list compact-player-list" aria-live="polite"></ul>
+              <ul id="multiplayer-player-list" class="room-player-list compact-player-list"></ul>
             </section>
             <section id="vote-card" class="side-card vote-card" aria-labelledby="vote-heading">
               <div class="card-heading"><span class="eyebrow">Chat picks</span><span id="vote-countdown" class="timer-label">First vote in 8s</span></div>
@@ -1162,6 +1162,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     </form>
   </dialog>
 
+  <div id="game-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
   <script type="application/json" id="audio-cue-sheet">
   [
     {"event":"run.start","cue":"signature","pictureBeat":"A fresh tower and moving block appear"},
@@ -1685,6 +1686,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const Core = window.SabotageStackCore;
 
     const elements = {
+      gameAnnouncement: document.getElementById('game-announcement'),
       themeSelect: document.getElementById('theme-select'), soloAutoDropSelect: document.getElementById('solo-auto-drop-select'), soloAutoDropHelp: document.getElementById('solo-auto-drop-help'),
       soundToggle: document.getElementById('sound-toggle'), soundLabel: document.getElementById('sound-label'), soundStatus: document.getElementById('sound-status'),
       title: document.getElementById('title-screen'), lobby: document.getElementById('room-screen'), game: document.getElementById('game-screen'), results: document.getElementById('results-screen'),
@@ -1796,6 +1798,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
+      if (changed && name === 'title') resetGameAnnouncements();
       // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
       if (changed && name === 'game') document.documentElement.scrollTop = 0;
     }
@@ -2023,7 +2026,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       if (message.type === 'block.perfect' || message.type === 'block.land') {
         playCue(message.type === 'block.perfect' ? 'block.perfect' : 'block.land');
-        if (message.playerId === multiplayer.playerId && message.type === 'block.perfect') setToast('PERFECT DROP · +1 TEAM BONUS', 1.25);
+        if (message.playerId === multiplayer.playerId && message.type === 'block.perfect') {
+          setToast('PERFECT DROP · +1 TEAM BONUS', 1.25);
+          announceGame(`Perfect drop. Height ${Number(message.height) || 0}.`);
+        }
         const height = Number(message.height) || 0;
         if (height > 0 && height % 3 === 0) showChatFlavor(ROASTS[(Math.floor(height / 3) - 1) % ROASTS.length]);
         return;
@@ -2353,6 +2359,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : Boolean(competitor && competitor.playerId === multiplayer.playerId && !competitor.ended && !competitor.collapsed);
         if (sameActor) view.moving.left = previous.moving.left;
       }
+      if (newRound) resetGameAnnouncements();
+      if (remote.vote && (newRound || !previous.vote)) announceVoteOptions(remote.vote.options);
+      if (!newRound && previous.vote && !remote.vote && remote.lastVote && remote.lastVote.winner) announceVoteWinner(remote.lastVote.winner);
+      if (team && team.turnActive && team.currentPlayerId && (newRound || previous.currentTurnId !== team.turnId)) {
+        announceGame(team.currentPlayerId === multiplayer.playerId ? `Your turn. ${Math.max(0, Math.ceil(team.turnRemaining || 0))} seconds to drop.` : `${team.currentPlayerName || 'A player'}’s turn.`);
+      }
+      const effectIds = effects.map(effect => `${effect.id}:${effect.targetPlayerId || 'all'}`);
+      if (!newRound) {
+        const ended = new Set((previous.announcedEffectIds || []).filter(key => !effectIds.includes(key)).map(key => key.split(':')[0]));
+        for (const id of ended) announceEffectEnd(id);
+      }
+      view.announcedEffectIds = effectIds;
+      view.turnWarningSent = !newRound && previous.currentTurnId === view.currentTurnId && previous.turnWarningSent;
       game = view;
       multiplayer.forceServerPosition = false;
       if (newRound) { camera = 0; zoomScale = 1; lastFrame = 0; }
@@ -2573,7 +2592,58 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
     }
 
+    // Serialize game announcements so simultaneous turn, vote and effect changes are not overwritten.
+    const announcementQueue = [];
+    let announcementTimer = null;
+    function resetGameAnnouncements() {
+      announcementQueue.length = 0;
+      if (announcementTimer !== null) clearTimeout(announcementTimer);
+      announcementTimer = null;
+      elements.gameAnnouncement.textContent = '';
+    }
+    function announceGame(text, expiresIn = 0) {
+      if (!text) return;
+      // Bound the backlog without displacing vote or turn updates for a burst of perfects.
+      if (announcementQueue.length >= 20) {
+        const perfect = announcementQueue.findIndex(item => item.text.startsWith('Perfect drop.'));
+        if (perfect >= 0) announcementQueue.splice(perfect, 1);
+        else if (text.startsWith('Perfect drop.')) return;
+        else announcementQueue.shift();
+      }
+      announcementQueue.push({ text, expiresAt: expiresIn ? Date.now() + expiresIn : 0 });
+      if (announcementTimer !== null) return;
+      function next() {
+        while (announcementQueue.length && announcementQueue[0].expiresAt && announcementQueue[0].expiresAt <= Date.now()) announcementQueue.shift();
+        if (!announcementQueue.length) { announcementTimer = null; return; }
+        const message = announcementQueue.shift().text;
+        // Separate clearing from writing so consecutive identical messages are announced again.
+        elements.gameAnnouncement.textContent = '';
+        announcementTimer = setTimeout(() => {
+          elements.gameAnnouncement.textContent = message;
+          announcementTimer = setTimeout(next, Math.max(1200, Math.min(6000, message.length * 45)));
+        }, 50);
+      }
+      next();
+    }
+    function announceVoteOptions(options) {
+      const names = (options || []).map(id => effectById(id)).filter(Boolean).map(item => item.name);
+      if (names.length) announceGame(`Vote open. Options: ${names.join(', ')}.`);
+    }
+    function announceVoteWinner(id) {
+      const sabotage = effectById(id);
+      if (!sabotage) return;
+      const teamwork = game && game.multiplayer && game.mode === 'teamwork';
+      const effect = teamwork ? sabotage.effect.replace(/ \(up to 8 seconds\)/g, '').replace(/ for 5 seconds/g, '') : sabotage.effect;
+      const duration = teamwork ? (Core.DROP_COUNTED_IDS.includes(id) ? ' In Teamwork, three affected landings, with no time limit.' : ' In Teamwork, until the affected landing.') : '';
+      announceGame(`Vote winner: ${sabotage.name}. ${effect}${duration}`);
+    }
+    function announceEffectEnd(id) {
+      const sabotage = effectById(id);
+      if (sabotage) announceGame(`${sabotage.name} ended.`);
+    }
+
     function newGame() {
+      resetGameAnnouncements();
       resultData = null;
       camera = 0; zoomScale = 1;
       const autoDropSeconds = soloAutoDropSetting === 'off' ? 0 : Number(soloAutoDropSetting);
@@ -2656,6 +2726,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game.multiplayer && game.autoDropSeconds > 0) game.autoDropPauseRemaining = SOLO_AUTO_DROP_VOTE_PAUSE_SECONDS;
       game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(heightOf(game));
       game.statusMessage = 'Voting is open. The block keeps moving; chat votes are arriving live.';
+      announceVoteOptions(ids);
       playCue('vote.open');
       syncHud(true);
     }
@@ -2759,7 +2830,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game.vote = null;
       if (outcome && outcome.winner) {
         game.lastSabotageWinner = outcome.winner;
+        if (game.activeEffect) announceEffectEnd(game.activeEffect.id);
         activateSabotage(outcome.winner);
+        announceVoteWinner(outcome.winner);
         playCue('sabotage.pick');
       } else syncHud(true);
     }
@@ -2885,6 +2958,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game.activeEffect.dropsRemaining = Math.max(0, game.activeEffect.dropsRemaining - 1);
       if (game.activeEffect.dropsRemaining <= 0) {
         game.statusMessage = `${effectById(game.activeEffect.id).name} used its final drop.`;
+        announceEffectEnd(game.activeEffect.id);
         game.activeEffect = null;
       }
     }
@@ -2923,6 +2997,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         }
         playCue('block.miss');
         game.statusMessage = 'No overlap. The tower has collapsed.';
+        announceGame('No overlap. The tower has collapsed.');
         game.toastText = 'NO OVERLAP · TOWER COLLAPSED';
         startCollapse();
         syncHud(true);
@@ -2944,7 +3019,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         game.perfectTime = 1.25;
         game.statusMessage = 'Perfect drop! The block snapped into line.';
       }
-      if (outcome.perfect) setToast('PERFECT! +1 CLEAN DROP', 1.25);
+      if (outcome.perfect) {
+        setToast('PERFECT! +1 CLEAN DROP', 1.25);
+        if (!game.devMode) announceGame(`Perfect drop. Height ${heightOf(game)}.`);
+      }
       if (!game.devMode) {
         game.flavorCounter = (game.flavorCounter || 0) + 1;
         if (game.flavorCounter % 3 === 0) showChatFlavor(ROASTS[(game.flavorCounter / 3 - 1) % ROASTS.length]);
@@ -3074,6 +3152,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (game.mode === 'teamwork') {
         if (game.awaitingAutoDrop) game.autoDropRemaining = Math.max(0, game.autoDropRemaining - dt);
         else game.turnRemaining = Math.max(0, game.turnRemaining - dt);
+        if (!game.vote && game.currentPlayerId === multiplayer.playerId && !game.turnWarningSent && game.turnRemaining > 0 && game.turnRemaining <= 3) {
+          game.turnWarningSent = true;
+          announceGame('Three seconds left in your turn.', 2000);
+        }
       }
       if (game.activeEffect) {
         if (!game.activeEffect.untilDrop) game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
@@ -3139,6 +3221,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
           if (game.activeEffect.remaining <= 0) {
             finishMoverEffect(game.activeEffect);
+            announceEffectEnd(game.activeEffect.id);
             game.activeEffect = null;
             game.statusMessage = 'Sabotage over. For now.';
           }
