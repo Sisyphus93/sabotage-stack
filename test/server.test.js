@@ -138,6 +138,65 @@ describe('Competitive disconnect grace (F-006)', () => {
   });
 });
 
+describe('Teamwork vote routing (F-008)', () => {
+  function makeRoom(mode) {
+    const time = 1e9;
+    const manager = new RoomManager({ now: () => time, random: rng(mode === 'teamwork' ? 31 : 32), idleLimitMs: 1e12 });
+    const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+    const host = socket(); const players = [socket(), socket()];
+    manager.connect(host); players.forEach(player => manager.connect(player));
+    manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const code = host.sent.find(message => message.type === 'room.created').code;
+    players.forEach((player, index) => manager.receive(player, JSON.stringify({ type: 'room.join', code, name: `P${index}` })));
+    manager.receive(host, JSON.stringify({ type: 'round.start' }));
+    return { manager, host, players, room: manager.rooms.get(code) };
+  }
+
+  test('authenticated Teamwork players cast one changeable ballot and the host records a separate tie-break', () => {
+    const setup = makeRoom('teamwork');
+    const { manager, host, players, room } = setup;
+    const engine = room.engine;
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+    engine.game.team.turnExpiresAt = null;
+    engine.openVote(setup.manager.now());
+    const [first, second] = engine.game.vote.options;
+    engine.game.team.turnActive = true;
+    engine.game.team.currentPlayerId = room.players[0].id;
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(players[0].sent.at(-1).code, 'PLAYER_ON_TURN');
+    assert.equal(engine.game.vote.votes.size, 0);
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: second }));
+    manager.receive(players[1], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(engine.game.vote.votes.size, 2, 'changing a choice does not add another ballot');
+    assert.deepEqual(Object.values(engine.snapshot().vote.counts).sort(), [0, 1, 1]);
+
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(engine.game.vote.votes.size, 2, 'the host tie-break is not an extra player vote');
+    assert.equal(engine.snapshot().vote.hostTiebreak, first);
+    engine.resolveVote(setup.manager.now());
+    assert.equal(engine.game.lastVote.winner, first);
+    assert.equal(engine.game.lastVote.tiebreak, 'host');
+  });
+
+  test('Competitive keeps host manual votes and rejects player ballots', () => {
+    const { manager, host, players, room } = makeRoom('competitive');
+    const engine = room.engine;
+    engine.openVote(manager.now());
+    const [first, second] = engine.game.vote.options;
+    manager.receive(players[0], JSON.stringify({ type: 'vote.cast', option: first }));
+    assert.equal(players[0].sent.at(-1).code, 'HOST_ONLY', 'a Competitive player keeps the original host-only route');
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: first }));
+    manager.receive(host, JSON.stringify({ type: 'vote.cast', option: second }));
+    assert.equal(engine.game.vote.votes.size, 2, 'Competitive host clicks retain their existing separate-ballot behavior');
+    assert.equal(Object.hasOwn(engine.snapshot().vote, 'hostTiebreak'), false);
+  });
+});
+
 describe('abuse limits', () => {
   const socket = () => ({ readyState: 1, sent: [], closed: false, send(m) { this.sent.push(JSON.parse(m)); }, close() { this.closed = true; } });
   test('legitimate traffic (20 msg/s, plus a 150-message burst) is never limited', () => {
