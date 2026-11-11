@@ -60,6 +60,82 @@ describe('one sabotage at a time', () => {
   }
 });
 
+describe('Teamwork voting (F-008)', () => {
+  function openBetweenTurns(engine, now) {
+    engine.game.team.turnActive = false;
+    engine.game.team.currentPlayerId = null;
+    engine.game.team.turnExpiresAt = null;
+    engine.game.team.awaitingAutoDrop = false;
+    engine.game.team.autoDropDeadlineAt = null;
+    return engine.openVote(now);
+  }
+
+  test('each connected player off-turn has one changeable vote; the on-turn and disconnected players cannot vote', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 21, 3);
+    engine.openVote(clock.t);
+    const options = engine.game.vote.options;
+
+    assert.equal(engine.castTeamworkPlayerVote('a', options[0]).code, 'PLAYER_ON_TURN');
+    assert.equal(engine.castTeamworkPlayerVote('b', options[0]).ok, true);
+    assert.equal(engine.castTeamworkPlayerVote('b', options[1]).ok, true, 'the same player can change their ballot');
+    assert.equal(engine.game.vote.votes.size, 1, 'a changed vote replaces the earlier ballot');
+    assert.deepEqual([...engine.game.vote.votes.entries()], [['teamwork-player:b', options[1]]]);
+    players[2].connected = false;
+    assert.equal(engine.castTeamworkPlayerVote('c', options[0]).code, 'PLAYER_INACTIVE');
+    assert.equal(engine.snapshot().vote.totalVotes, 1);
+
+    const competitive = makeEngine('competitive', 22, 2).engine;
+    competitive.openVote(competitive.now());
+    assert.equal(competitive.castTeamworkPlayerVote('a', competitive.game.vote.options[0]).code, 'PLAYER_VOTING_DISABLED');
+  });
+
+  test('host tie-break resolves a player tie, including zero votes, but cannot overturn a clear winner', () => {
+    const tied = makeEngine('teamwork', 23, 3);
+    openBetweenTurns(tied.engine, tied.clock.t);
+    const [first, second] = tied.engine.game.vote.options;
+    assert.equal(tied.engine.castTeamworkPlayerVote('a', first).ok, true);
+    assert.equal(tied.engine.castTeamworkPlayerVote('b', second).ok, true);
+    assert.equal(tied.engine.castHostTiebreak(second).ok, true);
+    assert.equal(tied.engine.snapshot().vote.hostTiebreak, second);
+    assert.equal(tied.engine.game.vote.duration, 5, 'the existing vote window remains five seconds');
+    const cadence = tied.engine.game.elapsed + 10;
+    assert.equal(tied.engine.game.nextVoteAt, cadence, 'the existing vote cadence remains unchanged');
+    tied.engine.resolveVote(tied.clock.t);
+    assert.equal(tied.engine.game.lastVote.winner, second);
+    assert.equal(tied.engine.game.lastVote.tiebreak, 'host');
+
+    const noVotes = makeEngine('teamwork', 24, 2);
+    openBetweenTurns(noVotes.engine, noVotes.clock.t);
+    const chosenWithoutBallots = noVotes.engine.game.vote.options[2];
+    assert.equal(noVotes.engine.castHostTiebreak(chosenWithoutBallots).ok, true);
+    noVotes.engine.resolveVote(noVotes.clock.t);
+    assert.equal(noVotes.engine.game.lastVote.winner, chosenWithoutBallots, 'the host decides a zero-vote tie');
+    assert.equal(noVotes.engine.game.lastVote.totalVotes, 0);
+    assert.equal(noVotes.engine.game.lastVote.tiebreak, 'host');
+
+    const clear = makeEngine('teamwork', 25, 3);
+    openBetweenTurns(clear.engine, clear.clock.t);
+    const [leader, runnerUp] = clear.engine.game.vote.options;
+    clear.engine.castTeamworkPlayerVote('a', leader);
+    clear.engine.castTeamworkPlayerVote('b', leader);
+    clear.engine.castTeamworkPlayerVote('c', runnerUp);
+    clear.engine.castHostTiebreak(runnerUp);
+    clear.engine.resolveVote(clear.clock.t);
+    assert.equal(clear.engine.game.lastVote.winner, leader, 'a host preference cannot overturn the player-vote leader');
+    assert.equal(clear.engine.game.lastVote.tiebreak, undefined);
+  });
+
+  test('the host cannot use a Teamwork tie-break as an extra Competitive ballot', () => {
+    const { engine, clock } = makeEngine('competitive', 26, 2);
+    engine.openVote(clock.t);
+    const option = engine.game.vote.options[0];
+    assert.equal(engine.castHostTiebreak(option).code, 'HOST_TIEBREAK_DISABLED');
+    assert.equal(engine.castManualVote(option).ok, true);
+    assert.equal(engine.game.vote.votes.size, 1);
+    assert.equal(Object.hasOwn(engine.snapshot().vote, 'hostTiebreak'), false);
+  });
+});
+
 describe('Competitive sabotage targeting (F-007)', () => {
   test('every connected, unfinished competitor gets the full effect, not only the leader', () => {
     const { engine, clock, players } = makeEngine('competitive', 17, 4);

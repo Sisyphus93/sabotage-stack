@@ -112,7 +112,7 @@ class RoomManager {
       case 'room.close': return this.closeRoomForHost(socket);
       case 'player.position': return this.playerAction(socket, message, 'position');
       case 'player.drop': return this.playerAction(socket, message, 'drop');
-      case 'vote.cast': return this.hostVote(socket, message);
+      case 'vote.cast': return this.voteCast(socket, message);
       case 'client.ping': return safeSend(socket, { type: 'server.pong', at: this.now() });
       default: return this.error(socket, 'UNKNOWN_MESSAGE', 'That message type is not supported.');
     }
@@ -341,12 +341,33 @@ class RoomManager {
     return result;
   }
 
+  voteCast(socket, message) {
+    const session = this.sessions.get(socket);
+    if (!session || !session.roomCode) return this.error(socket, 'NOT_IN_ROOM', 'Join a room before voting.');
+    if (session.role === 'host') return this.hostVote(socket, message);
+    if (session.role === 'player') return this.playerVote(socket, message);
+    return this.error(socket, 'INVALID_ROLE', 'This connection cannot vote.');
+  }
+
   hostVote(socket, message) {
     const { room } = this.requireHost(socket);
     if (!room) return;
     if (!room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
-    const result = room.engine.castManualVote(message.option);
-    if (!result.ok) return this.error(socket, result.code || 'VOTE_REJECTED', 'That vote was not counted.');
+    const result = room.mode === 'teamwork'
+      ? room.engine.castHostTiebreak(message.option)
+      : room.engine.castManualVote(message.option);
+    if (!result.ok) return this.error(socket, result.code || 'VOTE_REJECTED', 'That vote was not counted.', { action: 'vote' });
+    room.lastActivityAt = this.now();
+  }
+
+  playerVote(socket, message) {
+    const session = this.sessions.get(socket);
+    if (!session || session.role !== 'player') return this.error(socket, 'PLAYER_ONLY', 'Join the room as a player first.');
+    const room = this.rooms.get(session.roomCode);
+    if (!room || !room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
+    if (room.mode !== 'teamwork') return this.error(socket, 'HOST_ONLY', 'Only the host can do that.');
+    const result = room.engine.castTeamworkPlayerVote(session.playerId, message.option);
+    if (!result.ok) return this.error(socket, result.code || 'VOTE_REJECTED', 'That vote was not counted.', { action: 'vote' });
     room.lastActivityAt = this.now();
   }
 

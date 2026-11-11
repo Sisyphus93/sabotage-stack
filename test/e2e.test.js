@@ -109,6 +109,87 @@ describe('Competitive sabotage targeting (F-007)', skipReason ? { skip: skipReas
   });
 });
 
+describe('Teamwork votes pause between turns (F-008)', skipReason ? { skip: skipReason } : {}, () => {
+  test('each non-turn player can change one vote; the host breaks only a tied result', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const engine = r.room.engine;
+      const team = engine.game.team;
+      team.turnActive = false;
+      team.currentPlayerId = null;
+      team.turnExpiresAt = null;
+      team.awaitingAutoDrop = false;
+      team.autoDropDeadlineAt = null;
+      engine.openVote(Date.now());
+      await sleep(150);
+
+      const { options, duration } = engine.game.vote;
+      assert.equal(duration, 5, 'the Teamwork vote keeps its five-second duration');
+      assert.equal(engine.game.nextVoteAt, engine.game.vote.openedAt + 10, 'the below-height-25 vote cadence stays ten seconds');
+      for (const page of [r.host, ...r.players]) {
+        assert.ok([...page.document.querySelectorAll('.vote-option')].every(button => !button.disabled), 'host can set a tie-break and all off-turn players can vote');
+        assert.match(page.document.getElementById('vote-subtitle').textContent, /pauses between turns/);
+        assert.doesNotMatch(page.document.getElementById('control-help').textContent, /Keep stacking during votes/);
+      }
+      assert.match(r.players[0].document.getElementById('control-help').textContent, /Vote on your phone between turns/);
+      assert.match(r.host.document.getElementById('control-help').textContent, /Only tied votes come to you/);
+
+      team.turnActive = true;
+      team.currentPlayerId = r.room.players[0].id;
+      engine.changed('game.state');
+      await sleep(120);
+      assert.ok([...r.players[0].document.querySelectorAll('.vote-option')].every(button => button.disabled), 'the player taking a turn cannot vote');
+      assert.ok([...r.players[1].document.querySelectorAll('.vote-option')].every(button => !button.disabled), 'the other connected player may still vote');
+      team.turnActive = false;
+      team.currentPlayerId = null;
+      engine.changed('game.state');
+      await sleep(120);
+
+      const first = options[0]; const second = options[1];
+      const clickOption = async (page, option) => {
+        page.document.querySelector(`.vote-option[data-option-index="${options.indexOf(option)}"]`).click();
+        await sleep(120);
+      };
+      await clickOption(r.players[0], first);
+      await clickOption(r.players[0], second);
+      await clickOption(r.players[1], first);
+      assert.equal(engine.game.vote.votes.size, 2, 'a changed player vote still occupies one ballot');
+      assert.deepEqual(Object.values(engine.snapshot().vote.counts).sort(), [0, 1, 1], 'the two players leave a tie');
+
+      await clickOption(r.host, first);
+      assert.equal(engine.game.vote.votes.size, 2, 'the host choice is not counted as a player vote');
+      assert.equal(engine.snapshot().vote.hostTiebreak, first);
+      assert.ok(r.host.document.querySelector(`.vote-option[data-option-index="${options.indexOf(first)}"]`).classList.contains('is-host-tiebreak'));
+
+      engine.resolveVote(Date.now());
+      await sleep(150);
+      assert.equal(engine.game.lastVote.winner, first);
+      assert.equal(engine.game.lastVote.tiebreak, 'host');
+      for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+
+  test('Competitive stays host-voted while the block keeps moving', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const engine = r.room.engine;
+      engine.openVote(Date.now());
+      await sleep(120);
+      assert.match(r.players[0].document.getElementById('vote-subtitle').textContent, /block keeps moving/i);
+      assert.ok([...r.players[0].document.querySelectorAll('.vote-option')].every(button => button.disabled));
+      assert.ok([...r.host.document.querySelectorAll('.vote-option')].every(button => !button.disabled));
+      r.players[0].document.querySelector('.vote-option').click();
+      await sleep(100);
+      assert.equal(engine.game.vote.votes.size, 0, 'a Competitive player cannot vote directly');
+      const hostButtons = [...r.host.document.querySelectorAll('.vote-option')];
+      hostButtons[0].click(); await sleep(100);
+      hostButtons[1].click(); await sleep(100);
+      assert.equal(engine.game.vote.votes.size, 2, 'the existing Competitive host ballot behavior is unchanged');
+      for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});
+
 describe('Room navigation during live rounds (F-005)', skipReason ? { skip: skipReason } : {}, () => {
   test('host and player stay in the room lobby until Back to round or a phase change', async () => {
     const r = await startRoom('competitive');

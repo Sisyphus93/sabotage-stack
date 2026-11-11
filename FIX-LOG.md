@@ -19,7 +19,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-005 | P1 | quick |  | The Room button bounces straight back to the game, so nobody can leave or close a live room | fixed, awaiting your check | fix(F-005), single commit on this branch | |
 | F-006 | P1 | quick |  | Competitive: a sub-second disconnect permanently ends your stack | fixed, awaiting your check | fix(F-006), single commit on this branch | |
 | F-007 | P1 | larger | yes | Competitive: every sabotage hits the leader; everyone else never experiences one | fixed, awaiting your check | fix(F-007), single commit on this branch | |
-| F-008 | P1 | larger | yes | Teamwork: play stops for every 5-second vote, players cannot vote, and the UI says the block keeps moving | todo | | |
+| F-008 | P1 | larger | yes | Teamwork: play stops for every 5-second vote, players cannot vote, and the UI says the block keeps moving | fixed, awaiting your check | fix(F-008), single commit on this branch | |
 | F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | todo | | |
 | F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | todo | | |
 | F-011 | P1 | quick |  | Screen-reader users hear almost nothing during play, and in multiplayer a whole list is re-announced on every drop | todo | | |
@@ -67,6 +67,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
 
+- **F-008, Teamwork voting:** connected players who are not taking the turn each get one changeable ballot during the existing five-second between-turn pause. The host can mark a tie-break choice; it applies only to tied player votes, including zero-vote ties. If the host leaves a tie undecided, the existing random fallback remains. Competitive voting remains host-only and unchanged. The Teamwork vote and controls copy now describes the pause. Turn timeout, auto-drop/forfeit, and sabotage timing remain out of scope (F-009/F-010).
 - **F-007, Competitive sabotage targeting:** the owner chose every connected, non-ended competitor, including the leader, receiving the selected effect for its normal duration. Each room member sees an accessible announcement naming the effect and all targets. Vote cadence remains unchanged.
 - **F-006, Competitive disconnect grace:** a disconnected player's mover freezes for 10 s; the stack remains eligible if they resume before the deadline and is marked ended only after timeout. Teamwork disconnect handling is unchanged.
 - **F-005, navigation:** remember the selected lobby view for the current room phase; ordinary snapshots refresh lobby data without changing screens. Back to round clears the preference, while a phase transition follows the new game/results screen.

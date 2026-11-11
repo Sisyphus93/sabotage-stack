@@ -720,6 +720,7 @@ html[data-theme="primetime"] .dev-actions .button { min-height: 52px; font-size:
 html[data-theme="primetime"] .dev-actions .button-primary { font-size: 15px; line-height: 1.15; }
 html[data-theme="primetime"] .dev-feedback { font-size: 18px; line-height: 1.3; }
 html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live, html[data-theme="primetime"] .theme-picker-label, html[data-theme="primetime"] .footer-note, html[data-theme="primetime"] .home-bottom { font-size: 16px; }
+.vote-option.is-host-tiebreak, .stage-vote-chip.is-host-tiebreak { outline: 2px solid var(--vermilion); outline-offset: -4px; }
 @media (max-width: 700px) {
   html[data-theme="primetime"] .brand-word { font-size: 18px; }
   html[data-theme="primetime"] .side-card h3 { font-size: 20px; }
@@ -1055,7 +1056,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <h3 id="multiplayer-turn-heading">Your turn</h3>
               <p id="multiplayer-turn-status" class="vote-title">Waiting for the round to start.</p>
               <p id="multiplayer-sabotage-announcement" class="mp-sabotage-announcement" role="status" aria-live="polite" hidden></p>
-              <div class="turn-timer-row"><span>Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
+              <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
               <ul id="multiplayer-player-list" class="room-player-list compact-player-list" aria-live="polite"></ul>
             </section>
             <section id="vote-card" class="side-card vote-card" aria-labelledby="vote-heading">
@@ -1074,7 +1075,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
                 </button>
               </div>
               <div class="vote-footer"><span id="vote-state-label">Vote opens in 8 seconds</span><span class="vote-progress" aria-hidden="true"><span id="vote-progress-fill"></span></span></div>
-              <p class="vote-help">Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.</p>
+              <p id="vote-help" class="vote-help">Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.</p>
             </section>
             <section id="stats-card" class="side-card" aria-labelledby="stats-heading">
               <div class="card-heading"><span class="eyebrow">Live stats</span><span class="eyebrow">Best <span id="best-inline">0</span></span></div>
@@ -1137,7 +1138,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <ol class="how-steps">
         <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during each 5-second vote. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <details class="sabotage-guide">
@@ -1689,13 +1690,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       joinButton: document.getElementById('join-game-button'), joinDialog: document.getElementById('join-dialog'), joinForm: document.getElementById('join-form'), joinCode: document.getElementById('join-room-code'), joinName: document.getElementById('join-display-name'), joinStatus: document.getElementById('join-status'), closeJoin: document.getElementById('close-join'), cancelJoin: document.getElementById('cancel-join'),
       hostModeButtons: Array.from(document.querySelectorAll('[data-host-mode]')), modeLabel: document.getElementById('connection-mode-label'), gameModeKicker: document.getElementById('game-mode-kicker'), multiplayerStatus: document.getElementById('multiplayer-status'),
       roomMode: document.getElementById('room-mode-label'), roomConnection: document.getElementById('room-connection-status'), roomCode: document.getElementById('room-code-display'), roomInviteHint: document.getElementById('room-invite-hint'), roomPlayerCount: document.getElementById('room-player-count'), roomPlayers: document.getElementById('room-player-list'), roomStatus: document.getElementById('room-lobby-status'), roomStart: document.getElementById('room-start-button'), roomReturn: document.getElementById('room-return-button'), roomRematch: document.getElementById('room-rematch-button'), roomLeave: document.getElementById('room-leave-button'), roomClose: document.getElementById('room-close-button'), copyRoomLink: document.getElementById('copy-room-link'),
-      mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
+      mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
       gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
-      voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
+      voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteHelp: document.getElementById('vote-help'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
       stageVoteStrip: document.getElementById('stage-vote-strip'), stageVoteButtons: Array.from(document.querySelectorAll('.stage-vote-chip')),
       effectIconUse: document.getElementById('effect-icon-use'), effectName: document.getElementById('effect-name'), effectCaption: document.getElementById('effect-caption'), effectTime: document.getElementById('effect-time'), effectMeter: document.getElementById('effect-meter-fill'),
       toast: document.getElementById('canvas-toast'), perfect: document.getElementById('perfect-banner'), chatFlavor: document.getElementById('chat-flavor-pop'),
@@ -2260,11 +2261,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (state.phase === 'playing' && state.game) {
         const g = state.game;
         const current = g.team && g.team.currentPlayerName;
-        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (current ? `${current}'s turn` : 'Round live') : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
+        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (g.vote ? 'Room vote' : current ? `${current}'s turn` : 'Round live') : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
         elements.mpTurnStatus.textContent = g.paused ? 'Everyone is disconnected. The timer is paused.'
-          : g.mode === 'teamwork' ? (g.team.awaitingAutoDrop ? 'Time! Automatic drop requested…' : 'Shared tower · fixed player order')
+          : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : g.team.awaitingAutoDrop ? 'Time! Automatic drop requested…' : 'Shared tower · fixed player order')
           : multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every connected, active stack.' : 'Build your own tower. Room votes hit every connected, active stack.';
-        const seconds = g.mode === 'teamwork' ? (g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining) : g.remainingSeconds;
+        const seconds = g.mode === 'teamwork' ? g.vote ? g.vote.remaining : g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining : g.remainingSeconds;
+        elements.mpTurnTimerLabel.textContent = g.mode === 'teamwork' && g.vote ? 'Vote closes' : 'Turn timer';
         elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(seconds || 0))}s`;
       } else {
         elements.mpTurnHeading.textContent = 'Waiting for the round';
@@ -2680,7 +2682,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const option = game.vote.options[Number(optionIndex)];
         if (!option) return false;
         if (multiplayer.active) {
-          if (multiplayer.role !== 'host' || !multiplayer.connected) return false;
+          const hostCanChooseTieBreak = multiplayer.role === 'host' && multiplayer.connected;
+          const teammateCanVote = multiplayer.role === 'player' && multiplayer.connected && multiplayer.mode === 'teamwork'
+            && game.mode === 'teamwork' && game.currentPlayerId !== multiplayer.playerId;
+          if (!hostCanChooseTieBreak && !teammateCanVote) return false;
           return sendMultiplayer({ type: 'vote.cast', option });
         }
         const event = { voterId: 'you', option };
@@ -3910,10 +3915,18 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         total += 3;
       }
       elements.stageVoteStrip.hidden = !voting;
+      elements.stageVoteStrip.setAttribute('aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
       for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
         const index = Number(button.dataset.optionIndex);
         const id = voting ? game.vote.options[index] : null;
         const sabotage = effectById(id);
+        const teamworkVote = voting && game.mode === 'teamwork' && remoteVote;
+        const hostCanVote = remoteVote && multiplayer.role === 'host';
+        const hostCanChooseTieBreak = teamworkVote && multiplayer.role === 'host';
+        const teammateCanVote = teamworkVote && multiplayer.role === 'player' && multiplayer.connected
+          && game.currentPlayerId !== multiplayer.playerId;
+        const canChoose = !remoteVote || hostCanVote || teammateCanVote;
+        const isHostTieBreak = hostCanChooseTieBreak && game.vote.hostTiebreak === id;
         const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
         if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
         const name = button.querySelector('.vote-name, .stage-vote-name');
@@ -3923,20 +3936,52 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
         if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
-        button.disabled = !voting || (remoteVote && multiplayer.role !== 'host');
-        button.setAttribute('aria-label', sabotage ? `${remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for'} ${sabotage.name}, ${votes} votes` : `Option ${index + 1}, voting closed`);
-        if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? sabotage.name : '';
+        button.disabled = !voting || !canChoose;
+        button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
+        const choiceLabel = teamworkVote
+          ? hostCanChooseTieBreak ? 'Set the tie-break to' : multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId ? 'Unavailable while you are on turn:' : 'Vote for'
+          : remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for';
+        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}, ${votes} votes${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
+        if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
       }
       if (voting) {
         const seconds = Math.max(0, Math.ceil(game.vote.remaining));
         elements.voteCountdown.textContent = `Closes in ${seconds}s`;
-        elements.voteSubtitle.textContent = remoteVote && multiplayer.role !== 'host' ? 'The block keeps moving. The host is choosing the room vote.' : 'The block keeps moving. Pick one to cast a vote.';
-        elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
+        if (remoteVote && game.mode === 'teamwork') {
+          if (multiplayer.role === 'host') {
+            elements.voteHelp.textContent = 'Set a tie-break choice. It applies only if player votes tie; change it until the vote closes.';
+            const tiebreak = game.vote.hostTiebreak ? effectById(game.vote.hostTiebreak) : null;
+            elements.voteSubtitle.textContent = tiebreak ? `Host tie-break set to ${tiebreak.name}. It applies only if player votes tie.` : 'The tower pauses between turns. Players vote; choose a tie-break, even if no one votes.';
+          } else if (game.currentPlayerId === multiplayer.playerId) {
+            elements.voteHelp.textContent = 'You are taking a turn and cannot vote in this pause. Watch your teammates decide.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns. You are currently taking a turn, so watch the vote.';
+          } else if (!multiplayer.connected) {
+            elements.voteHelp.textContent = 'Reconnect to vote during the between-turn pause.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns. Reconnecting…';
+          } else {
+            elements.voteHelp.textContent = 'Choose one option. You can change your vote until the vote closes.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns. Pick one option for the room.';
+          }
+          const tiebreak = game.vote.hostTiebreak ? ` · Host tie-break: ${effectById(game.vote.hostTiebreak)?.name || 'selected'}` : '';
+          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
+        } else {
+          elements.voteHelp.textContent = 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
+          elements.voteSubtitle.textContent = multiplayer.active && multiplayer.role !== 'host'
+            ? 'The block keeps moving. The host is choosing the room vote.'
+            : 'The block keeps moving. Pick one to cast a vote.';
+          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
+        }
         elements.voteProgress.style.width = `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`;
       } else if (game.phase === 'playing') {
         const seconds = Math.max(0, Math.ceil(game.nextVoteAt - game.elapsed));
         elements.voteCountdown.textContent = `Next vote in ${seconds}s`;
-        elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage : 'Pick a sabotage when voting opens.';
+        const teamworkRoomVote = remoteVote && game.mode === 'teamwork';
+        elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage
+          : teamworkRoomVote ? 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.'
+          : 'Pick a sabotage when voting opens.';
+        elements.voteHelp.textContent = teamworkRoomVote
+          ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : 'Vote once during a between-turn pause; change your choice until it closes.'
+          : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
         elements.voteState.textContent = `Vote opens in ${seconds} seconds`;
         elements.voteProgress.style.width = '0%';
       } else {
@@ -3995,7 +4040,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.controlRow.hidden = false;
       elements.drop.hidden = false;
       elements.canvasHint.hidden = false;
-      elements.controlHelp.innerHTML = 'One press, one drop.<br>Keep stacking during votes.';
+      elements.controlHelp.innerHTML = game.multiplayer && game.mode === 'teamwork'
+        ? (multiplayer.role === 'host' ? 'Take turns building.<br>Only tied votes come to you.' : 'Take turns building.<br>Vote on your phone between turns.')
+        : 'One press, one drop.<br>Keep stacking during votes.';
       elements.canvasHint.textContent = 'Tap anywhere to drop';
       elements.drop.setAttribute('aria-label', 'Drop the moving block');
       elements.mpCard.hidden = !game.multiplayer;
@@ -4023,7 +4070,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.mpCard.hidden = false;
         const turnName = game.currentPlayerName || 'the next player';
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
-        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
+        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
         if (game.paused) {
           elements.mpTurnStatus.textContent = 'Everyone is disconnected. The round is paused.';
           elements.mpTurnTimer.textContent = 'Paused';
@@ -4031,8 +4078,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.mpTurnStatus.textContent = 'Connection lost. Rejoining automatically…';
           elements.mpTurnTimer.textContent = '—';
         } else if (game.mode === 'teamwork') {
-          elements.mpTurnStatus.textContent = game.awaitingAutoDrop ? 'Time! Automatic drop requested…' : ownTurn ? 'Move the block and drop before the timer runs out.' : 'Shared tower · fixed player order';
-          elements.mpTurnTimer.textContent = game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
+          elements.mpTurnStatus.textContent = game.vote ? 'Vote between turns. Teammates decide; the host breaks ties.'
+            : game.awaitingAutoDrop ? 'Time! Automatic drop requested…' : ownTurn ? 'Move the block and drop before the timer runs out.' : 'Shared tower · fixed player order';
+          elements.mpTurnTimerLabel.textContent = game.vote ? 'Vote closes' : 'Turn timer';
+          elements.mpTurnTimer.textContent = game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
+            : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
         } else {
           const self = (game.remotePlayers || []).find(player => player.playerId === multiplayer.playerId);
           elements.mpTurnStatus.textContent = multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every active stack.'

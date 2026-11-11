@@ -322,7 +322,8 @@ class RoundEngine {
     if (!game || game.phase !== 'playing' || game.vote) return false;
     game.vote = {
       options: Core.pickOptions(this.votePool(), this.random, game.lastSabotageWinner, this.motionReductionEnabled()),
-      votes: new Map(), openedAt: game.elapsed, closesAt: now + VOTE_SECONDS * 1000,
+      votes: new Map(), ...(this.mode === 'teamwork' ? { hostTiebreak: null } : {}),
+      openedAt: game.elapsed, closesAt: now + VOTE_SECONDS * 1000,
       duration: VOTE_SECONDS
     };
     game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(this.currentHeight());
@@ -354,6 +355,38 @@ class RoundEngine {
     return { ok: true };
   }
 
+  castTeamworkPlayerVote(playerId, option) {
+    const game = this.game;
+    if (this.mode !== 'teamwork') return { ok: false, code: 'PLAYER_VOTING_DISABLED' };
+    if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
+    if (!this.connectedPlayer(playerId)) return { ok: false, code: 'PLAYER_INACTIVE' };
+    if (game.team.turnActive && game.team.currentPlayerId === playerId) return { ok: false, code: 'PLAYER_ON_TURN' };
+    const voterId = `teamwork-player:${playerId}`;
+    const next = Core.recordVote(game.vote.votes, { voterId, option }, game.vote.options);
+    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.votes = next;
+    const counts = Core.countVotes(game.vote.votes, game.vote.options);
+    this.onEvent('vote.updated', { counts, totalVotes: game.vote.votes.size });
+    this.changed('game.state');
+    return { ok: true };
+  }
+
+  castHostTiebreak(option) {
+    const game = this.game;
+    if (this.mode !== 'teamwork') return { ok: false, code: 'HOST_TIEBREAK_DISABLED' };
+    if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
+    const selected = String(option);
+    if (!game.vote.options.includes(selected)) return { ok: false, code: 'INVALID_OPTION' };
+    game.vote.hostTiebreak = selected;
+    this.onEvent('vote.updated', {
+      counts: Core.countVotes(game.vote.votes, game.vote.options),
+      totalVotes: game.vote.votes.size,
+      hostTiebreak: selected
+    });
+    this.changed('game.state');
+    return { ok: true };
+  }
+
   receiveChatVote(event) {
     const game = this.game;
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
@@ -368,7 +401,17 @@ class RoundEngine {
   resolveVote(now = this.now()) {
     const game = this.game;
     if (!game || !game.vote) return false;
-    const outcome = Core.chooseWinner(game.vote.votes, game.vote.options, this.random);
+    const vote = game.vote;
+    let outcome = null;
+    if (this.mode === 'teamwork' && vote.hostTiebreak) {
+      const counts = Core.countVotes(vote.votes, vote.options);
+      const maximum = Math.max(0, ...Object.values(counts));
+      const tied = vote.options.filter(option => counts[option] === maximum);
+      if (tied.length > 1 && tied.includes(vote.hostTiebreak)) {
+        outcome = { winner: vote.hostTiebreak, counts, totalVotes: vote.votes.size, tiebreak: 'host' };
+      }
+    }
+    if (!outcome) outcome = Core.chooseWinner(vote.votes, vote.options, this.random);
     game.lastVote = outcome;
     game.vote = null;
     const winner = outcome && outcome.winner ? outcome.winner : null;
@@ -839,6 +882,7 @@ class RoundEngine {
       options: game.vote.options.slice(),
       counts: Core.countVotes(game.vote.votes, game.vote.options),
       totalVotes: game.vote.votes.size,
+      ...(this.mode === 'teamwork' ? { hostTiebreak: game.vote.hostTiebreak || null } : {}),
       remaining: Math.max(0, Math.ceil((game.vote.closesAt - now) / 1000)),
       duration: game.vote.duration
     } : null;
