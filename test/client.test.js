@@ -732,3 +732,12 @@ describe('Button context menus (A-10)', skipReason ? { skip: skipReason } : {}, 
     } finally { page.close(); }
   });
 });
+
+describe('Competitive viewer board sizing (A-11)', () => {
+  test('uses a wider aspect ratio constrained by available width and height', () => {
+    const html = fs.readFileSync(HTML, 'utf8');
+    const rule = /\.game-stage\.competitive-host\s*\{([^}]*)\}/.exec(html);
+    assert.ok(rule); assert.match(rule[1], /aspect-ratio:\s*720\s*\/\s*520/);
+    assert.match(rule[1], /width:\s*min\(100%,\s*max\(calc\(100dvh/);
+  });
+});

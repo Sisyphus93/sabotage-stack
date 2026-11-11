@@ -59,13 +59,15 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | A-08 | P3 | | | #theme-select keeps the browser's default focus ring instead of the themed one. | fixed, awaiting your check | fix(A-08), single commit on this branch | |
 | A-09 | P3 | | | Late joiners get a clear 'This room has already started.' but no way to watch. Idea: spectator join. | fixed, awaiting your check | fix(A-09), single commit on this branch | |
 | A-10 | P3 | | | The context menu is disabled on every button, which also removes long-press actions for assistive tools. | fixed, awaiting your check | fix(A-10), single commit on this branch | |
-| A-11 | P3 | | | The Competitive host board is about 405 px wide inside an 870 px panel: small for a screen meant to be streamed. | todo | | |
+| A-11 | P3 | | | The Competitive host board is about 405 px wide inside an 870 px panel: small for a screen meant to be streamed. | fixed, awaiting your check | fix(A-11), single commit on this branch | |
 | A-12 | P3 | | | The disabled Start round button is 2.48:1 in Sunset: exempt from contrast rules, but hard to read as a button at all. | todo | | |
 | A-13 | P3 | | | There is no pause in solo other than hiding the tab. | todo | | |
 
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-11, Competitive viewer board:** owner chose a landscape board. Host and spectator canvases use 720×520 logical coordinates and fit available panel width and viewport height; other modes keep their portrait board. Existing Spotlight isolation pixel test was updated for the new coordinates without weakening it. Node 22.22.3: `npm test` passed 134/134. Check desktop stream and phone layouts visually, including six players.
 
 - **A-10, context menus:** buttons no longer suppress context menus, and Drop no longer cancels pointerdown; canvas-specific suppression remains. Node 22.22.3: `npm test` passed 133/133, including context-menu and keyboard drop tests. Native long-press behavior should be checked with mobile assistive tools.
 

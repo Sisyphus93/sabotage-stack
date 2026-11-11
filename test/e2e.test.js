@@ -53,9 +53,10 @@ for (const mode of ['competitive', 'teamwork']) {
         if (mode === 'competitive') {
           // Host board: Ann's column (left half) is fully inked, Bob's (right half) is untouched.
           const hostCanvas = r.host.document.getElementById('game-canvas');
-          const annColumn = [[10, 100], [90, 80], [170, 480], [60, 300]].map(([x, y]) => r.host.pixel(hostCanvas, x, y).join(','));
+          assert.equal(hostCanvas.width, 720, 'host uses a wide logical canvas');
+          const annColumn = [[20, 100], [180, 80], [340, 480], [120, 300]].map(([x, y]) => r.host.pixel(hostCanvas, x, y).join(','));
           assert.ok(annColumn.every(p => p === INK), `Ann's host column: ${annColumn.join(' | ')}`);
-          const bobColumn = [[200, 80], [340, 80], [300, 200]].map(([x, y]) => r.host.pixel(hostCanvas, x, y).join(','));
+          const bobColumn = [[400, 80], [680, 80], [600, 200]].map(([x, y]) => r.host.pixel(hostCanvas, x, y).join(','));
           assert.ok(bobColumn.every(p => p !== INK), "Bob's host column must not be veiled");
         }
 
@@ -565,6 +566,7 @@ describe('Late spectator view (A-09)', skipReason ? { skip: skipReason } : {}, (
       assert.match(d.getElementById('game-mode-kicker').textContent, /Spectator/);
       assert.equal(d.getElementById('drop-button').disabled, true);
       assert.equal(d.getElementById('game-stage').classList.contains('competitive-host'), mode === 'competitive');
+      assert.equal(d.getElementById('game-canvas').width, mode === 'competitive' ? 720 : 360);
       assert.equal(r.app.roomManager.snapshot(r.room).reducedMotion, false);
       assert.equal(r.room.players.length, 2);
       r.room.spectators[0].socket.terminate(); await sleep(1500);
