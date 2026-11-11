@@ -192,7 +192,31 @@ h1 span { display: block; color: var(--vermilion); }
   box-shadow: 3px 3px 0 var(--paper-deep); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 canvas { display: block; width: 100%; height: 100%; }
-#game-canvas { touch-action: none; cursor: crosshair; }
+#game-canvas { touch-action: none; cursor: crosshair; transition: opacity .25s ease; }
+/* The WebGL view is a purely visual layer above the interactive 2D canvas. The
+   2D canvas stays in place for focus, pointer and accessibility semantics. */
+.stage-3d-canvas {
+  position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%;
+  display: none; pointer-events: none; background: transparent;
+}
+.game-stage.is-3d, .game-stage.is-3d #game-canvas { cursor: grab; }
+.game-stage.is-3d.is-orbiting, .game-stage.is-3d.is-orbiting #game-canvas { cursor: grabbing; }
+.game-stage.is-3d .stage-3d-canvas { display: block; }
+.game-stage.is-3d #game-canvas { opacity: 0; }
+.stage-view-badge {
+  position: absolute; top: 12px; left: 50%; z-index: 3; transform: translateX(-50%) translateY(-4px);
+  max-width: calc(100% - 150px); overflow: hidden; padding: 5px 9px;
+  border: 1.5px solid var(--line); border-radius: 999px; color: var(--soft-ink); background: var(--paper);
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; text-overflow: ellipsis; white-space: nowrap;
+  pointer-events: none; opacity: 0; transition: opacity .3s ease, transform .3s ease;
+}
+.game-stage.is-3d .stage-view-badge { opacity: .92; transform: translateX(-50%) translateY(0); }
+.view-toggle { min-height: 42px; padding: 0 12px; font-size: 12px; letter-spacing: .09em; }
+.view-toggle[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.view-toggle[aria-pressed="true"]:hover { background: var(--night); color: var(--paper); }
+html[data-theme="sunset"] .stage-view-badge { font-size: 15px; letter-spacing: .04em; }
+html[data-theme="primetime"] .stage-view-badge { font-size: 12px; letter-spacing: .06em; }
+@media (max-width: 620px) { .stage-view-badge { display: none; } }
 .canvas-hud { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .game-stage.competitive-host .height-chip, .game-stage.competitive-host .motion-chip { display: none; }
 /* Non-playing Competitive viewers get a wider board without stretching its artwork. */
@@ -1056,12 +1080,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
           <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading" role="heading" aria-level="1">Make it stack.</h2></div>
-          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="solo-pause-button" class="button" type="button" hidden>Pause</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
+          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="view-toggle" class="button view-toggle" type="button" aria-pressed="true" aria-label="3D view on. Switch to the classic 2D view." hidden>3D</button><button id="solo-pause-button" class="button" type="button" hidden>Pause</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
             <div id="game-stage" class="game-stage">
-              <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
+              <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block. In the 3D view, drag the stage to orbit the tower." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
+              <canvas id="game-canvas-3d" class="stage-3d-canvas" aria-hidden="true"></canvas>
+              <div id="stage-view-badge" class="stage-view-badge" aria-hidden="true" hidden>3D · drag to orbit</div>
               <div class="canvas-hud" aria-hidden="false">
                 <div class="height-chip" role="group" aria-label="Blocks placed">
                   <span>HEIGHT</span><strong id="height-display">0</strong>
@@ -1195,7 +1221,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     <div class="dialog-inner">
       <div class="dialog-header"><div><div class="eyebrow">The very short version</div><h2 id="how-title">How to play</h2></div><button id="close-how" class="icon-button" type="button" aria-label="Close how to play">×</button></div>
       <ol class="how-steps">
-        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
+        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. The 3D view adds depth to the read: drag the stage to orbit the tower, use the wheel or a pinch to zoom, and switch back to the classic board with the 3D/2D button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. A small tick marks the centre of the top block. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
         <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected player lands. Portal Walls, Superglue and Calipers last for that same player’s next 3 landings; Crumble lasts for the next 3 team landings. There is no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
@@ -1239,6 +1265,1942 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     {"event":"music.bed","cue":"warm-chord-bed","pictureBeat":"A quiet three-note chord fades in during the live run, changes slowly, and fades out at results"},
     {"event":"run.result","cue":"closing-motif","pictureBeat":"The final stack drawing settles on the results screen"}
   ]
+  </script>
+
+  <script>
+/* ============================================================================
+   Stack3D — a self-contained WebGL2 renderer for Sabotage Stack.
+   ----------------------------------------------------------------------------
+   The 2D canvas remains the source of truth for gameplay, accessibility and the
+   no-WebGL fallback. This module only paints the same simulation in three
+   dimensions: rounded blocks, real shadows, bloom, ink outlines, particles and
+   a handful of theme-specific set dressings. If anything in here fails, the
+   caller falls back to the classic renderer and the game is untouched.
+   ========================================================================= */
+(function () {
+  'use strict';
+
+  const VERSION = 1;
+  const TAU = Math.PI * 2;
+
+  /* ---------------------------------------------------------------- colours */
+  function hexToLinear(hex) {
+    const value = typeof hex === 'string' ? hex.trim().replace('#', '') : '';
+    const full = value.length === 3 ? value.split('').map(c => c + c).join('') : value;
+    if (!/^[0-9a-fA-F]{6}$/.test(full)) return [1, 1, 1];
+    return [0, 2, 4].map(index => {
+      const srgb = parseInt(full.slice(index, index + 2), 16) / 255;
+      return srgb <= 0.04045 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4);
+    });
+  }
+  function scaleColor(color, amount) { return [color[0] * amount, color[1] * amount, color[2] * amount]; }
+  function mixLinear(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
+
+  /* ------------------------------------------------------------------- maths */
+  const M4 = () => new Float32Array(16);
+  function mat4Identity(out) {
+    out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+    out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+    out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+    out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+    return out;
+  }
+  function mat4Multiply(out, a, b) {
+    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+    for (let column = 0; column < 4; column += 1) {
+      const b0 = b[column * 4], b1 = b[column * 4 + 1], b2 = b[column * 4 + 2], b3 = b[column * 4 + 3];
+      out[column * 4] = a00 * b0 + a10 * b1 + a20 * b2 + a30 * b3;
+      out[column * 4 + 1] = a01 * b0 + a11 * b1 + a21 * b2 + a31 * b3;
+      out[column * 4 + 2] = a02 * b0 + a12 * b1 + a22 * b2 + a32 * b3;
+      out[column * 4 + 3] = a03 * b0 + a13 * b1 + a23 * b2 + a33 * b3;
+    }
+    return out;
+  }
+  function mat4Perspective(out, fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2);
+    out.fill(0);
+    out[0] = f / aspect; out[5] = f;
+    out[10] = (far + near) / (near - far); out[11] = -1;
+    out[14] = (2 * far * near) / (near - far);
+    return out;
+  }
+  function mat4LookAt(out, eye, center, up) {
+    let zx = eye[0] - center[0], zy = eye[1] - center[1], zz = eye[2] - center[2];
+    let len = Math.hypot(zx, zy, zz) || 1;
+    zx /= len; zy /= len; zz /= len;
+    let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+    len = Math.hypot(xx, xy, xz) || 1;
+    xx /= len; xy /= len; xz /= len;
+    const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+    out[0] = xx; out[1] = yx; out[2] = zx; out[3] = 0;
+    out[4] = xy; out[5] = yy; out[6] = zy; out[7] = 0;
+    out[8] = xz; out[9] = yz; out[10] = zz; out[11] = 0;
+    out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+    out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+    out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+    out[15] = 1;
+    return out;
+  }
+  function mat4Ortho(out, left, right, bottom, top, near, far) {
+    out.fill(0);
+    out[0] = 2 / (right - left);
+    out[5] = 2 / (top - bottom);
+    out[10] = -2 / (far - near);
+    out[12] = -(right + left) / (right - left);
+    out[13] = -(top + bottom) / (top - bottom);
+    out[14] = -(far + near) / (far - near);
+    out[15] = 1;
+    return out;
+  }
+  function mat4Invert(out, a) {
+    const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+    const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+    const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+    const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+    const b00 = a00 * a11 - a01 * a10, b01 = a00 * a12 - a02 * a10;
+    const b02 = a00 * a13 - a03 * a10, b03 = a01 * a12 - a02 * a11;
+    const b04 = a01 * a13 - a03 * a11, b05 = a02 * a13 - a03 * a12;
+    const b06 = a20 * a31 - a21 * a30, b07 = a20 * a32 - a22 * a30;
+    const b08 = a20 * a33 - a23 * a30, b09 = a21 * a32 - a22 * a31;
+    const b10 = a21 * a33 - a23 * a31, b11 = a22 * a33 - a23 * a32;
+    let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!det) return mat4Identity(out);
+    det = 1 / det;
+    out[0] = (a11 * b11 - a12 * b10 + a13 * b09) * det;
+    out[1] = (a02 * b10 - a01 * b11 - a03 * b09) * det;
+    out[2] = (a31 * b05 - a32 * b04 + a33 * b03) * det;
+    out[3] = (a22 * b04 - a21 * b05 - a23 * b03) * det;
+    out[4] = (a12 * b08 - a10 * b11 - a13 * b07) * det;
+    out[5] = (a00 * b11 - a02 * b08 + a03 * b07) * det;
+    out[6] = (a32 * b02 - a30 * b05 - a33 * b01) * det;
+    out[7] = (a20 * b05 - a22 * b02 + a23 * b01) * det;
+    out[8] = (a10 * b10 - a11 * b08 + a13 * b06) * det;
+    out[9] = (a01 * b08 - a00 * b10 - a03 * b06) * det;
+    out[10] = (a30 * b04 - a31 * b02 + a33 * b00) * det;
+    out[11] = (a21 * b02 - a20 * b04 - a23 * b00) * det;
+    out[12] = (a11 * b07 - a10 * b09 - a12 * b06) * det;
+    out[13] = (a00 * b09 - a01 * b07 + a02 * b06) * det;
+    out[14] = (a31 * b01 - a30 * b03 - a32 * b00) * det;
+    out[15] = (a20 * b03 - a21 * b01 + a22 * b00) * det;
+    return out;
+  }
+
+  // Model matrix for a translated, Euler-rotated (Z, Y, X order), non-uniformly
+  // scaled box. `normal` receives the inverse-transpose of the 3x3 part, which
+  // matters because every block is a differently squashed cube.
+  function composeBox(model, normal, x, y, z, rx, ry, rz, sx, sy, sz) {
+    const cx = Math.cos(rx), ax = Math.sin(rx);
+    const cy = Math.cos(ry), ay = Math.sin(ry);
+    const cz = Math.cos(rz), az = Math.sin(rz);
+    const m00 = cz * cy;
+    const m01 = cz * ay * ax - az * cx;
+    const m02 = cz * ay * cx + az * ax;
+    const m10 = az * cy;
+    const m11 = az * ay * ax + cz * cx;
+    const m12 = az * ay * cx - cz * ax;
+    const m20 = -ay;
+    const m21 = cy * ax;
+    const m22 = cy * cx;
+    model[0] = m00 * sx; model[1] = m10 * sx; model[2] = m20 * sx; model[3] = 0;
+    model[4] = m01 * sy; model[5] = m11 * sy; model[6] = m21 * sy; model[7] = 0;
+    model[8] = m02 * sz; model[9] = m12 * sz; model[10] = m22 * sz; model[11] = 0;
+    model[12] = x; model[13] = y; model[14] = z; model[15] = 1;
+    normal[0] = m00 / sx; normal[1] = m10 / sx; normal[2] = m20 / sx;
+    normal[3] = m01 / sy; normal[4] = m11 / sy; normal[5] = m21 / sy;
+    normal[6] = m02 / sz; normal[7] = m12 / sz; normal[8] = m22 / sz;
+  }
+
+  /* ---------------------------------------------------------------- geometry */
+  // A rounded box. Rounded edges catch the key light and give the blocks their
+  // toy-object read; they are generated rather than modelled so there is no
+  // asset pipeline behind this page.
+  function makeRoundedBox(subdivisions, rounding) {
+    const positions = [];
+    const normals = [];
+    const indices = [];
+    const radius = Math.max(0.01, Math.min(0.49, rounding));
+    const inner = 1 - radius;
+    const faces = [
+      { axis: 0, sign: 1, u: 2, v: 1 },
+      { axis: 0, sign: -1, u: 2, v: 1 },
+      { axis: 1, sign: 1, u: 0, v: 2 },
+      { axis: 1, sign: -1, u: 0, v: 2 },
+      { axis: 2, sign: 1, u: 0, v: 1 },
+      { axis: 2, sign: -1, u: 0, v: 1 }
+    ];
+    const steps = Math.max(2, subdivisions | 0);
+    for (const face of faces) {
+      const base = positions.length / 3;
+      for (let j = 0; j <= steps; j += 1) {
+        for (let i = 0; i <= steps; i += 1) {
+          const q = [0, 0, 0];
+          q[face.axis] = face.sign;
+          q[face.u] = (i / steps) * 2 - 1;
+          q[face.v] = (j / steps) * 2 - 1;
+          const clamped = q.map(value => Math.max(-inner, Math.min(inner, value)));
+          let dx = q[0] - clamped[0], dy = q[1] - clamped[1], dz = q[2] - clamped[2];
+          let len = Math.hypot(dx, dy, dz);
+          if (len < 1e-6) { dx = 0; dy = 0; dz = 0; len = 1; }
+          const nx = dx / len, ny = dy / len, nz = dz / len;
+          positions.push(clamped[0] + nx * radius, clamped[1] + ny * radius, clamped[2] + nz * radius);
+          normals.push(nx, ny, nz);
+        }
+      }
+      for (let j = 0; j < steps; j += 1) {
+        for (let i = 0; i < steps; i += 1) {
+          const a = base + j * (steps + 1) + i;
+          const b = a + 1;
+          const c = a + (steps + 1);
+          const d = c + 1;
+          indices.push(a, c, b, b, c, d);
+        }
+      }
+    }
+    // Ensure every triangle winds counter-clockwise when seen from outside.
+    const out = positions.slice();
+    for (let t = 0; t < indices.length; t += 3) {
+      const ia = indices[t] * 3, ib = indices[t + 1] * 3, ic = indices[t + 2] * 3;
+      const ux = out[ib] - out[ia], uy = out[ib + 1] - out[ia + 1], uz = out[ib + 2] - out[ia + 2];
+      const vx = out[ic] - out[ia], vy = out[ic + 1] - out[ia + 1], vz = out[ic + 2] - out[ia + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const cx = (out[ia] + out[ib] + out[ic]) / 3;
+      const cyc = (out[ia + 1] + out[ib + 1] + out[ic + 1]) / 3;
+      const czc = (out[ia + 2] + out[ib + 2] + out[ic + 2]) / 3;
+      if (nx * cx + ny * cyc + nz * czc < 0) {
+        const swap = indices[t + 1]; indices[t + 1] = indices[t + 2]; indices[t + 2] = swap;
+      }
+    }
+    return { positions: new Float32Array(positions), normals: new Float32Array(normals), indices: new Uint16Array(indices) };
+  }
+
+  function makeQuad() {
+    return {
+      positions: new Float32Array([-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0]),
+      uvs: new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+      indices: new Uint16Array([0, 1, 2, 2, 1, 3])
+    };
+  }
+  function makePlane() {
+    return {
+      positions: new Float32Array([-1, 0, -1, 1, 0, -1, -1, 0, 1, 1, 0, 1]),
+      normals: new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]),
+      indices: new Uint16Array([0, 2, 1, 1, 2, 3])
+    };
+  }
+
+  /* ----------------------------------------------------------------- shaders */
+  const SH = {};
+
+  SH.blockVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat3 uNormalMat;
+uniform mat4 uViewProj;
+out vec3 vWorld;
+out vec3 vNormal;
+out vec3 vLocal;
+void main() {
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorld = world.xyz;
+  vNormal = normalize(uNormalMat * aNormal);
+  vLocal = aPos;
+  gl_Position = uViewProj * world;
+}`;
+
+  SH.blockFS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec3 vWorld;
+in vec3 vNormal;
+in vec3 vLocal;
+uniform mat4 uLightVP;
+uniform vec3 uCamPos;
+uniform vec3 uLightDir;
+uniform vec3 uLightColor;
+uniform vec3 uFillDir;
+uniform vec3 uFillColor;
+uniform vec3 uSkyAmb;
+uniform vec3 uGroundAmb;
+uniform vec3 uRimColor;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform vec4 uColor;
+uniform vec3 uEmissive;
+uniform float uGlow;
+uniform float uGloss;
+uniform float uAlpha;
+uniform float uPerfect;
+uniform float uTime;
+uniform float uTheme;
+uniform sampler2D uShadow;
+uniform float uShadowTexel;
+uniform float uShadowEnabled;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outNormal;
+
+float hash13(vec3 p) {
+  p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+  p *= 17.0;
+  return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float shadowAt(vec4 shadowPos) {
+  if (uShadowEnabled < 0.5) return 1.0;
+  vec3 p = (shadowPos.xyz / shadowPos.w) * 0.5 + 0.5;
+  if (p.x < 0.002 || p.x > 0.998 || p.y < 0.002 || p.y > 0.998 || p.z > 0.999) return 1.0;
+  float sum = 0.0;
+  for (int y = -1; y <= 1; y += 1) {
+    for (int x = -1; x <= 1; x += 1) {
+      float offsetX = float(x) * uShadowTexel;
+      float offsetY = float(y) * uShadowTexel;
+      float stored = texture(uShadow, p.xy + vec2(offsetX, offsetY)).r;
+      sum += (p.z - 0.00045) <= stored ? 1.0 : 0.0;
+    }
+  }
+  return sum / 9.0;
+}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(uCamPos - vWorld);
+  vec3 L = normalize(uLightDir);
+  vec4 shadowPos = uLightVP * vec4(vWorld + N * 0.022, 1.0);
+  float shadow = shadowAt(shadowPos);
+  float wrap = clamp((dot(N, L) + 0.35) / 1.35, 0.0, 1.0);
+  vec3 ambient = mix(uGroundAmb, uSkyAmb, N.y * 0.5 + 0.5);
+  vec3 color = uColor.rgb * ambient;
+  color += uColor.rgb * uLightColor * wrap * mix(0.30, 1.0, shadow);
+  vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), mix(96.0, 9.0, uGloss));
+  color += uLightColor * spec * shadow * (0.24 + 0.34 * uPerfect);
+  float fill = max(dot(N, normalize(uFillDir)), 0.0);
+  color += uColor.rgb * uFillColor * fill * 0.5;
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  color += uRimColor * rim * (0.45 + 0.7 * uPerfect);
+  color += uEmissive * uGlow;
+
+  float grain = hash13(floor(vWorld * 38.0));
+  color *= 0.966 + 0.068 * grain;
+  if (uTheme < 0.5) {
+    float fibre = sin(vWorld.y * 260.0 + vWorld.x * 3.0) * sin(vWorld.x * 21.0);
+    color *= 1.0 + 0.014 * fibre;
+  }
+
+  float pulse = 0.5 + 0.5 * sin(uTime * 5.5 + vWorld.y * 2.0);
+  color += vec3(1.0, 0.70, 0.24) * uPerfect * (0.16 + pulse * 0.16);
+
+  float distanceToCamera = length(uCamPos - vWorld);
+  float fog = 1.0 - exp(-pow(distanceToCamera * uFogDensity, 2.0));
+  color = mix(color, uFogColor, clamp(fog, 0.0, 0.88));
+
+  outColor = vec4(color, uAlpha);
+  outNormal = vec4(N * 0.5 + 0.5, clamp(distanceToCamera / 70.0, 0.0, 1.0));
+}`;
+
+  SH.shadowVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+uniform mat4 uModel;
+uniform mat4 uLightVP;
+void main() {
+  gl_Position = uLightVP * uModel * vec4(aPos, 1.0);
+}`;
+
+  SH.shadowFS = `#version 300 es
+precision highp float;
+out vec4 outColor;
+void main() {
+  outColor = vec4(1.0);
+}`;
+
+  SH.groundVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+uniform mat4 uLightVP;
+out vec3 vWorld;
+out vec4 vShadow;
+void main() {
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorld = world.xyz;
+  vShadow = uLightVP * world;
+  gl_Position = uViewProj * world;
+}`;
+
+  SH.groundFS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec3 vWorld;
+in vec4 vShadow;
+uniform vec3 uCamPos;
+uniform vec3 uGroundA;
+uniform vec3 uGroundB;
+uniform vec3 uGridColor;
+uniform vec3 uAccent;
+uniform vec3 uSkyAmb;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform float uTheme;
+uniform float uTime;
+uniform float uGridScale;
+uniform float uShadowTexel;
+uniform float uShadowEnabled;
+uniform sampler2D uShadow;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outNormal;
+
+float lineAt(vec2 coord, float scale, float thickness) {
+  vec2 scaled = coord / scale;
+  vec2 grid = abs(fract(scaled - 0.5) - 0.5) / fwidth(scaled);
+  float line = min(grid.x, grid.y);
+  return 1.0 - clamp(line / thickness, 0.0, 1.0);
+}
+
+void main() {
+  vec3 V = normalize(uCamPos - vWorld);
+  float radial = length(vWorld.xz);
+  vec3 color = mix(uGroundA, uGroundB, smoothstep(0.0, 24.0, radial));
+
+  float grid = lineAt(vWorld.xz, uGridScale, 1.15);
+  float fade = 1.0 - smoothstep(7.0, 34.0, radial);
+  color = mix(color, uGridColor, grid * 0.5 * fade);
+
+  float ring = lineAt(vec2(radial, 0.2), 2.6, 1.4);
+  color = mix(color, uAccent, ring * 0.20 * fade * (uTheme > 0.5 ? 1.0 : 0.4));
+
+  float pool = exp(-radial * radial * 0.05);
+  color += uAccent * pool * 0.09;
+
+  float fresnel = pow(1.0 - clamp(V.y, 0.0, 1.0), 3.0);
+  color += uSkyAmb * fresnel * 0.3;
+
+  if (uShadowEnabled > 0.5) {
+    vec3 p = (vShadow.xyz / vShadow.w) * 0.5 + 0.5;
+    if (p.x > 0.0 && p.x < 1.0 && p.y > 0.0 && p.y < 1.0) {
+      float sum = 0.0;
+      for (int y = -1; y <= 1; y += 1) {
+        for (int x = -1; x <= 1; x += 1) {
+          float stored = texture(uShadow, p.xy + vec2(float(x), float(y)) * uShadowTexel).r;
+          sum += (p.z - 0.0006) <= stored ? 1.0 : 0.0;
+        }
+      }
+      color *= mix(0.52, 1.0, sum / 9.0);
+    }
+  }
+
+  float fog = 1.0 - exp(-pow(length(uCamPos - vWorld) * uFogDensity, 2.0));
+  color = mix(color, uFogColor, clamp(fog * 1.15, 0.0, 1.0));
+
+  float alpha = 1.0 - smoothstep(24.0, 42.0, radial);
+  outColor = vec4(color, alpha);
+  outNormal = vec4(0.5, 1.0, 0.5, clamp(length(uCamPos - vWorld) / 70.0, 0.0, 1.0));
+}`;
+
+  SH.skyVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aPos;
+out vec2 vUv;
+void main() {
+  vUv = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 1.0, 1.0);
+}`;
+
+  SH.skyFS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform mat4 uInvViewProj;
+uniform vec3 uCamPos;
+uniform vec3 uSkyTop;
+uniform vec3 uSkyHorizon;
+uniform vec3 uSunColor;
+uniform vec3 uAccent;
+uniform float uTheme;
+uniform float uTime;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outNormal;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec4 clip = vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec4 world = uInvViewProj * clip;
+  vec3 dir = normalize(world.xyz / world.w - uCamPos);
+  float height = clamp(dir.y, -1.0, 1.0);
+  float horizon = smoothstep(-0.08, 0.55, height);
+  vec3 color = mix(uSkyHorizon, uSkyTop, pow(clamp(horizon, 0.0, 1.0), 0.72));
+
+  vec3 sunDir = normalize(vec3(-0.36, 0.26, -0.92));
+  float sunDot = max(dot(dir, sunDir), 0.0);
+  float glow = pow(sunDot, 44.0);
+  float disc = smoothstep(0.987, 0.995, sunDot);
+  color += uSunColor * (glow * 0.5 + disc * 0.85);
+
+  if (uTheme > 0.5) {
+    vec2 sphere = vec2(atan(dir.z, dir.x) * 0.15915494, dir.y);
+    vec2 cell = floor(sphere * vec2(230.0, 150.0));
+    float star = step(0.997, hash21(cell));
+    float twinkle = 0.5 + 0.5 * sin(uTime * 2.2 + hash21(cell + 9.0) * 24.0);
+    color += vec3(0.85, 0.9, 1.0) * star * twinkle * smoothstep(0.02, 0.45, height);
+  }
+
+  if (uTheme < 0.5) {
+    color += uSunColor * 0.09 * smoothstep(0.15, 1.0, height);
+    float engrave = sin(height * 90.0 + uTime * 0.05) * 0.004;
+    color += vec3(engrave);
+  } else if (uTheme < 1.5) {
+    if (disc > 0.001) {
+      float band = step(0.55, fract((dir.y + 0.45) * 24.0));
+      color = mix(color, color * 0.28, band * 0.72 * disc);
+    }
+    color += uAccent * exp(-abs(height) * 13.0) * 0.32;
+  } else {
+    float beams = 0.0;
+    for (int i = 0; i < 3; i += 1) {
+      float fi = float(i);
+      float beamX = -0.55 + fi * 0.55 + 0.1 * sin(uTime * 0.25 + fi * 2.1);
+      beams += smoothstep(0.0, 0.85, height) * exp(-pow((dir.x - beamX) * 4.2, 2.0));
+    }
+    color += vec3(0.55, 0.72, 1.0) * beams * 0.15;
+    color += uAccent * exp(-abs(height) * 8.0) * 0.16;
+  }
+
+  outColor = vec4(color, 1.0);
+  outNormal = vec4(0.5, 0.5, 0.5, 1.0);
+}`;
+
+  SH.particleVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aCorner;
+layout(location = 1) in vec3 iPos;
+layout(location = 2) in float iSize;
+layout(location = 3) in vec4 iColor;
+layout(location = 4) in float iKind;
+layout(location = 5) in float iSpin;
+uniform mat4 uViewProj;
+uniform vec3 uCamRight;
+uniform vec3 uCamUp;
+out vec2 vUv;
+out vec4 vColor;
+out float vKind;
+out float vSpin;
+void main() {
+  vec3 offset = uCamRight * (aCorner.x * iSize) + uCamUp * (aCorner.y * iSize);
+  gl_Position = uViewProj * vec4(iPos + offset, 1.0);
+  vUv = aCorner;
+  vColor = iColor;
+  vKind = iKind;
+  vSpin = iSpin;
+}`;
+
+  SH.particleFS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec4 vColor;
+in float vKind;
+in float vSpin;
+out vec4 outColor;
+void main() {
+  float radius = length(vUv);
+  float alpha = 0.0;
+  if (vKind < 0.5) {
+    alpha = pow(max(1.0 - radius, 0.0), 2.2);
+  } else if (vKind < 1.5) {
+    float band = smoothstep(0.62, 0.82, radius) - smoothstep(0.88, 0.99, radius);
+    alpha = max(band, 0.0);
+  } else if (vKind < 2.5) {
+    float stretched = length(vec2(vUv.x * 0.16, vUv.y));
+    alpha = pow(max(1.0 - stretched, 0.0), 1.6);
+  } else {
+    float angle = atan(vUv.y, vUv.x);
+    float turn = fract((angle + 1.5707963) / 6.2831853);
+    float head = clamp(vSpin, 0.0, 1.0);
+    float lit = step(turn, head);
+    float inner = smoothstep(0.55, 0.78, radius);
+    float outer = 1.0 - smoothstep(0.88, 1.0, radius);
+    alpha = lit * inner * outer;
+  }
+  if (alpha <= 0.001) discard;
+  outColor = vec4(vColor.rgb, vColor.a * alpha);
+}`;
+
+  SH.portalVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUv;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+out vec2 vUv;
+out vec3 vWorld;
+void main() {
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorld = world.xyz;
+  vUv = aUv;
+  gl_Position = uViewProj * world;
+}`;
+
+  SH.portalFS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec3 vWorld;
+uniform vec3 uColor;
+uniform vec3 uAccent;
+uniform float uTime;
+uniform float uOpacity;
+out vec4 outColor;
+void main() {
+  float edge = smoothstep(0.0, 0.22, vUv.x) * smoothstep(1.0, 0.78, vUv.x);
+  float capTop = smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.88, vUv.y);
+  float ripple = 0.55 + 0.45 * sin(vWorld.y * 3.4 - uTime * 3.0 + vUv.x * 6.0);
+  float dash = smoothstep(0.35, 0.65, fract(vWorld.y * 0.7 - uTime * 0.55));
+  float alpha = edge * capTop * (0.22 + dash * 0.5) * ripple * uOpacity;
+  vec3 color = mix(uColor, uAccent, dash * 0.7);
+  alpha += edge * capTop * 0.25 * uOpacity;
+  outColor = vec4(color, alpha);
+}`;
+
+  SH.brightFS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+uniform float uThreshold;
+out vec4 outColor;
+void main() {
+  vec3 color = texture(uScene, vUv).rgb;
+  float brightness = max(max(color.r, color.g), color.b);
+  float contribution = smoothstep(uThreshold, uThreshold + 1.4, brightness);
+  outColor = vec4(color * contribution, 1.0);
+}`;
+
+  SH.blurFS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSource;
+uniform vec2 uDirection;
+out vec4 outColor;
+void main() {
+  vec3 color = texture(uSource, vUv).rgb * 0.227027;
+  color += texture(uSource, vUv + uDirection * 1.384615).rgb * 0.316216;
+  color += texture(uSource, vUv - uDirection * 1.384615).rgb * 0.316216;
+  color += texture(uSource, vUv + uDirection * 3.230769).rgb * 0.070270;
+  color += texture(uSource, vUv - uDirection * 3.230769).rgb * 0.070270;
+  outColor = vec4(color, 1.0);
+}`;
+
+  SH.compositeFS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+uniform sampler2D uScene;
+uniform sampler2D uNormal;
+uniform sampler2D uBloomA;
+uniform sampler2D uBloomB;
+uniform vec2 uResolution;
+uniform float uTime;
+uniform float uBloom;
+uniform float uExposure;
+uniform float uSaturation;
+uniform float uContrast;
+uniform float uVignette;
+uniform float uGrain;
+uniform float uOutline;
+uniform float uAberration;
+uniform float uScanline;
+uniform float uTheme;
+uniform float uFlash;
+uniform vec3 uInk;
+uniform vec3 uTint;
+uniform vec3 uFlashColor;
+uniform vec2 uSpotCenter;
+uniform float uSpotRadius;
+uniform float uSpot;
+out vec4 outColor;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 345.45));
+  p += dot(p, p + 34.345);
+  return fract(p.x * p.y);
+}
+
+void main() {
+  vec2 dir = vUv - 0.5;
+  float aberration = uAberration * dot(dir, dir);
+  vec3 scene;
+  scene.r = texture(uScene, vUv + dir * aberration).r;
+  scene.g = texture(uScene, vUv).g;
+  scene.b = texture(uScene, vUv - dir * aberration).b;
+  vec3 bloom = texture(uBloomA, vUv).rgb * 0.55 + texture(uBloomB, vUv).rgb * 1.0;
+  vec3 color = scene + bloom * uBloom;
+
+  vec2 texel = 1.0 / uResolution;
+  vec4 center = texture(uNormal, vUv);
+  float edge = 0.0;
+  vec4 sampleLeft = texture(uNormal, vUv + vec2(-texel.x, 0.0));
+  vec4 sampleRight = texture(uNormal, vUv + vec2(texel.x, 0.0));
+  vec4 sampleUp = texture(uNormal, vUv + vec2(0.0, texel.y));
+  vec4 sampleDown = texture(uNormal, vUv + vec2(0.0, -texel.y));
+  edge += length(sampleLeft.xyz - center.xyz);
+  edge += length(sampleRight.xyz - center.xyz);
+  edge += length(sampleUp.xyz - center.xyz);
+  edge += length(sampleDown.xyz - center.xyz);
+  edge += abs(sampleLeft.w - center.w) * 1.3;
+  edge += abs(sampleRight.w - center.w) * 1.3;
+  edge += abs(sampleUp.w - center.w) * 1.3;
+  edge += abs(sampleDown.w - center.w) * 1.3;
+  float line = smoothstep(0.32, 0.92, edge) * uOutline;
+  color = mix(color, uInk, clamp(line, 0.0, 1.0) * 0.92);
+
+  if (uSpot > 0.5) {
+    vec2 spotPoint = (vUv - uSpotCenter) * vec2(uResolution.x / uResolution.y, 1.0);
+    float spotDistance = length(spotPoint);
+    float lit = 1.0 - smoothstep(uSpotRadius * 0.93, uSpotRadius, spotDistance);
+    float rim = smoothstep(uSpotRadius * 0.84, uSpotRadius * 0.97, spotDistance) * (1.0 - smoothstep(uSpotRadius * 0.97, uSpotRadius * 1.08, spotDistance));
+    color = mix(color * 0.015, color, lit);
+    color += vec3(1.0, 0.74, 0.3) * rim * 0.4;
+  }
+
+  color *= uExposure;
+  vec3 knee = max(color - 0.78, 0.0);
+  color = min(color, 0.78) + 0.2 * (1.0 - exp(-knee / 0.2));
+  color = clamp(color, 0.0, 1.0);
+  color = pow(color, vec3(1.0 / 2.2));
+
+  float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  color = mix(vec3(luma), color, uSaturation);
+  color = (color - 0.5) * uContrast + 0.5;
+  color *= uTint;
+
+  float vignette = 1.0 - uVignette * pow(length(dir) * 1.55, 2.0);
+  color *= clamp(vignette, 0.0, 1.0);
+
+  // Fixed in UV space: a per-pixel frequency would alias into shimmering moire.
+  color *= 1.0 - uScanline * (0.5 + 0.5 * sin(vUv.y * 210.0));
+  float grain = hash21(vUv * uResolution + uTime * 60.0) - 0.5;
+  color += grain * uGrain;
+  color += uFlashColor * uFlash;
+
+  outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+}`;
+
+  /* ----------------------------------------------------------------- themes */
+  // Palettes are authored in sRGB hex because that is how the rest of the game
+  // and its CSS themes speak; the renderer converts to linear once.
+  const THEMES = {
+    paper: {
+      skyTop: '#F8F1E4', skyHorizon: '#F0E4CF', sun: '#F0B44D', accent: '#E3A33B',
+      groundA: '#EFE5D2', groundB: '#DFD2B8', grid: '#8C8271', gridScale: 0.8,
+      light: '#FFF4DE', lightEnergy: 2.15, fill: '#C2D9E7', fillEnergy: 0.52,
+      skyAmbient: '#F7EFE0', groundAmbient: '#AD9C7C', rim: '#FFF9EC',
+      fog: '#F2E8D8', fogDensity: 0.017,
+      ink: '#2A2520', outline: 0.95, exposure: 1.05, bloom: 0.40, bloomThreshold: 0.95,
+      saturation: 1.05, contrast: 1.03, vignette: 0.20, grain: 0.028, aberration: 0.0026, scanline: 0.0,
+      tint: '#FFFFFF', sunDisc: true, stars: 0, index: 0,
+      dust: '#C9B794', dustAlpha: 0.5, ambientRate: 7
+    },
+    sunset: {
+      skyTop: '#2B1155', skyHorizon: '#FF6B35', sun: '#FFC53D', accent: '#FF5964',
+      groundA: '#2A1145', groundB: '#150826', grid: '#FF4FA3', gridScale: 1.1,
+      light: '#FFD9B8', lightEnergy: 1.7, fill: '#9B5DE5', fillEnergy: 0.8,
+      skyAmbient: '#7A3FC9', groundAmbient: '#2B1155', rim: '#FF8FCF',
+      fog: '#3A1366', fogDensity: 0.019,
+      ink: '#170B33', outline: 0.85, exposure: 1.16, bloom: 0.85, bloomThreshold: 0.62,
+      saturation: 1.14, contrast: 1.06, vignette: 0.30, grain: 0.030, aberration: 0.008, scanline: 0.03,
+      tint: '#FFF0F6', sunDisc: true, stars: 1, index: 1,
+      dust: '#FF9BD2', dustAlpha: 0.6, ambientRate: 10
+    },
+    primetime: {
+      skyTop: '#0A1A55', skyHorizon: '#1B3CAA', sun: '#FFE9A8', accent: '#FFC83D',
+      groundA: '#0B1B4E', groundB: '#050E2D', grid: '#4E7CFF', gridScale: 1.2,
+      light: '#FFFFFF', lightEnergy: 2.1, fill: '#35D0E8', fillEnergy: 0.62,
+      skyAmbient: '#3F6BE0', groundAmbient: '#0A1533', rim: '#BFE9FF',
+      fog: '#0B1B4A', fogDensity: 0.02,
+      ink: '#040B22', outline: 0.7, exposure: 1.12, bloom: 0.72, bloomThreshold: 0.72,
+      saturation: 1.08, contrast: 1.09, vignette: 0.32, grain: 0.024, aberration: 0.004, scanline: 0.06,
+      tint: '#EEF4FF', sunDisc: false, stars: 1, index: 2,
+      dust: '#9FC4FF', dustAlpha: 0.55, ambientRate: 8
+    }
+  };
+  const THEME_KEYS = Object.freeze(Object.keys(THEMES));
+
+  function prepareTheme(theme) {
+    const linear = {
+      skyTop: hexToLinear(theme.skyTop),
+      skyHorizon: hexToLinear(theme.skyHorizon),
+      sun: hexToLinear(theme.sun),
+      accent: hexToLinear(theme.accent),
+      groundA: hexToLinear(theme.groundA),
+      groundB: hexToLinear(theme.groundB),
+      grid: hexToLinear(theme.grid),
+      light: hexToLinear(theme.light),
+      fill: hexToLinear(theme.fill),
+      skyAmbient: hexToLinear(theme.skyAmbient),
+      groundAmbient: hexToLinear(theme.groundAmbient),
+      rim: hexToLinear(theme.rim),
+      fog: hexToLinear(theme.fog),
+      ink: hexToLinear(theme.ink),
+      tint: hexToLinear(theme.tint),
+      dust: hexToLinear(theme.dust)
+    };
+    return Object.assign({}, theme, linear, { key: theme.index });
+  }
+  const PREPARED = {};
+  for (const key of THEME_KEYS) PREPARED[key] = prepareTheme(THEMES[key]);
+
+  // Key light and fill directions live on the prepared themes so consumers can
+  // read a complete palette before (or without) creating a GPU context.
+  const LIGHT_VECTORS = {
+    paper: [-0.55, 1.0, 0.62],
+    sunset: [-0.42, 0.78, 0.95],
+    primetime: [-0.72, 0.9, 0.42]
+  };
+  const FILL_VECTORS = {
+    paper: [0.45, 0.7, 0.95],
+    sunset: [0.9, 0.2, 0.7],
+    primetime: [0.2, 0.5, 1.0]
+  };
+  const normaliseVector = vector => {
+    const length = Math.hypot(vector[0], vector[1], vector[2]) || 1;
+    return [vector[0] / length, vector[1] / length, vector[2] / length];
+  };
+  for (const key of THEME_KEYS) {
+    PREPARED[key].lightDir = normaliseVector(LIGHT_VECTORS[key]);
+    PREPARED[key].fillDir = normaliseVector(FILL_VECTORS[key]);
+  }
+
+  /* -------------------------------------------------------------- gl helpers */
+  function compileShader(gl, type, source, errors) {
+    const shader = gl.createShader(type);
+    if (!shader) return null;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      errors.push(String(gl.getShaderInfoLog(shader) || 'shader compile failed'));
+      gl.deleteShader(shader);
+      return null;
+    }
+    return shader;
+  }
+
+  function buildProgram(gl, vertexSource, fragmentSource, errors) {
+    const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource, errors);
+    const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource, errors);
+    if (!vs || !fs) { if (vs) gl.deleteShader(vs); if (fs) gl.deleteShader(fs); return null; }
+    const program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      errors.push(String(gl.getProgramInfoLog(program) || 'program link failed'));
+      gl.deleteProgram(program);
+      return null;
+    }
+    const uniforms = {};
+    const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) || 0;
+    for (let index = 0; index < count; index += 1) {
+      const info = gl.getActiveUniform(program, index);
+      if (!info) continue;
+      uniforms[info.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(program, info.name);
+    }
+    return { program, uniforms };
+  }
+
+  function createEmptyTexture(gl, width, height, internalFormat, format, type, filter) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+  }
+
+  function framebufferComplete(gl, framebuffer) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    return gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+  }
+
+  function bufferFrom(gl, target, data, usage) {
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(target, buffer);
+    gl.bufferData(target, data, usage || gl.STATIC_DRAW);
+    return buffer;
+  }
+
+  function particleDataSize() { return 10; }
+
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const ease = (current, goal, rate, dt) => current + (goal - current) * (1 - Math.exp(-Math.max(0, dt) / rate));
+  const rand = (min, max) => min + Math.random() * (max - min);
+
+  /* ------------------------------------------------------------------ engine */
+  function create(canvas, options) {
+    const config = options || {};
+    const errors = [];
+    if (!canvas || typeof canvas.getContext !== 'function') return null;
+
+    let gl = null;
+    try {
+      gl = canvas.getContext('webgl2', {
+        alpha: false, antialias: false, depth: true, stencil: false,
+        premultipliedAlpha: false, preserveDrawingBuffer: false,
+        powerPreference: 'high-performance', desynchronized: true,
+        failIfMajorPerformanceCaveat: false
+      });
+    } catch (_) { gl = null; }
+    // jsdom and other test hosts hand back a 2D context here; that is not an error.
+    if (!gl || typeof gl.createShader !== 'function' || typeof gl.drawArraysInstanced !== 'function') return null;
+
+    const hasFloat = Boolean(gl.getExtension('EXT_color_buffer_float'));
+    let floatTargets = hasFloat;
+
+    const programs = {
+      block: buildProgram(gl, SH.blockVS, SH.blockFS, errors),
+      shadow: buildProgram(gl, SH.shadowVS, SH.shadowFS, errors),
+      ground: buildProgram(gl, SH.groundVS, SH.groundFS, errors),
+      sky: buildProgram(gl, SH.skyVS, SH.skyFS, errors),
+      particle: buildProgram(gl, SH.particleVS, SH.particleFS, errors),
+      portal: buildProgram(gl, SH.portalVS, SH.portalFS, errors),
+      bright: buildProgram(gl, SH.skyVS, SH.brightFS, errors),
+      blur: buildProgram(gl, SH.skyVS, SH.blurFS, errors),
+      composite: buildProgram(gl, SH.skyVS, SH.compositeFS, errors)
+    };
+    if (Object.keys(programs).some(key => !programs[key])) {
+      if (config.onError) config.onError(new Error('Stack3D shader setup failed: ' + errors.join(' | ')));
+      return null;
+    }
+
+    /* ------------------------------------------------------------- geometry */
+    const boxSource = makeRoundedBox(6, 0.11);
+    const quadSource = makeQuad();
+    const planeSource = makePlane();
+
+    function uploadMesh(source, attributes) {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const buffers = [];
+      for (const attribute of attributes) {
+        const buffer = bufferFrom(gl, gl.ARRAY_BUFFER, attribute.data);
+        gl.enableVertexAttribArray(attribute.location);
+        gl.vertexAttribPointer(attribute.location, attribute.size, gl.FLOAT, false, 0, 0);
+        buffers.push(buffer);
+      }
+      const indexBuffer = bufferFrom(gl, gl.ELEMENT_ARRAY_BUFFER, source.indices);
+      gl.bindVertexArray(null);
+      return { vao, buffers, indexBuffer, count: source.indices.length };
+    }
+
+    const boxMesh = uploadMesh(boxSource, [
+      { location: 0, size: 3, data: boxSource.positions },
+      { location: 1, size: 3, data: boxSource.normals }
+    ]);
+    const quadMesh = uploadMesh(quadSource, [
+      { location: 0, size: 3, data: quadSource.positions },
+      { location: 1, size: 2, data: quadSource.uvs }
+    ]);
+    const planeMesh = uploadMesh(planeSource, [
+      { location: 0, size: 3, data: planeSource.positions },
+      { location: 1, size: 3, data: planeSource.normals }
+    ]);
+
+    const cornerData = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
+    const cornerBuffer = bufferFrom(gl, gl.ARRAY_BUFFER, cornerData);
+
+    function makeParticleVAO(instanceBuffer) {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+      const stride = particleDataSize() * 4;
+      const layout = [
+        { location: 1, size: 3, offset: 0 },
+        { location: 2, size: 1, offset: 12 },
+        { location: 3, size: 4, offset: 16 },
+        { location: 4, size: 1, offset: 32 },
+        { location: 5, size: 1, offset: 36 }
+      ];
+      for (const attribute of layout) {
+        gl.enableVertexAttribArray(attribute.location);
+        gl.vertexAttribPointer(attribute.location, attribute.size, gl.FLOAT, false, stride, attribute.offset);
+        gl.vertexAttribDivisor(attribute.location, 1);
+      }
+      gl.bindVertexArray(null);
+      return vao;
+    }
+
+    const PARTICLE_CAPACITY = 620;
+    const particleStride = particleDataSize();
+    const particleInstanceData = new Float32Array(PARTICLE_CAPACITY * particleStride);
+    const particleInstanceBuffer = bufferFrom(gl, gl.ARRAY_BUFFER, particleInstanceData.byteLength, gl.DYNAMIC_DRAW);
+    const particleVAO = makeParticleVAO(particleInstanceBuffer);
+
+    /* ---------------------------------------------------------- render state */
+    const state = {
+      width: 0, height: 0, cssWidth: 0, cssHeight: 0, renderScale: 1,
+      time: 0, frame: 0, failed: false, disposed: false,
+      targets: null,
+      yaw: -0.34, pitch: 0.16, yawGoal: -0.34, pitchGoal: 0.16, userView: 1,
+      distanceSm: 0, centerSm: 0, targetXSm: 0,
+      cameraReady: false, shake: 0, punch: 0, flash: 0, lastPerfect: -1, lastHeight: -1,
+      lastPhase: '', lastVote: false, ambientClock: 0, frameMs: 16, qualityClock: 0
+    };
+
+    const scratchModel = M4();
+    const scratchNormal = new Float32Array(9);
+    const viewMatrix = M4();
+    const projMatrix = M4();
+    const viewProjMatrix = M4();
+    const invViewProjMatrix = M4();
+    const lightViewMatrix = M4();
+    const lightProjMatrix = M4();
+    const lightVP = M4();
+    const camera = { eye: [0, 4, 16], target: [0, 3, 0], right: [1, 0, 0], up: [0, 1, 0] };
+
+    const shadowSize = Math.min(2048, gl.getParameter(gl.MAX_TEXTURE_SIZE) || 1024);
+
+    /* --------------------------------------------------------------- targets */
+    function deleteTargets() {
+      const targets = state.targets;
+      if (!targets) return;
+      const release = target => {
+        if (!target) return;
+        if (target.texture) gl.deleteTexture(target.texture);
+        if (target.framebuffer) gl.deleteFramebuffer(target.framebuffer);
+      };
+      if (targets.scene) {
+        if (targets.scene.color) gl.deleteTexture(targets.scene.color);
+        if (targets.scene.normal) gl.deleteTexture(targets.scene.normal);
+        if (targets.scene.depth) gl.deleteTexture(targets.scene.depth);
+        if (targets.scene.framebuffer) gl.deleteFramebuffer(targets.scene.framebuffer);
+      }
+      for (const key of ['bloomHalf', 'bloomQuarter']) {
+        for (const target of targets[key] || []) release(target);
+      }
+      state.targets = null;
+    }
+
+    function makeColorTarget(width, height) {
+      const texture = createEmptyTexture(gl, width, height,
+        floatTargets ? gl.RGBA16F : gl.RGBA8, gl.RGBA,
+        floatTargets ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, gl.LINEAR);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+      if (!framebufferComplete(gl, framebuffer)) { gl.deleteFramebuffer(framebuffer); gl.deleteTexture(texture); return null; }
+      return { texture, framebuffer, width, height };
+    }
+
+    function makeSceneTarget(width, height) {
+      const color = makeColorTarget(width, height);
+      if (!color) return null;
+      const normalTexture = createEmptyTexture(gl, width, height, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+      const depthTexture = createEmptyTexture(gl, width, height, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.NEAREST);
+      const framebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, color.texture, 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, normalTexture, 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, depthTexture, 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      if (!framebufferComplete(gl, framebuffer)) {
+        gl.deleteFramebuffer(framebuffer);
+        gl.deleteTexture(color.texture); gl.deleteTexture(normalTexture); gl.deleteTexture(depthTexture);
+        return null;
+      }
+      return { framebuffer, color: color.texture, normal: normalTexture, depth: depthTexture, width, height };
+    }
+
+    function allocateTargets(width, height) {
+      deleteTargets();
+      let scene = makeSceneTarget(width, height);
+      if (!scene && floatTargets) { floatTargets = false; scene = makeSceneTarget(width, height); }
+      if (!scene) return false;
+      const halfW = Math.max(1, Math.round(width / 2));
+      const halfH = Math.max(1, Math.round(height / 2));
+      const quarterW = Math.max(1, Math.round(width / 4));
+      const quarterH = Math.max(1, Math.round(height / 4));
+      const targets = {
+        scene,
+        bloomHalf: [makeColorTarget(halfW, halfH), makeColorTarget(halfW, halfH)],
+        bloomQuarter: [makeColorTarget(quarterW, quarterH), makeColorTarget(quarterW, quarterH)]
+      };
+      state.targets = targets;
+      if (!targets.bloomHalf[0] || !targets.bloomHalf[1] || !targets.bloomQuarter[0] || !targets.bloomQuarter[1]) {
+        deleteTargets();
+        return false;
+      }
+      return true;
+    }
+
+    /* ---------------------------------------------------------------- shadow */
+    const shadowTexture = createEmptyTexture(gl, shadowSize, shadowSize, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.NEAREST);
+    const shadowFramebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFramebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTexture, 0);
+    gl.drawBuffers([gl.NONE]);
+    gl.readBuffer(gl.NONE);
+    if (!framebufferComplete(gl, shadowFramebuffer)) {
+      if (config.onError) config.onError(new Error('Stack3D shadow target incomplete'));
+      return null;
+    }
+
+    /* -------------------------------------------------------------- resizing */
+    function measure() {
+      const rect = typeof canvas.getBoundingClientRect === 'function' ? canvas.getBoundingClientRect() : null;
+      let cssWidth = Math.round((rect && rect.width) || canvas.clientWidth || 0);
+      let cssHeight = Math.round((rect && rect.height) || canvas.clientHeight || 0);
+      if ((!cssWidth || !cssHeight) && canvas.parentElement) {
+        cssWidth = Math.round(canvas.parentElement.clientWidth || 0);
+        cssHeight = Math.round(canvas.parentElement.clientHeight || 0);
+      }
+      if (!cssWidth || !cssHeight) return false;
+      const ratio = clamp(Number(window.devicePixelRatio) || 1, 1, Number(config.maxDpr) || 2);
+      let pixelWidth = Math.round(cssWidth * ratio * state.renderScale);
+      let pixelHeight = Math.round(cssHeight * ratio * state.renderScale);
+      const pixelCap = 1_550_000;
+      const pixels = pixelWidth * pixelHeight;
+      if (pixels > pixelCap) {
+        const shrink = Math.sqrt(pixelCap / pixels);
+        pixelWidth = Math.max(1, Math.round(pixelWidth * shrink));
+        pixelHeight = Math.max(1, Math.round(pixelHeight * shrink));
+      }
+      if (pixelWidth === state.width && pixelHeight === state.height) {
+        state.cssWidth = cssWidth; state.cssHeight = cssHeight;
+        return true;
+      }
+      if (!allocateTargets(pixelWidth, pixelHeight)) return false;
+      state.width = pixelWidth; state.height = pixelHeight;
+      state.cssWidth = cssWidth; state.cssHeight = cssHeight;
+      canvas.width = pixelWidth;
+      canvas.height = pixelHeight;
+      return true;
+    }
+
+    /* ------------------------------------------------------------ particles */
+    const particles = [];
+
+    function spawnParticle(spec) {
+      if (particles.length >= PARTICLE_CAPACITY - 10) particles.shift();
+      const life = Math.max(0.02, spec.life || 1);
+      particles.push({
+        x: spec.x, y: spec.y, z: spec.z || 0,
+        vx: spec.vx || 0, vy: spec.vy || 0, vz: spec.vz || 0,
+        size: spec.size || 0.1, grow: spec.grow || 0,
+        r: spec.r, g: spec.g, b: spec.b, alpha: spec.alpha == null ? 1 : spec.alpha,
+        kind: spec.kind || 0, spin: spec.spin || 0, spinRate: spec.spinRate || 0,
+        gravity: spec.gravity || 0, drag: spec.drag == null ? 0.2 : spec.drag,
+        life, maxLife: life
+      });
+    }
+
+    function updateParticles(dt) {
+      for (let index = particles.length - 1; index >= 0; index -= 1) {
+        const particle = particles[index];
+        particle.life -= dt;
+        if (particle.life <= 0) { particles.splice(index, 1); continue; }
+        const damping = Math.exp(-particle.drag * dt);
+        particle.vx *= damping; particle.vy *= damping; particle.vz *= damping;
+        particle.vy -= particle.gravity * dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.z += particle.vz * dt;
+        particle.size = Math.max(0.001, particle.size + particle.grow * dt);
+        particle.spin += particle.spinRate * dt;
+      }
+    }
+
+    function particleFade(particle) {
+      const life = particle.life / particle.maxLife;
+      return Math.min(1, life * 3.2) * (0.35 + 0.65 * life);
+    }
+
+    // A fixed dome of stars for the two night themes.
+    const starBufferData = (() => {
+      const data = new Float32Array(180 * particleStride);
+      for (let index = 0; index < 180; index += 1) {
+        const azimuth = Math.random() * TAU;
+        const elevation = rand(0.03, 0.72);
+        const radius = 62;
+        const offset = index * particleStride;
+        data[offset] = Math.cos(azimuth) * Math.cos(elevation) * radius;
+        data[offset + 1] = Math.sin(elevation) * radius;
+        data[offset + 2] = Math.sin(azimuth) * Math.cos(elevation) * radius;
+        data[offset + 3] = rand(0.22, 0.62);
+        data[offset + 4] = rand(0.72, 1); data[offset + 5] = rand(0.78, 1); data[offset + 6] = 1;
+        data[offset + 7] = rand(0.35, 0.95);
+        data[offset + 8] = 0;
+        data[offset + 9] = 0;
+      }
+      return data;
+    })();
+    const starInstanceBuffer = bufferFrom(gl, gl.ARRAY_BUFFER, starBufferData);
+    const starVAO = makeParticleVAO(starInstanceBuffer);
+    const STAR_COUNT = 180;
+
+    const portalMesh = quadMesh;
+
+    const colorCache = new Map();
+    function linearColorOf(hex) {
+      if (Array.isArray(hex)) return hex;
+      const key = typeof hex === 'string' ? hex.toUpperCase() : '#FFFFFF';
+      let color = colorCache.get(key);
+      if (!color) { color = hexToLinear(key); colorCache.set(key, color); }
+      return color;
+    }
+    function resolveTheme(name) { return PREPARED[name] || PREPARED.paper; }
+
+    /* --------------------------------------------------------------- camera */
+    function updateCamera(scene, theme, dt) {
+      const aspect = state.width / Math.max(1, state.height);
+      const fov = 46 * Math.PI / 180;
+      const topY = Math.max(0.8, Number(scene.topY) || 0.8);
+      const halfWidth = Math.max(1.6, Number(scene.maxHalfWidth) || 3.6);
+      const zoom = clamp(Number(scene.zoom) || 1, 0.7, 3.2);
+
+      let minY = Math.max(-1.1, topY - 9.0);
+      const maxY = topY + 3.4;
+      let centerY = (minY + maxY) / 2;
+      const halfSpan = (maxY - minY) / 2;
+      let distance = halfSpan / Math.tan(fov / 2);
+      const widthFit = (halfWidth + 1.05) / (Math.tan(fov / 2) * aspect);
+      distance = Math.max(distance, widthFit);
+      if (zoom > 1.001) {
+        distance /= zoom;
+        centerY = lerp(centerY, topY - 0.55, clamp((zoom - 1) / 0.9, 0, 1) * 0.82);
+      }
+      if (scene.phase === 'collapse') distance *= 1 + clamp(Number(scene.collapse) || 0, 0, 1) * 0.2;
+      distance = clamp(distance, 7.5, 70);
+
+      if (!state.cameraReady) {
+        state.distanceSm = distance * 1.28;
+        state.centerSm = centerY - 1.4;
+        state.targetXSm = (Number(scene.focusX) || 0) * 0.14;
+        state.cameraReady = true;
+      }
+      state.distanceSm = ease(state.distanceSm, distance, 0.34, dt);
+      state.centerSm = ease(state.centerSm, centerY, 0.30, dt);
+      state.targetXSm = ease(state.targetXSm, (Number(scene.focusX) || 0) * 0.14, 0.4, dt);
+      state.yaw = ease(state.yaw, state.yawGoal, 0.16, dt);
+      state.pitch = ease(state.pitch, state.pitchGoal, 0.16, dt);
+
+      const drift = scene.reduced ? 0 : Math.sin(state.time * 0.13) * 0.035;
+      const yaw = state.yaw + drift;
+      const pitch = state.pitch + (scene.reduced ? 0 : Math.sin(state.time * 0.19) * 0.008);
+      const distanceNow = state.distanceSm * state.userView;
+      const shake = clamp(Number(scene.shake) || 0, 0, 2) + state.shake;
+      const shakeX = scene.reduced ? 0 : Math.sin(state.time * 47) * 0.18 * shake;
+      const shakeY = scene.reduced ? 0 : Math.cos(state.time * 61) * 0.13 * shake;
+      const roll = (Number(scene.roll) || 0) + (scene.reduced ? 0 : Math.sin(state.time * 33) * 0.028 * shake);
+
+      const target = [state.targetXSm + shakeX * 0.5, state.centerSm + shakeY * 0.5, 0];
+      const cosPitch = Math.cos(pitch);
+      camera.eye[0] = target[0] + Math.sin(yaw) * cosPitch * distanceNow + shakeX;
+      camera.eye[1] = target[1] + Math.sin(pitch) * distanceNow + shakeY;
+      camera.eye[2] = target[2] + Math.cos(yaw) * cosPitch * distanceNow;
+      camera.target = target;
+
+      const up = [Math.sin(roll), Math.cos(roll), 0];
+      mat4LookAt(viewMatrix, camera.eye, target, up);
+      const punch = 1 - state.punch * 0.035;
+      mat4Perspective(projMatrix, fov * punch, aspect, 0.08, 220);
+      mat4Multiply(viewProjMatrix, projMatrix, viewMatrix);
+      mat4Invert(invViewProjMatrix, viewProjMatrix);
+
+      camera.right = [viewMatrix[0], viewMatrix[4], viewMatrix[8]];
+      camera.up = [viewMatrix[1], viewMatrix[5], viewMatrix[9]];
+      camera.near = 0.08;
+      camera.far = 220;
+      camera.fov = fov;
+
+      const lightTop = Math.max(2.2, topY);
+      const radius = Math.max(8, lightTop * 0.62 + 3.4, halfWidth + 2.6);
+      const lightCenter = [0, lightTop * 0.5, 0];
+      const lightDir = theme.lightDir;
+      const lightEye = [
+        lightCenter[0] + lightDir[0] * radius * 2.6,
+        lightCenter[1] + lightDir[1] * radius * 2.6,
+        lightCenter[2] + lightDir[2] * radius * 2.6
+      ];
+      mat4LookAt(lightViewMatrix, lightEye, lightCenter, [0, 1, 0]);
+      mat4Ortho(lightProjMatrix, -radius, radius, -radius, radius, 0.1, radius * 6.4);
+      mat4Multiply(lightVP, lightProjMatrix, lightViewMatrix);
+    }
+
+    function projectPoint(point) {
+      const x = point[0], y = point[1], z = point[2];
+      const clipX = viewProjMatrix[0] * x + viewProjMatrix[4] * y + viewProjMatrix[8] * z + viewProjMatrix[12];
+      const clipY = viewProjMatrix[1] * x + viewProjMatrix[5] * y + viewProjMatrix[9] * z + viewProjMatrix[13];
+      const clipW = viewProjMatrix[3] * x + viewProjMatrix[7] * y + viewProjMatrix[11] * z + viewProjMatrix[15];
+      if (clipW <= 0.0001) return null;
+      return [(clipX / clipW) * 0.5 + 0.5, (clipY / clipW) * 0.5 + 0.5];
+    }
+
+    /* -------------------------------------------------------------- geometry */
+    function drawBox(spec, program) {
+      const uniforms = program.uniforms;
+      composeBox(scratchModel, scratchNormal,
+        spec.x || 0, spec.y || 0, spec.z || 0,
+        spec.rx || 0, spec.ry || 0, spec.rz || 0,
+        Math.max(0.001, spec.hx || 0.01), Math.max(0.001, spec.hy || 0.01), Math.max(0.001, spec.hz || 0.01));
+      gl.uniformMatrix4fv(uniforms.uModel, false, scratchModel);
+      if (uniforms.uNormalMat) gl.uniformMatrix3fv(uniforms.uNormalMat, false, scratchNormal);
+      if (uniforms.uColor) {
+        const color = linearColorOf(spec.color || '#E3A33B');
+        gl.uniform4f(uniforms.uColor, color[0], color[1], color[2], spec.alpha == null ? 1 : spec.alpha);
+        gl.uniform1f(uniforms.uAlpha, spec.alpha == null ? 1 : spec.alpha);
+      }
+      if (uniforms.uEmissive) {
+        const emissive = linearColorOf(spec.emissive || '#000000');
+        gl.uniform3f(uniforms.uEmissive, emissive[0], emissive[1], emissive[2]);
+        gl.uniform1f(uniforms.uGlow, Number(spec.glow) || 0);
+      }
+      if (uniforms.uGloss) gl.uniform1f(uniforms.uGloss, spec.gloss == null ? 0.35 : spec.gloss);
+      if (uniforms.uPerfect) gl.uniform1f(uniforms.uPerfect, Number(spec.perfect) || 0);
+      gl.bindVertexArray(boxMesh.vao);
+      gl.drawElements(gl.TRIANGLES, boxMesh.count, gl.UNSIGNED_SHORT, 0);
+    }
+
+    function drawCasters(scene, program) {
+      gl.useProgram(program.program);
+      gl.uniformMatrix4fv(program.uniforms.uLightVP, false, lightVP);
+      gl.colorMask(false, false, false, false);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.enable(gl.CULL_FACE);
+      const casters = [];
+      for (const block of scene.blocks || []) if ((block.alpha == null ? 1 : block.alpha) > 0.4) casters.push(block);
+      if (scene.mover && (scene.mover.alpha == null ? 1 : scene.mover.alpha) > 0.4) casters.push(scene.mover);
+      for (const debris of scene.debris || []) casters.push(debris);
+      for (const caster of casters) drawBox(caster, program);
+      gl.colorMask(true, true, true, true);
+    }
+
+    function bindBlockUniforms(theme) {
+      const program = programs.block;
+      const u = program.uniforms;
+      gl.useProgram(program.program);
+      gl.uniformMatrix4fv(u.uViewProj, false, viewProjMatrix);
+      gl.uniformMatrix4fv(u.uLightVP, false, lightVP);
+      gl.uniform3f(u.uCamPos, camera.eye[0], camera.eye[1], camera.eye[2]);
+      gl.uniform3f(u.uLightDir, theme.lightDir[0], theme.lightDir[1], theme.lightDir[2]);
+      const light = scaleColor(theme.light, theme.lightEnergy);
+      gl.uniform3f(u.uLightColor, light[0], light[1], light[2]);
+      gl.uniform3f(u.uFillDir, theme.fillDir[0], theme.fillDir[1], theme.fillDir[2]);
+      gl.uniform3f(u.uFillColor, theme.fill[0] * theme.fillEnergy, theme.fill[1] * theme.fillEnergy, theme.fill[2] * theme.fillEnergy);
+      gl.uniform3f(u.uSkyAmb, theme.skyAmbient[0] * 0.9, theme.skyAmbient[1] * 0.9, theme.skyAmbient[2] * 0.9);
+      gl.uniform3f(u.uGroundAmb, theme.groundAmbient[0] * 0.85, theme.groundAmbient[1] * 0.85, theme.groundAmbient[2] * 0.85);
+      gl.uniform3f(u.uRimColor, theme.rim[0] * 0.24, theme.rim[1] * 0.24, theme.rim[2] * 0.24);
+      gl.uniform3f(u.uFogColor, theme.fog[0], theme.fog[1], theme.fog[2]);
+      gl.uniform1f(u.uFogDensity, theme.fogDensity);
+      gl.uniform1f(u.uTheme, theme.index);
+      gl.uniform1f(u.uTime, state.time);
+      gl.uniform1i(u.uShadow, 0);
+      gl.uniform1f(u.uShadowTexel, 1 / shadowSize);
+      gl.uniform1f(u.uShadowEnabled, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, shadowTexture);
+    }
+
+    function bindGroundUniforms(theme) {
+      const u = programs.ground.uniforms;
+      gl.useProgram(programs.ground.program);
+      gl.uniformMatrix4fv(u.uViewProj, false, viewProjMatrix);
+      gl.uniformMatrix4fv(u.uLightVP, false, lightVP);
+      gl.uniform3f(u.uCamPos, camera.eye[0], camera.eye[1], camera.eye[2]);
+      gl.uniform3f(u.uGroundA, theme.groundA[0], theme.groundA[1], theme.groundA[2]);
+      gl.uniform3f(u.uGroundB, theme.groundB[0], theme.groundB[1], theme.groundB[2]);
+      gl.uniform3f(u.uGridColor, theme.grid[0], theme.grid[1], theme.grid[2]);
+      gl.uniform3f(u.uAccent, theme.accent[0], theme.accent[1], theme.accent[2]);
+      gl.uniform3f(u.uSkyAmb, theme.skyAmbient[0], theme.skyAmbient[1], theme.skyAmbient[2]);
+      gl.uniform3f(u.uFogColor, theme.fog[0], theme.fog[1], theme.fog[2]);
+      gl.uniform1f(u.uFogDensity, theme.fogDensity);
+      gl.uniform1f(u.uTheme, theme.index);
+      gl.uniform1f(u.uTime, state.time);
+      gl.uniform1f(u.uGridScale, theme.gridScale);
+      gl.uniform1i(u.uShadow, 0);
+      gl.uniform1f(u.uShadowTexel, 1 / shadowSize);
+      gl.uniform1f(u.uShadowEnabled, 1);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, shadowTexture);
+      gl.uniformMatrix4fv(u.uModel, false, scratchModel);
+    }
+
+    function drawSky(theme) {
+      const u = programs.sky.uniforms;
+      gl.useProgram(programs.sky.program);
+      gl.uniformMatrix4fv(u.uInvViewProj, false, invViewProjMatrix);
+      gl.uniform3f(u.uCamPos, camera.eye[0], camera.eye[1], camera.eye[2]);
+      gl.uniform3f(u.uSkyTop, theme.skyTop[0], theme.skyTop[1], theme.skyTop[2]);
+      gl.uniform3f(u.uSkyHorizon, theme.skyHorizon[0], theme.skyHorizon[1], theme.skyHorizon[2]);
+      gl.uniform3f(u.uSunColor, theme.sun[0], theme.sun[1], theme.sun[2]);
+      gl.uniform3f(u.uAccent, theme.accent[0], theme.accent[1], theme.accent[2]);
+      gl.uniform1f(u.uTheme, theme.index);
+      gl.uniform1f(u.uTime, state.time);
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.count, gl.UNSIGNED_SHORT, 0);
+    }
+
+    function drawParticleSet(vao, count, depthTest) {
+      if (!count) return;
+      const u = programs.particle.uniforms;
+      gl.useProgram(programs.particle.program);
+      gl.uniformMatrix4fv(u.uViewProj, false, viewProjMatrix);
+      gl.uniform3f(u.uCamRight, camera.right[0], camera.right[1], camera.right[2]);
+      gl.uniform3f(u.uCamUp, camera.up[0], camera.up[1], camera.up[2]);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      if (depthTest) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.bindVertexArray(vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+    }
+
+    function fillParticleData(list, target) {
+      let count = 0;
+      for (const particle of list) {
+        if (count >= PARTICLE_CAPACITY) break;
+        const offset = count * particleStride;
+        const fade = particleFade(particle);
+        target[offset] = particle.x;
+        target[offset + 1] = particle.y;
+        target[offset + 2] = particle.z;
+        target[offset + 3] = particle.size;
+        target[offset + 4] = particle.r;
+        target[offset + 5] = particle.g;
+        target[offset + 6] = particle.b;
+        target[offset + 7] = particle.alpha * fade;
+        target[offset + 8] = particle.kind;
+        target[offset + 9] = particle.spin;
+        count += 1;
+      }
+      return count;
+    }
+
+    function drawPortal(scene, theme) {
+      if (!scene.portals) return;
+      const u = programs.portal.uniforms;
+      gl.useProgram(programs.portal.program);
+      gl.uniformMatrix4fv(u.uViewProj, false, viewProjMatrix);
+      gl.uniform3f(u.uColor, theme.accent[0], theme.accent[1], theme.accent[2]);
+      gl.uniform3f(u.uAccent, theme.rim[0], theme.rim[1], theme.rim[2]);
+      gl.uniform1f(u.uTime, state.time);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.disable(gl.CULL_FACE);
+      gl.bindVertexArray(portalMesh.vao);
+      for (const gate of [scene.portals.left, scene.portals.right]) {
+        if (!gate) continue;
+        const angle = Math.atan2(camera.eye[0] - gate.x, camera.eye[2] - (gate.z || 0));
+        composeBox(scratchModel, scratchNormal, gate.x, gate.y, gate.z || 0, 0, angle, 0, gate.width, gate.height, 1);
+        gl.uniformMatrix4fv(u.uModel, false, scratchModel);
+        gl.uniform1f(u.uOpacity, gate.opacity == null ? 1 : gate.opacity);
+        gl.drawElements(gl.TRIANGLES, portalMesh.count, gl.UNSIGNED_SHORT, 0);
+      }
+      gl.depthMask(true);
+    }
+
+    /* -------------------------------------------------------------- effects */
+    function spawnAmbient(theme, scene, dt) {
+      if (scene.reduced) return;
+      state.ambientClock += dt;
+      const interval = 1 / Math.max(1, theme.ambientRate);
+      let guard = 0;
+      while (state.ambientClock > interval && guard < 8) {
+        state.ambientClock -= interval;
+        guard += 1;
+        const top = Math.max(3, Number(scene.topY) || 3);
+        spawnParticle({
+          x: rand(-6.5, 6.5), y: rand(0.2, top + 4), z: rand(-6.5, 6.5),
+          vx: rand(-0.06, 0.06), vy: rand(0.03, 0.18), vz: rand(-0.06, 0.06),
+          size: rand(0.012, 0.05), grow: 0.012,
+          r: theme.dust[0], g: theme.dust[1], b: theme.dust[2],
+          alpha: theme.dustAlpha, life: rand(3, 7), kind: 0, drag: 0.12
+        });
+      }
+    }
+
+    function burstPerfect(scene, theme) {
+      const placed = scene.lastPlaced || { x: 0, y: (scene.topY || 1), z: 0 };
+      const gold = [1.0, 0.65, 0.2];
+      state.punch = 1;
+      state.flash = 0.24;
+      state.flashColor = gold;
+      state.shake = Math.max(state.shake, 0.45);
+      for (let index = 0; index < 30; index += 1) {
+        const angle = Math.random() * TAU;
+        const speed = rand(0.9, 3.4);
+        spawnParticle({
+          x: placed.x + rand(-0.25, 0.25), y: (placed.y || 0) + 0.15, z: (placed.z || 0) + rand(-0.6, 0.6),
+          vx: Math.cos(angle) * speed, vy: rand(1.1, 3.8), vz: Math.sin(angle) * speed,
+          size: rand(0.05, 0.12), gravity: 6.2, life: rand(0.5, 1.15),
+          r: gold[0], g: gold[1], b: gold[2], alpha: 1, kind: 0, drag: 0.55
+        });
+      }
+      spawnParticle({
+        x: placed.x, y: (placed.y || 0) + 0.2, z: placed.z || 0,
+        size: 0.3, grow: 3.6, life: 0.55, r: gold[0], g: gold[1], b: gold[2],
+        alpha: 0.85, kind: 1, drag: 0
+      });
+    }
+
+    function burstLanding(scene, theme) {
+      const placed = scene.lastPlaced || { x: 0, y: (scene.topY || 1), z: 0 };
+      for (let index = 0; index < 9; index += 1) {
+        const angle = Math.random() * TAU;
+        spawnParticle({
+          x: placed.x + rand(-0.5, 0.5), y: (placed.y || 0) + 0.05, z: rand(-1.0, 1.0),
+          vx: Math.cos(angle) * rand(0.2, 1.0), vy: rand(0.1, 0.6), vz: Math.sin(angle) * rand(0.2, 1.0),
+          size: rand(0.03, 0.09), gravity: 0.6, life: rand(0.45, 1.0),
+          r: theme.dust[0], g: theme.dust[1], b: theme.dust[2], alpha: 0.8, kind: 0, drag: 1.4
+        });
+      }
+    }
+
+    function burstMilestone(scene, theme) {
+      const top = scene.topY || 1;
+      const color = linearColorOf(scene.lastPlaced && scene.lastPlaced.color || '#E3A33B');
+      for (let index = 0; index < 26; index += 1) {
+        const angle = Math.random() * TAU;
+        spawnParticle({
+          x: rand(-1.4, 1.4), y: top + rand(0.2, 1.6), z: rand(-1.4, 1.4),
+          vx: Math.cos(angle) * rand(1.2, 3.6), vy: rand(0.6, 2.6), vz: Math.sin(angle) * rand(1.2, 3.6),
+          size: rand(0.04, 0.1), gravity: 2.4, life: rand(0.9, 1.8),
+          r: color[0], g: color[1], b: color[2], alpha: 1, kind: 2, drag: 0.7, spin: rand(-3, 3)
+        });
+      }
+      state.flash = Math.max(state.flash, 0.14);
+      state.flashColor = color;
+    }
+
+    function burstCollapse(scene, theme) {
+      const top = scene.topY || 1;
+      state.shake = Math.max(state.shake, 1.5);
+      state.flash = 0.3;
+      state.flashColor = [1.0, 0.25, 0.16];
+      for (let index = 0; index < 48; index += 1) {
+        const angle = Math.random() * TAU;
+        const speed = rand(0.8, 4.2);
+        spawnParticle({
+          x: rand(-2.4, 2.4), y: top + rand(-1.6, 1.2), z: rand(-1.4, 1.4),
+          vx: Math.cos(angle) * speed, vy: rand(-0.4, 2.4), vz: Math.sin(angle) * speed,
+          size: rand(0.06, 0.18), gravity: 1.4, life: rand(0.8, 1.8),
+          r: theme.dust[0] * 1.15, g: theme.dust[1] * 1.15, b: theme.dust[2] * 1.15,
+          alpha: 0.7, kind: 0, drag: 0.85
+        });
+      }
+    }
+
+    function burstVote(scene, theme) {
+      const top = scene.topY || 1;
+      for (let index = 0; index < 7; index += 1) {
+        spawnParticle({
+          x: rand(-2.4, 2.4), y: top + rand(0.5, 2.4), z: rand(-2, 2),
+          vx: rand(-0.3, 0.3), vy: rand(0.15, 0.5), vz: rand(-0.3, 0.3),
+          size: rand(0.05, 0.1), grow: 0.05, life: rand(2.2, 4),
+          r: theme.accent[0], g: theme.accent[1], b: theme.accent[2],
+          alpha: 0.8, kind: 0, drag: 0.2
+        });
+      }
+    }
+
+    function trickleEffect(scene, theme, dt) {
+      const effect = scene.effect;
+      if (!effect || !effect.id) return;
+      const mover = scene.mover;
+      if (!mover) return;
+      const topBlock = scene.support || { x: 0, y: 1 };
+      state.effectClock = (state.effectClock || 0) + dt;
+      const rate = effect.id === 'portal' ? 26 : effect.id === 'superglue' ? 30 : effect.id === 'magnet' ? 34 : 18;
+      if (state.effectClock < 1 / rate) return;
+      state.effectClock = 0;
+      const color = linearColorOf(mover.color || '#E3A33B');
+      if (effect.id === 'portal' && scene.portals) {
+        for (const gate of [scene.portals.left, scene.portals.right]) {
+          if (!gate) continue;
+          spawnParticle({
+            x: gate.x + rand(-0.08, 0.08), y: gate.y + rand(-gate.height * 0.45, gate.height * 0.45), z: rand(-0.3, 0.3),
+            vx: rand(-0.2, 0.2), vy: rand(0.2, 0.8), vz: rand(-0.2, 0.2),
+            size: rand(0.02, 0.06), life: rand(0.4, 1.0),
+            r: theme.accent[0], g: theme.accent[1], b: theme.accent[2], alpha: 0.8, kind: 0, drag: 1.2
+          });
+        }
+      } else if (effect.id === 'superglue') {
+        spawnParticle({
+          x: mover.x + rand(-mover.hx, mover.hx), y: mover.y + rand(0, mover.hy * 2), z: mover.z + rand(-mover.hz, mover.hz),
+          vx: rand(-0.1, 0.1), vy: rand(0.2, 0.9), vz: rand(-0.1, 0.1),
+          size: rand(0.02, 0.055), life: rand(0.3, 0.8),
+          r: 1.0, g: 0.72, b: 0.24, alpha: 0.9, kind: 0, drag: 0.8
+        });
+      } else if (effect.id === 'magnet') {
+        spawnParticle({
+          x: mover.x, y: mover.y, z: mover.z,
+          vx: (topBlock.x - mover.x) * rand(1.5, 3.2), vy: rand(-0.2, 0.4), vz: rand(-0.4, 0.4),
+          size: rand(0.015, 0.045), life: rand(0.25, 0.55),
+          r: theme.accent[0], g: theme.accent[1], b: theme.accent[2], alpha: 0.9, kind: 2, drag: 0.1
+        });
+      } else if (effect.id === 'crumble') {
+        spawnParticle({
+          x: topBlock.x + rand(-1.2, 1.2), y: topBlock.y + rand(0, 0.3), z: rand(-1.0, 1.0),
+          vx: rand(-0.2, 0.2), vy: rand(-1.6, -0.4), vz: rand(-0.2, 0.2),
+          size: rand(0.02, 0.05), gravity: 3.5, life: rand(0.4, 0.9),
+          r: 0.32, g: 0.26, b: 0.2, alpha: 0.75, kind: 0, drag: 0.2
+        });
+      } else if (effect.id === 'turbo' || effect.id === 'drunk' || effect.id === 'slowmo' || effect.id === 'rollercoaster') {
+        const direction = mover.direction || 1;
+        spawnParticle({
+          x: mover.x - direction * mover.hx * rand(0.5, 1.0), y: mover.y + rand(-mover.hy, mover.hy), z: mover.z + rand(-mover.hz, mover.hz),
+          vx: -direction * rand(1.2, 3.4), vy: rand(-0.1, 0.1), vz: 0,
+          size: rand(0.012, 0.04), life: rand(0.18, 0.42),
+          r: color[0], g: color[1], b: color[2], alpha: 0.55, kind: 2, drag: 0.4
+        });
+      }
+    }
+
+    function updateEffects(scene, theme, dt) {
+      spawnAmbient(theme, scene, dt);
+      const perfectSerial = Number(scene.perfectSerial) || 0;
+      if (state.lastPerfect < 0) state.lastPerfect = perfectSerial;
+      else if (perfectSerial > state.lastPerfect) burstPerfect(scene, theme);
+      state.lastPerfect = perfectSerial;
+
+      const height = Number(scene.height) || 0;
+      if (state.lastHeight < 0) state.lastHeight = height;
+      else if (height > state.lastHeight) {
+        burstLanding(scene, theme);
+        if (height > 0 && height % 10 === 0) burstMilestone(scene, theme);
+      }
+      state.lastHeight = height;
+
+      const phase = String(scene.phase || '');
+      if (phase === 'collapse' && state.lastPhase !== 'collapse') burstCollapse(scene, theme);
+      state.lastPhase = phase;
+
+      if (scene.voteLive && !state.lastVote) burstVote(scene, theme);
+      state.lastVote = Boolean(scene.voteLive);
+
+      const runId = scene.runId == null ? 0 : scene.runId;
+      if (runId !== state.lastRun) {
+        state.lastRun = runId;
+        state.cameraReady = false;
+        state.lastPerfect = -1;
+        state.lastHeight = -1;
+        state.lastPhase = '';
+        state.lastVote = false;
+        state.shake = 0; state.punch = 0; state.flash = 0;
+        for (let index = particles.length - 1; index >= 0; index -= 1) particles.splice(index, 1);
+      }
+
+      trickleEffect(scene, theme, dt);
+    }
+
+    /* --------------------------------------------------------------- render */
+    function render(scene, dt) {
+      if (state.failed || state.disposed) return false;
+      if (!scene) return true;
+      try {
+        const theme = resolveTheme(scene.theme);
+        const frozen = Boolean(scene.paused);
+        const delta = clamp(Number(dt) || 0, 0, 0.05);
+        const step = frozen ? 0 : (delta || 0.016);
+        if (!frozen) {
+          state.time += step;
+          state.punch = Math.max(0, state.punch - step * 2.8);
+          state.shake = Math.max(0, state.shake - step * 1.9);
+          state.flash = Math.max(0, state.flash - step * 2.4);
+        }
+        state.frame += 1;
+        if (!measure()) return true;
+
+        updateCamera(scene, theme, step);
+        if (!frozen) {
+          updateEffects(scene, theme, step);
+          updateParticles(step);
+        }
+
+        const targets = state.targets;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFramebuffer);
+        gl.viewport(0, 0, shadowSize, shadowSize);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        drawCasters(scene, programs.shadow);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, targets.scene.framebuffer);
+        gl.viewport(0, 0, state.width, state.height);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clearDepth(1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.disable(gl.DEPTH_TEST);
+        gl.depthMask(false);
+        gl.disable(gl.CULL_FACE);
+        gl.disable(gl.BLEND);
+        drawSky(theme);
+        if (theme.stars > 0) drawParticleSet(starVAO, STAR_COUNT, false);
+
+        gl.enable(gl.DEPTH_TEST);
+        gl.depthMask(true);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.disable(gl.CULL_FACE);
+        composeBox(scratchModel, scratchNormal, 0, 0, 0, 0, 0, 0, 70, 1, 70);
+        bindGroundUniforms(theme);
+        gl.bindVertexArray(planeMesh.vao);
+        gl.drawElements(gl.TRIANGLES, planeMesh.count, gl.UNSIGNED_SHORT, 0);
+        gl.disable(gl.BLEND);
+
+        gl.enable(gl.CULL_FACE);
+        gl.depthMask(true);
+        bindBlockUniforms(theme);
+        const blocks = scene.blocks || [];
+        for (const block of blocks) {
+          if ((block.alpha == null ? 1 : block.alpha) > 0.995) drawBox(block, programs.block);
+        }
+        for (const marker of scene.markers || []) {
+          if ((marker.alpha == null ? 1 : marker.alpha) > 0.995) drawBox(marker, programs.block);
+        }
+        for (const debris of scene.debris || []) drawBox(debris, programs.block);
+        if (scene.mover && (scene.mover.alpha == null ? 1 : scene.mover.alpha) > 0.995) drawBox(scene.mover, programs.block);
+
+        drawPortal(scene, theme);
+
+        gl.disable(gl.CULL_FACE);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.depthMask(false);
+        bindBlockUniforms(theme);
+        const translucent = [];
+        for (const block of blocks) if ((block.alpha == null ? 1 : block.alpha) <= 0.995) translucent.push(block);
+        for (const marker of scene.markers || []) if ((marker.alpha == null ? 1 : marker.alpha) <= 0.995) translucent.push(marker);
+        for (const guide of scene.guides || []) translucent.push(guide);
+        if (scene.preview) translucent.push(scene.preview);
+        if (scene.decoy) translucent.push(scene.decoy);
+        if (scene.mover && (scene.mover.alpha == null ? 1 : scene.mover.alpha) <= 0.995) translucent.push(scene.mover);
+        translucent.sort((a, b) => {
+          const da = (a.x - camera.eye[0]) ** 2 + (a.y - camera.eye[1]) ** 2 + ((a.z || 0) - camera.eye[2]) ** 2;
+          const db = (b.x - camera.eye[0]) ** 2 + (b.y - camera.eye[1]) ** 2 + ((b.z || 0) - camera.eye[2]) ** 2;
+          return db - da;
+        });
+        for (const block of translucent) drawBox(block, programs.block);
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+
+        const count = fillParticleData(particles, particleInstanceData);
+        if (count) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, particleInstanceBuffer);
+          gl.bufferSubData(gl.ARRAY_BUFFER, 0, particleInstanceData, 0, count * particleStride);
+          drawParticleSet(particleVAO, count, true);
+        }
+        const autoRing = scene.autoRing;
+        if (autoRing && autoRing.progress > 0.01 && autoRing.progress < 0.999) {
+          const urgent = autoRing.progress < 0.25;
+          const offset = 0;
+          particleInstanceData[offset] = autoRing.x;
+          particleInstanceData[offset + 1] = autoRing.y;
+          particleInstanceData[offset + 2] = autoRing.z || 0;
+          particleInstanceData[offset + 3] = urgent ? 0.4 : 0.34;
+          particleInstanceData[offset + 4] = 1.0;
+          particleInstanceData[offset + 5] = urgent ? 0.3 : 0.72;
+          particleInstanceData[offset + 6] = urgent ? 0.2 : 0.24;
+          particleInstanceData[offset + 7] = 0.95;
+          particleInstanceData[offset + 8] = 3;
+          particleInstanceData[offset + 9] = autoRing.progress;
+          gl.bindBuffer(gl.ARRAY_BUFFER, particleInstanceBuffer);
+          gl.bufferSubData(gl.ARRAY_BUFFER, 0, particleInstanceData, 0, particleStride);
+          drawParticleSet(particleVAO, 1, false);
+        }
+
+        renderPost(theme, scene);
+        return true;
+      } catch (error) {
+        state.failed = true;
+        if (config.onError) config.onError(error);
+        return false;
+      }
+    }
+
+    /* ------------------------------------------------------------------ post */
+    function drawFullscreen() {
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.count, gl.UNSIGNED_SHORT, 0);
+    }
+
+    function bloomChain(sourceTexture, pair, threshold) {
+      if (!pair || !pair[0] || !pair[1]) return;
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.disable(gl.BLEND);
+      gl.disable(gl.CULL_FACE);
+      const bright = programs.bright.uniforms;
+      gl.useProgram(programs.bright.program);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pair[0].framebuffer);
+      gl.viewport(0, 0, pair[0].width, pair[0].height);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, sourceTexture);
+      gl.uniform1i(bright.uScene, 0);
+      gl.uniform1f(bright.uThreshold, threshold);
+      drawFullscreen();
+
+      const blur = programs.blur.uniforms;
+      gl.useProgram(programs.blur.program);
+      gl.uniform1i(blur.uSource, 0);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pair[1].framebuffer);
+      gl.viewport(0, 0, pair[1].width, pair[1].height);
+      gl.bindTexture(gl.TEXTURE_2D, pair[0].texture);
+      gl.uniform2f(blur.uDirection, 1 / pair[0].width, 0);
+      drawFullscreen();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, pair[0].framebuffer);
+      gl.viewport(0, 0, pair[0].width, pair[0].height);
+      gl.bindTexture(gl.TEXTURE_2D, pair[1].texture);
+      gl.uniform2f(blur.uDirection, 0, 1 / pair[1].height);
+      drawFullscreen();
+    }
+
+    function renderPost(theme, scene) {
+      const targets = state.targets;
+      bloomChain(targets.scene.color, targets.bloomHalf, theme.bloomThreshold);
+      bloomChain(targets.scene.color, targets.bloomQuarter, theme.bloomThreshold * 1.1);
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, state.width, state.height);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.disable(gl.BLEND);
+      gl.disable(gl.CULL_FACE);
+      const composite = programs.composite.uniforms;
+      gl.useProgram(programs.composite.program);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, targets.scene.color);
+      gl.uniform1i(composite.uScene, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, targets.scene.normal);
+      gl.uniform1i(composite.uNormal, 1);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, targets.bloomHalf[0].texture);
+      gl.uniform1i(composite.uBloomA, 2);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, targets.bloomQuarter[0].texture);
+      gl.uniform1i(composite.uBloomB, 3);
+      gl.uniform2f(composite.uResolution, state.width, state.height);
+      gl.uniform1f(composite.uTime, state.time);
+      gl.uniform1f(composite.uBloom, theme.bloom);
+      gl.uniform1f(composite.uExposure, theme.exposure);
+      gl.uniform1f(composite.uSaturation, theme.saturation);
+      gl.uniform1f(composite.uContrast, theme.contrast);
+      gl.uniform1f(composite.uVignette, theme.vignette);
+      gl.uniform1f(composite.uGrain, scene.reduced ? theme.grain * 0.4 : theme.grain);
+      gl.uniform1f(composite.uOutline, theme.outline);
+      gl.uniform1f(composite.uAberration, scene.reduced ? 0 : theme.aberration + state.shake * 0.01);
+      gl.uniform1f(composite.uScanline, theme.scanline);
+      gl.uniform1f(composite.uTheme, theme.index);
+      gl.uniform1f(composite.uFlash, clamp(state.flash, 0, 1));
+      gl.uniform3f(composite.uInk, theme.ink[0], theme.ink[1], theme.ink[2]);
+      gl.uniform3f(composite.uTint, theme.tint[0], theme.tint[1], theme.tint[2]);
+      const flashColor = state.flashColor || [1, 0.8, 0.4];
+      gl.uniform3f(composite.uFlashColor, flashColor[0], flashColor[1], flashColor[2]);
+      let spotCenter = [0.5, 0.5];
+      let spotRadius = 0.16;
+      if (scene.spot) {
+        const projected = projectPoint([scene.spot.x, scene.spot.y, scene.spot.z]);
+        if (projected) { spotCenter = projected; spotRadius = clamp(scene.spot.r || 0.16, 0.04, 0.6); }
+      }
+      gl.uniform2f(composite.uSpotCenter, spotCenter[0], spotCenter[1]);
+      gl.uniform1f(composite.uSpotRadius, spotRadius);
+      gl.uniform1f(composite.uSpot, scene.spot ? 1 : 0);
+      drawFullscreen();
+    }
+
+    /* -------------------------------------------------------------- lifecycle */
+    canvas.addEventListener('webglcontextlost', event => {
+      event.preventDefault();
+      state.failed = true;
+      if (config.onFallback) config.onFallback('context-lost');
+    }, false);
+
+    const api = {
+      version: VERSION,
+      render,
+      resize: measure,
+      orbit(dx, dy) {
+        state.yawGoal = clamp(state.yawGoal + (Number(dx) || 0) * 0.0045, -1.15, 1.15);
+        state.pitchGoal = clamp(state.pitchGoal + (Number(dy) || 0) * 0.0035, -0.08, 0.85);
+      },
+      zoomBy(factor) {
+        state.userView = clamp(state.userView * (Number(factor) || 1), 0.62, 1.5);
+      },
+      resetView() {
+        state.yawGoal = -0.34;
+        state.pitchGoal = 0.16;
+        state.userView = 1;
+      },
+      getState() {
+        return {
+          ok: !state.failed,
+          width: state.width,
+          height: state.height,
+          yaw: state.yaw,
+          pitch: state.pitch,
+          distance: state.distanceSm,
+          particles: particles.length,
+          frames: state.frame
+        };
+      },
+      dispose() {
+        state.disposed = true;
+        deleteTargets();
+        try {
+          for (const program of Object.values(programs)) if (program && program.program) gl.deleteProgram(program.program);
+          gl.deleteTexture(shadowTexture);
+          gl.deleteFramebuffer(shadowFramebuffer);
+        } catch (_) { /* a lost context has nothing left to free */ }
+      }
+    };
+    if (config.onReady) config.onReady(api);
+    return api;
+  }
+
+  const math = Object.freeze({
+    identity: () => mat4Identity(M4()),
+    multiply: (a, b) => mat4Multiply(M4(), a, b),
+    perspective: (fov, aspect, near, far) => mat4Perspective(M4(), fov, aspect, near, far),
+    lookAt: (eye, center, up) => mat4LookAt(M4(), eye, center, up),
+    ortho: (l, r, b, t, n, f) => mat4Ortho(M4(), l, r, b, t, n, f),
+    invert: a => mat4Invert(M4(), a),
+    composeBox: (x, y, z, rx, ry, rz, sx, sy, sz) => {
+      const model = M4(); const normal = new Float32Array(9);
+      composeBox(model, normal, x, y, z, rx, ry, rz, sx, sy, sz);
+      return { model, normal };
+    },
+    hexToLinear
+  });
+
+  const exported = Object.freeze({
+    version: VERSION,
+    create,
+    themes: THEME_KEYS,
+    themesDetail: PREPARED,
+    math,
+    makeRoundedBox
+  });
+
+  if (typeof window !== 'undefined') window.SabotageStack3D = exported;
+  if (typeof module !== 'undefined' && module.exports) module.exports = exported;
+})();
+
   </script>
 
   <script>
@@ -1777,7 +3739,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
-      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), gameCanvas3D: document.getElementById('game-canvas-3d'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      viewToggle: document.getElementById('view-toggle'), stageViewBadge: document.getElementById('stage-view-badge'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
@@ -1831,6 +3794,125 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     let zoomScale = 1;
     let lastFrame = 0;
     let uiClock = 0;
+
+    /* ----------------------------------------------------------- 3D view ---
+       The WebGL view mirrors the same simulation as the 2D canvas. It is
+       presentation only: every drop, vote, score and accessibility affordance
+       still lives in the 2D path, which doubles as the fallback. */
+    const VIEW_STORAGE_KEY = 'sabotage-stack-view-v1';
+    const VIEW_MODES = Object.freeze(['auto', '2d']);
+    let viewMode = 'auto';
+    try { const savedView = window.localStorage && window.localStorage.getItem(VIEW_STORAGE_KEY); if (VIEW_MODES.includes(savedView)) viewMode = savedView; } catch (_) { /* storage unavailable: keep auto */ }
+    let threeDRenderer = null;
+    let threeDActive = false;
+    let threeDUnavailable = false;
+    let threeDSizeMisses = 0;
+    let stageGesture = null;
+    const threeDRunIds = new WeakMap();
+    let threeDRunSequence = 0;
+
+    let webgl2Support = null;
+    function browserHasWebGL2() {
+      if (webgl2Support !== null) return webgl2Support;
+      if (typeof window.WebGL2RenderingContext !== 'function') { webgl2Support = false; return false; }
+      try {
+        const probe = document.createElement('canvas');
+        const context = probe.getContext('webgl2', { antialias: false, alpha: false });
+        const supported = Boolean(context && typeof context.createShader === 'function' && typeof context.drawArraysInstanced === 'function');
+        const lose = supported && typeof context.getExtension === 'function' ? context.getExtension('WEBGL_lose_context') : null;
+        if (lose) { try { lose.loseContext(); } catch (_) { /* the probe was only a capability check */ } }
+        webgl2Support = supported;
+        return supported;
+      } catch (_) { webgl2Support = false; return false; }
+    }
+    if (!browserHasWebGL2()) threeDUnavailable = true;
+
+    function persistViewMode() {
+      try { if (window.localStorage) window.localStorage.setItem(VIEW_STORAGE_KEY, viewMode); } catch (_) { /* keep the choice for this page view */ }
+    }
+
+    function updateViewToggle() {
+      const button = elements.viewToggle;
+      const badge = elements.stageViewBadge;
+      const canOffer = Boolean(window.SabotageStack3D) && browserHasWebGL2() && !threeDUnavailable;
+      if (button) {
+        button.hidden = !canOffer;
+        button.textContent = threeDActive ? '3D' : '2D';
+        button.setAttribute('aria-pressed', threeDActive ? 'true' : 'false');
+        button.setAttribute('aria-label', threeDActive
+          ? '3D view on. Switch to the classic 2D view.'
+          : 'Classic 2D view. Switch on the 3D view.');
+      }
+      if (badge) badge.hidden = !threeDActive;
+    }
+
+    function setStageThreeD(active) {
+      if (threeDActive === active) return;
+      threeDActive = active;
+      if (elements.gameStage) elements.gameStage.classList.toggle('is-3d', active);
+      if (elements.gameStage) elements.gameStage.classList.remove('is-orbiting');
+      updateViewToggle();
+    }
+
+    function ensureThreeDRenderer() {
+      if (threeDRenderer) return threeDRenderer;
+      if (threeDUnavailable || viewMode === '2d' || !elements.gameCanvas3D) return null;
+      if (!window.SabotageStack3D) { threeDUnavailable = true; updateViewToggle(); return null; }
+      let renderer = null;
+      try {
+        renderer = window.SabotageStack3D.create(elements.gameCanvas3D, {
+          maxDpr: 2,
+          onError(error) {
+            if (window.console && typeof window.console.warn === 'function') {
+              window.console.warn('Sabotage Stack 3D view unavailable; using the classic board.', error && error.message ? error.message : error);
+            }
+          },
+          onFallback() { disableThreeD(); }
+        });
+      } catch (_) { renderer = null; }
+      if (!renderer) {
+        threeDUnavailable = true;
+        updateViewToggle();
+        return null;
+      }
+      threeDRenderer = renderer;
+      return threeDRenderer;
+    }
+
+    function disableThreeD() {
+      if (threeDRenderer && typeof threeDRenderer.dispose === 'function') {
+        try { threeDRenderer.dispose(); } catch (_) { /* a lost context may already be gone */ }
+      }
+      threeDRenderer = null;
+      threeDUnavailable = true;
+      setStageThreeD(false);
+      updateViewToggle();
+      if (game && document.body.dataset.screen === 'game') drawGame();
+    }
+
+    function shouldUseThreeD() {
+      if (viewMode === '2d' || threeDUnavailable || !game) return false;
+      // A non-playing Competitive host gets the multi-column overview, which is
+      // a deliberately 2D board.
+      if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') return false;
+      return Boolean(ensureThreeDRenderer());
+    }
+
+    function toggleViewMode() {
+      if (threeDActive) {
+        viewMode = '2d';
+      } else {
+        viewMode = 'auto';
+        threeDUnavailable = !browserHasWebGL2();
+      }
+      persistViewMode();
+      if (game) drawGame();
+      updateViewToggle();
+    }
+
+    function stageOrbitAvailable() {
+      return threeDActive && Boolean(threeDRenderer) && Boolean(game) && document.body.dataset.screen === 'game';
+    }
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
     const multiplayer = {
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
@@ -1875,6 +3957,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function resizeCanvases() {
       setCanvasResolution(elements.gameCanvas, gameContext);
       setCanvasResolution(elements.resultsCanvas, resultsContext);
+      if (threeDRenderer) { try { threeDRenderer.resize(); } catch (_) { /* next frame retries */ } }
       if (resultData) drawResults(resultData, resultReveal);
     }
     window.addEventListener('resize', resizeCanvases, { passive: true });
@@ -2923,6 +5006,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         nextSpawnFromLeft: true, flavorCounter: 0, chatFlavorText: '', chatFlavorTime: 0,
       };
       spawnMovingBlock();
+      if (threeDRenderer) threeDRenderer.resetView();
       playCue('run.start');
       startAmbientBed();
       setScreen('game');
@@ -3961,8 +6045,274 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    /* --------------------------------------------------- 3D scene builder ---
+       Board pixels become world units here: 360px = 7.2 units wide, one block
+       is 0.44 units tall. Everything the 2D board draws has a 3D twin. */
+    const THREE_WORLD_SCALE = 0.02;
+
+    function boardWorldX(pixel) { return (pixel - WIDTH / 2) * THREE_WORLD_SCALE; }
+
+    function threeBlockSpec(left, right, level, color, options = {}) {
+      const width = Math.max(0.5, right - left);
+      const halfWidth = width / 2 * THREE_WORLD_SCALE;
+      return {
+        x: boardWorldX(left + width / 2),
+        y: (Number(level) + 0.5) * BLOCK_H * THREE_WORLD_SCALE + (options.lift || 0),
+        z: 0,
+        hx: halfWidth,
+        hy: (BLOCK_H - 1) / 2 * THREE_WORLD_SCALE,
+        hz: Math.max(0.14, Math.min(1.35, halfWidth * 0.62)),
+        rx: 0, ry: options.yaw || 0, rz: options.roll || 0,
+        color: themedColor(color) || canvasTheme().fallbackBlock,
+        alpha: options.alpha == null ? 1 : options.alpha,
+        emissive: options.emissive || color,
+        glow: options.glow || 0,
+        perfect: options.perfect ? 1 : 0,
+        gloss: options.gloss == null ? 0.3 : options.gloss,
+        direction: Number(options.direction) < 0 ? -1 : 1
+      };
+    }
+
+    function threeDRunId() {
+      if (!game) return 0;
+      let id = threeDRunIds.get(game);
+      if (!id) { id = ++threeDRunSequence; threeDRunIds.set(game, id); }
+      return id;
+    }
+
+    function buildThreeScene() {
+      if (!game) return null;
+      const stacked = Array.isArray(game.stack) ? game.stack : [];
+      const collapsing = new Set(game.collapsingLevels || []);
+      const effectId = game.activeEffect ? game.activeEffect.id : '';
+      const effectElapsed = Number(game.activeEffect && game.activeEffect.elapsed) || 0;
+      const blocks = [];
+      const debris = [];
+      const markers = [];
+      const guides = [];
+      let topY = 0;
+      let maxHalfWidth = 1.4;
+      let lastPlaced = null;
+
+      for (const block of stacked) {
+        if (collapsing.has(block.level)) continue;
+        const spec = threeBlockSpec(block.left, block.right, block.level, block.color, { perfect: block.perfect });
+        blocks.push(spec);
+        topY = Math.max(topY, spec.y + spec.hy);
+        maxHalfWidth = Math.max(maxHalfWidth, spec.hx);
+        if (spec.y > 0.2) lastPlaced = { x: spec.x, y: spec.y + spec.hy, z: 0, color: spec.color };
+      }
+
+      const support = stacked[stacked.length - 1] || Core.makeBase();
+      const supportSpec = threeBlockSpec(support.left, support.right, support.level || 0, support.color || '#E3A33B');
+      const supportTop = supportSpec.y + supportSpec.hy;
+      const moving = game.moving;
+      const canDrawMover = Boolean(moving) && (game.phase === 'playing');
+      let mover = null;
+
+      if (canDrawMover) {
+        const lift = effectId === 'rollercoaster' && !reducedMotion
+          ? -Core.rollercoasterOffset(effectElapsed, Number(moving.rollerPhase) || 0) * THREE_WORLD_SCALE
+          : 0;
+        const alpha = reducedMotion || effectId !== 'peekaboo'
+          ? 1
+          : Math.max(0, Math.min(1, Core.peekabooOpacity(effectElapsed)));
+        mover = threeBlockSpec(moving.left, moving.left + moving.width, moving.level, moving.color, {
+          alpha, lift, direction: moving.direction,
+          glow: effectId === 'superglue' ? 0.5 : 0,
+          emissive: effectId === 'superglue' ? '#FFC53D' : moving.color
+        });
+        topY = Math.max(topY, mover.y + mover.hy);
+        maxHalfWidth = Math.max(maxHalfWidth, mover.hx);
+      }
+
+      let decoy = null;
+      if (mover && effectId === 'double' && moving.decoy) {
+        decoy = threeBlockSpec(moving.decoy.left, moving.decoy.left + moving.decoy.width, moving.level, moving.decoy.color || moving.color, {
+          alpha: mover.alpha * 0.5, gloss: 0.1
+        });
+      }
+
+      let preview = null;
+      if (mover) {
+        preview = Object.assign({}, mover, {
+          y: supportTop + mover.hy, alpha: 0.15, perfect: 0,
+          glow: 0.55, emissive: mover.color, gloss: 0.1
+        });
+        const fromY = preview.y + mover.hy;
+        const toY = mover.y - mover.hy;
+        if (toY - fromY > 0.04) {
+          guides.push({
+            x: mover.x, y: (fromY + toY) / 2, z: 0,
+            hx: 0.016, hy: (toY - fromY) / 2, hz: 0.016,
+            color: mover.color, emissive: mover.color, glow: 0.8, alpha: 0.28, gloss: 0.1
+          });
+        }
+      }
+
+      if (game.multiplayer && game.mode === 'teamwork') {
+        // Keep the 2D board's "who placed this" cue alive in 3D as a small
+        // colour-coded gem on the right shoulder of each teammate block.
+        const teamBlocks = stacked.filter(block => block.placer && block.placer !== 'Base' && !collapsing.has(block.level)).slice(-14);
+        for (const block of teamBlocks) {
+          const name = String(block.placer);
+          let hash = 0;
+          for (let index = 0; index < name.length; index += 1) hash = (hash * 31 + name.charCodeAt(index)) % 1000003;
+          const gemColor = PALETTE[hash % PALETTE.length];
+          const spec = threeBlockSpec(block.left, block.right, block.level, block.color, {});
+          markers.push({
+            x: spec.x + spec.hx - 0.09, y: spec.y + spec.hy + 0.045, z: spec.hz * 0.45,
+            hx: 0.045, hy: 0.045, hz: 0.045,
+            color: gemColor, emissive: gemColor, glow: 0.9, alpha: 1, gloss: 0.2
+          });
+        }
+      }
+
+      const tickColor = currentTheme === 'paper' ? '#2A2520' : '#FFF3E2';
+      markers.push({
+        x: supportSpec.x, y: supportTop + 0.012, z: 0,
+        hx: 0.032, hy: 0.008, hz: Math.max(0.2, Math.min(0.8, supportSpec.hz * 0.55)),
+        color: tickColor, emissive: tickColor, glow: 0.85, alpha: 1, gloss: 0.1
+      });
+      if (mover) {
+        markers.push({
+          x: mover.x, y: mover.y + mover.hy + 0.012, z: 0,
+          hx: 0.032, hy: 0.008, hz: Math.max(0.16, Math.min(0.7, mover.hz * 0.55)),
+          color: tickColor, emissive: tickColor, glow: 0.85, alpha: 1, gloss: 0.1
+        });
+      }
+
+      if (effectId === 'calipers' && moving) {
+        const bounds = Core.caliperBounds(support, moving);
+        for (const railX of [bounds.minLeft, bounds.maxLeft + moving.width]) {
+          markers.push({
+            x: boardWorldX(railX), y: mover ? mover.y : supportTop + 0.6, z: 0,
+            hx: 0.016, hy: 0.62, hz: 0.016,
+            color: '#FFC53D', emissive: '#FFC53D', glow: 1.5, alpha: 0.9, gloss: 0.1
+          });
+        }
+      }
+
+      let portals = null;
+      if (effectId === 'portal') {
+        const gateCenter = Math.max(2.2, topY * 0.55);
+        const gateHalfHeight = Math.max(2.8, topY * 0.62 + 1.2);
+        portals = {
+          left: { x: -WIDTH / 2 * THREE_WORLD_SCALE, y: gateCenter, z: 0, width: 0.42, height: gateHalfHeight },
+          right: { x: WIDTH / 2 * THREE_WORLD_SCALE, y: gateCenter, z: 0, width: 0.42, height: gateHalfHeight }
+        };
+      }
+
+      let spot = null;
+      if (effectId === 'spotlight' && game.activeEffect) {
+        const side = Number(game.activeEffect.spotlightSide) < 0 ? -1 : 1;
+        const beamX = side < 0 ? support.left + 7 : support.right - 7;
+        spot = { x: boardWorldX(beamX), y: supportTop - 0.1, z: 0.35, r: 0.145 };
+      }
+
+      let autoRing = null;
+      if (!game.devMode && !game.multiplayer && game.phase === 'playing' && game.moving && game.autoDropSeconds > 0) {
+        const clock = Number(game.blockClock) || 0;
+        if (clock >= SOLO_AUTO_DROP_RING_AFTER) {
+          const left = Math.max(0, game.autoDropSeconds - clock);
+          autoRing = {
+            x: mover ? mover.x : 0,
+            y: (mover ? mover.y + mover.hy : topY) + 0.52,
+            z: 0,
+            progress: Math.max(0, Math.min(1, left / game.autoDropSeconds))
+          };
+        }
+      }
+
+      let shake = 0;
+      if (effectId === 'earthquake' && game.activeEffect) {
+        const tremor = Core.earthquakeOffset(effectElapsed, game.activeEffect.remaining, reducedMotion);
+        shake = Math.min(1.1, Math.abs(tremor.x) / 8 + Math.abs(tremor.y) / 10);
+      }
+      if (game.phase === 'collapse') shake = Math.max(shake, Math.min(1.2, (Number(game.collapseShake) || 0) / 0.62));
+      const roll = effectId === 'pisa' && game.activeEffect
+        ? Core.pisaAngle(effectElapsed, game.activeEffect.remaining, game.activeEffect.tiltDirection, reducedMotion)
+        : 0;
+
+      for (const actor of game.fallingActors || []) {
+        if (actor.collapseActor && !actor.started) continue;
+        const widthPx = Math.max(1, Number(actor.width) || 1);
+        const halfWidth = widthPx / 2 * THREE_WORLD_SCALE;
+        debris.push({
+          x: boardWorldX(actor.x + widthPx / 2),
+          y: (BASELINE - (actor.y + (Number(actor.height) || BLOCK_H) / 2)) * THREE_WORLD_SCALE,
+          z: 0,
+          hx: halfWidth, hy: (Number(actor.height) || BLOCK_H) / 2 * THREE_WORLD_SCALE,
+          hz: Math.max(0.12, Math.min(1.2, halfWidth * 0.62)),
+          rx: 0, ry: 0, rz: -(Number(actor.angle) || 0),
+          color: themedColor(actor.color) || canvasTheme().fallbackBlock,
+          alpha: Math.max(0.15, 1 - (Number(actor.age) || 0) / 1.35),
+          emissive: actor.color, glow: 0, gloss: 0.25
+        });
+      }
+
+      return {
+        theme: currentTheme,
+        runId: threeDRunId(),
+        blocks, debris, markers, guides,
+        mover, decoy, preview, portals, spot, autoRing,
+        support: { x: supportSpec.x, y: supportTop, color: support.color },
+        topY: Math.max(0.9, topY),
+        maxHalfWidth,
+        focusX: mover ? mover.x : (supportSpec.x || 0),
+        height: heightOf(game),
+        perfectSerial: Number(game.perfects) || 0,
+        lastPlaced,
+        phase: game.phase,
+        collapse: game.phase === 'collapse' ? Math.max(0, Math.min(1, 1 - (Number(game.collapseClock) || 0) / 1.1)) : 0,
+        shake, roll,
+        zoom: effectId === 'zoom' ? 1.85 : 1,
+        voteLive: Boolean(game.vote),
+        paused: Boolean(game.soloPaused),
+        reduced: reducedMotion,
+        effect: game.activeEffect
+          ? { id: game.activeEffect.id, elapsed: effectElapsed, remaining: game.activeEffect.remaining }
+          : null
+      };
+    }
+
+    function drawGame3D() {
+      const renderer = threeDRenderer;
+      if (!renderer) return false;
+      let rendered = false;
+      try {
+        // Wait for a real layout size before painting; the stage can still be
+        // hidden for a frame while the game screen opens.
+        renderer.resize();
+        const info = typeof renderer.getState === 'function' ? renderer.getState() : null;
+        if (!info || !info.width) {
+          // The stage can be hidden for a frame while the screen opens; give it
+          // a moment, then stop trying rather than spin on a broken surface.
+          threeDSizeMisses += 1;
+          if (threeDSizeMisses > 120) disableThreeD();
+          return false;
+        }
+        threeDSizeMisses = 0;
+        rendered = renderer.render(buildThreeScene(), frameDt);
+      } catch (_) { rendered = false; }
+      if (!rendered) {
+        disableThreeD();
+        return false;
+      }
+      setStageThreeD(true);
+      if (game.toastTime > 0 && game.toastText) {
+        if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText;
+        elements.toast.classList.add('is-visible');
+      } else elements.toast.classList.remove('is-visible');
+      if (game.perfectTime > 0) elements.perfect.classList.add('is-visible');
+      else elements.perfect.classList.remove('is-visible');
+      return true;
+    }
+
     function drawGame() {
       if (!game) return;
+      if (shouldUseThreeD() && drawGame3D()) return;
+      setStageThreeD(false);
       setCanvasResolution(elements.gameCanvas, gameContext);
       const ctx = gameContext;
       if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') {
@@ -5011,13 +7361,76 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.drop.addEventListener('click', event => {
       if (event.detail === 0) requestDrop();
     });
+    const stagePointers = new Map();
+    function stagePointerSpread() {
+      const points = Array.from(stagePointers.values());
+      if (points.length < 2) return 0;
+      return Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    }
+    function beginStagePointer(event) {
+      event.preventDefault();
+      elements.gameCanvas.focus({ preventScroll: true });
+      stagePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      try { elements.gameCanvas.setPointerCapture(event.pointerId); } catch (_) { /* capture is an enhancement */ }
+      if (stagePointers.size > 1) {
+        // A second finger means pinch-to-zoom: never orbit or drop from it.
+        stageGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: true, pinch: true, spread: stagePointerSpread() };
+        if (elements.gameStage) elements.gameStage.classList.remove('is-orbiting');
+        return;
+      }
+      stageGesture = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, pinch: false, at: performance.now() };
+    }
+    function moveStagePointer(event) {
+      if (stagePointers.has(event.pointerId)) stagePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (!stageGesture || event.pointerId !== stageGesture.id || !threeDRenderer) return;
+      if (stageGesture.pinch) {
+        const spread = stagePointerSpread();
+        if (spread > 8 && stageGesture.spread > 8 && spread !== stageGesture.spread) {
+          threeDRenderer.zoomBy(spread / stageGesture.spread);
+          stageGesture.spread = spread;
+        }
+        event.preventDefault();
+        return;
+      }
+      const dx = event.clientX - stageGesture.x;
+      const dy = event.clientY - stageGesture.y;
+      if (!stageGesture.moved && Math.hypot(dx, dy) > 7) {
+        stageGesture.moved = true;
+        if (elements.gameStage) elements.gameStage.classList.add('is-orbiting');
+      }
+      if (stageGesture.moved) {
+        threeDRenderer.orbit(dx, dy);
+        stageGesture.x = event.clientX;
+        stageGesture.y = event.clientY;
+        event.preventDefault();
+      }
+    }
+    function endStagePointer(event, cancelled = false) {
+      if (event) stagePointers.delete(event.pointerId);
+      if (!stageGesture || (event && event.pointerId !== stageGesture.id)) return;
+      const gesture = stageGesture;
+      stageGesture = null;
+      if (elements.gameStage) elements.gameStage.classList.remove('is-orbiting');
+      try { elements.gameCanvas.releasePointerCapture(gesture.id); } catch (_) { /* already released */ }
+      if (!cancelled && !gesture.moved && !gesture.pinch && threeDActive) requestDrop();
+    }
     elements.gameCanvas.addEventListener('pointerdown', event => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (stageOrbitAvailable()) { beginStagePointer(event); return; }
       event.preventDefault();
       elements.gameCanvas.focus({ preventScroll: true });
       requestDrop();
     });
+    elements.gameCanvas.addEventListener('pointermove', event => { if (stageGesture) moveStagePointer(event); });
+    elements.gameCanvas.addEventListener('pointerup', event => endStagePointer(event));
+    elements.gameCanvas.addEventListener('pointercancel', event => endStagePointer(event, true));
+    elements.gameCanvas.addEventListener('wheel', event => {
+      if (!stageOrbitAvailable()) return;
+      event.preventDefault();
+      threeDRenderer.zoomBy(Math.exp(event.deltaY * 0.0011));
+    }, { passive: false });
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
+    if (elements.viewToggle) elements.viewToggle.addEventListener('click', toggleViewMode);
     [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
     function isGamePlaying() {
       return Boolean(game && game.phase === 'playing' && document.body.dataset.screen === 'game');
@@ -5070,6 +7483,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     syncSoundButton();
     applyTheme(currentTheme, false);
     resizeCanvases();
+    updateViewToggle();
     updateBestLabels();
     window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(CANVAS_THEMES)), getTheme: () => currentTheme, setTheme: name => applyTheme(name) });
     const savedMultiplayerSession = mpSessionRead();

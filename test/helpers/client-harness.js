@@ -3,7 +3,7 @@ const fs = require('fs');
 const { JSDOM, VirtualConsole } = require('jsdom');
 const { createCanvas } = require('@napi-rs/canvas');
 const { rng: seeded } = require('./rng');
-async function boot(htmlPath, { url = 'http://localhost:3000/', seed = 1, reducedMotion = false, WebSocketImpl = null, storage = null, manualAnimationFrame = false, AudioContextImpl = null } = {}) {
+async function boot(htmlPath, { url = 'http://localhost:3000/', seed = 1, reducedMotion = false, WebSocketImpl = null, storage = null, manualAnimationFrame = false, AudioContextImpl = null, setup = null } = {}) {
   const html = fs.readFileSync(htmlPath, 'utf8');
   const errors = []; const vc = new VirtualConsole();
   vc.on('jsdomError', e => errors.push('jsdomError: ' + (e.detail && e.detail.stack || e.stack || e.message)));
@@ -38,6 +38,9 @@ async function boot(htmlPath, { url = 'http://localhost:3000/', seed = 1, reduce
       window.__errors = errors;
       window.addEventListener('error', e => errors.push('window.onerror: ' + e.message));
       window.addEventListener('unhandledrejection', e => errors.push('unhandledrejection: ' + e.reason));
+      // Last hook before the page scripts run: lets a test install a fake GPU,
+      // layout metrics or other host capabilities.
+      if (typeof setup === 'function') setup(window);
     }
   });
   const { window } = dom;
