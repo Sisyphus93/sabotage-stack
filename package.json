@@ -2,12 +2,14 @@
   "name": "sabotage-stack",
   "version": "2.0.0",
   "private": true,
-  "description": "Sabotage Stack multiplayer server and single-file client",
+  "description": "Sabotage Stack multiplayer server and single-file client (3D stage with 2D fallback)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test": "node test/run.js",
-    "sync-core": "node scripts/sync-core.js"
+    "sync-core": "node scripts/sync-core.js",
+    "embed-three": "node scripts/embed-three.js",
+    "sync-scene3d": "node scripts/sync-scene3d.js"
   },
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
