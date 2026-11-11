@@ -948,7 +948,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div class="primary-row">
               <button id="start-button" class="button button-primary" type="button">Play solo <span class="arrow" aria-hidden="true">↗</span></button>
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
-              <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 16 active sabotages">DEV lab <span class="soon">Test all 16</span></button>
+              <button id="dev-mode-button" class="button" type="button" aria-label="Open practice to try any sabotage">Practice <span class="soon">Try any sabotage</span></button>
             </div>
             <div class="solo-assist-setting">
               <label for="solo-auto-drop-select">Solo auto-drop</label>
@@ -1019,8 +1019,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="game-mode-kicker" class="eyebrow">Single player · build 01</div><h2 id="game-heading">Make it stack.</h2></div>
-          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="dev-quick-button" class="button" type="button" hidden>DEV lab</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
+          <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading">Make it stack.</h2></div>
+          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
@@ -1056,9 +1056,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
           <aside class="side-stack" aria-label="Live game information">
             <section id="dev-panel" class="side-card dev-panel" aria-labelledby="dev-panel-title" hidden>
-              <div class="card-heading"><span class="eyebrow">Offline test bench</span><span class="timer-label">DEV</span></div>
+              <div class="card-heading"><span class="eyebrow">Practice</span><span class="timer-label">OFFLINE</span></div>
               <h3 id="dev-panel-title">Choose a sabotage.</h3>
-              <p id="dev-panel-description" class="dev-panel-description">A local sandbox—no votes, score, or multiplayer messages. Motion effects respect your reduced-motion setting.</p>
+              <p id="dev-panel-description" class="dev-panel-description">Try effects without votes or saved scores. Motion effects respect your reduced-motion setting.</p>
               <p id="dev-effect-description" class="dev-effect-description">Choose an effect to see its mechanic and preview.</p>
               <div id="dev-effects" class="dev-effect-groups" role="group" aria-label="Choose Normal mode or a sabotage to preview"></div>
               <div class="dev-actions">
@@ -1730,7 +1730,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       themeSelect: document.getElementById('theme-select'), soloAutoDropSelect: document.getElementById('solo-auto-drop-select'), soloAutoDropHelp: document.getElementById('solo-auto-drop-help'),
       soundToggle: document.getElementById('sound-toggle'), soundLabel: document.getElementById('sound-label'), soundStatus: document.getElementById('sound-status'),
       title: document.getElementById('title-screen'), lobby: document.getElementById('room-screen'), game: document.getElementById('game-screen'), results: document.getElementById('results-screen'),
-      start: document.getElementById('start-button'), devStart: document.getElementById('dev-mode-button'), devQuick: document.getElementById('dev-quick-button'), devPanel: document.getElementById('dev-panel'), devPanelTitle: document.getElementById('dev-panel-title'), devPanelDescription: document.getElementById('dev-panel-description'), devEffectDescription: document.getElementById('dev-effect-description'), devEffects: document.getElementById('dev-effects'), devReset: document.getElementById('dev-reset-button'), devDrop: document.getElementById('dev-drop-button'), devFeedback: document.getElementById('dev-feedback'), how: document.getElementById('how-button'), closeHow: document.getElementById('close-how'), dialog: document.getElementById('how-dialog'),
+      start: document.getElementById('start-button'), devStart: document.getElementById('dev-mode-button'), devPanel: document.getElementById('dev-panel'), devPanelTitle: document.getElementById('dev-panel-title'), devPanelDescription: document.getElementById('dev-panel-description'), devEffectDescription: document.getElementById('dev-effect-description'), devEffects: document.getElementById('dev-effects'), devReset: document.getElementById('dev-reset-button'), devDrop: document.getElementById('dev-drop-button'), devFeedback: document.getElementById('dev-feedback'), how: document.getElementById('how-button'), closeHow: document.getElementById('close-how'), dialog: document.getElementById('how-dialog'),
       joinButton: document.getElementById('join-game-button'), joinDialog: document.getElementById('join-dialog'), joinForm: document.getElementById('join-form'), joinCode: document.getElementById('join-room-code'), joinName: document.getElementById('join-display-name'), joinStatus: document.getElementById('join-status'), closeJoin: document.getElementById('close-join'), cancelJoin: document.getElementById('cancel-join'),
       hostModeButtons: Array.from(document.querySelectorAll('[data-host-mode]')), modeLabel: document.getElementById('connection-mode-label'), gameModeKicker: document.getElementById('game-mode-kicker'), multiplayerStatus: document.getElementById('multiplayer-status'),
       roomMode: document.getElementById('room-mode-label'), roomConnection: document.getElementById('room-connection-status'), roomCode: document.getElementById('room-code-display'), roomInviteHint: document.getElementById('room-invite-hint'), roomPlayerCount: document.getElementById('room-player-count'), roomPlayers: document.getElementById('room-player-list'), roomStatus: document.getElementById('room-lobby-status'), roomStart: document.getElementById('room-start-button'), roomReturn: document.getElementById('room-return-button'), roomRematch: document.getElementById('room-rematch-button'), roomLeave: document.getElementById('room-leave-button'), roomClose: document.getElementById('room-close-button'), copyRoomLink: document.getElementById('copy-room-link'),
@@ -2179,7 +2179,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.resultsMenu.textContent = 'Return to menu';
       elements.menu.textContent = 'Menu';
       elements.menu.setAttribute('aria-label', 'Return to menu');
-      elements.gameModeKicker.textContent = 'Single player · build 01';
+      elements.gameModeKicker.textContent = 'Single player';
       elements.gameCanvas.setAttribute('role', 'button');
       elements.gameCanvas.tabIndex = 0;
       elements.gameCanvas.setAttribute('aria-disabled', 'false');
@@ -3070,8 +3070,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           const automatic = Boolean(game.devLastDrop && game.devLastDrop.automatic);
           game.devLastDrop = { ...(game.devLastDrop || {}), status: 'miss' };
           elements.devFeedback.textContent = automatic
-            ? 'The automatic sample drop missed; the test bench will reset the fixture. No real run ended.'
-            : 'The manual sample drop missed; the tower stayed in the sandbox. Adjust your timing or reset the sample.';
+            ? 'The automatic practice drop missed; the tower will reset. No real run ended.'
+            : 'The practice drop missed. Adjust your timing or reset the tower.';
           syncHud(true);
           return;
         }
@@ -3090,7 +3090,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (game.devMode && !(game.devLastDrop && game.devLastDrop.automatic)) {
         const placedWidth = Math.round(outcome.placed.right - outcome.placed.left);
         const drift = landedMover && Number(landedMover.drift) ? `, ${Math.abs(Math.round(landedMover.drift))} px drift` : '';
-        const devName = devSelectedId === 'normal' ? 'Normal (no sabotage)' : effectById(devSelectedId) ? effectById(devSelectedId).name : 'DEV sample';
+        const devName = devSelectedId === 'normal' ? 'Normal (no sabotage)' : effectById(devSelectedId) ? effectById(devSelectedId).name : 'practice sample';
         elements.devFeedback.textContent = `${devName}: manual ${outcome.perfect ? 'perfect landing' : 'safe overlap'} at sample height ${heightOf(game)}, placed width ${placedWidth} px${drift}. No real score saved.`;
       }
       if (!game.devMode) sessionBest = Math.max(sessionBest, game.score);
@@ -4218,7 +4218,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const sabotage = effectById(devSelectedId);
         const previewName = normal ? 'Normal' : sabotage ? sabotage.name : 'a sabotage';
         elements.devPanel.hidden = false;
-        elements.devQuick.hidden = true;
         elements.mpCard.hidden = true;
         elements.voteCard.hidden = true;
         elements.statsCard.hidden = true;
@@ -4235,15 +4234,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.gameCanvas.setAttribute('role', 'button');
         elements.gameCanvas.tabIndex = 0;
         elements.gameCanvas.setAttribute('aria-disabled', 'false');
-        elements.gameCanvas.setAttribute('aria-label', `DEV sandbox: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
-        elements.gameModeKicker.textContent = 'Developer test bench · offline';
+        elements.gameCanvas.setAttribute('aria-label', `Practice: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
+        elements.gameModeKicker.textContent = 'Practice · offline';
         elements.gameHeading.textContent = 'Test every sabotage.';
-        elements.roundStatus.textContent = 'DEV SANDBOX';
-        elements.modeLabel.textContent = 'DEV sandbox · offline';
-        elements.menu.textContent = 'Exit DEV';
-        elements.menu.setAttribute('aria-label', 'Exit developer sandbox');
+        elements.roundStatus.textContent = 'PRACTICE';
+        elements.modeLabel.textContent = 'Practice · offline';
+        elements.menu.textContent = 'Exit practice';
+        elements.menu.setAttribute('aria-label', 'Exit practice');
         elements.height.textContent = String(heightOf(game));
-        elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'DEV PREVIEW';
+        elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'PRACTICE PREVIEW';
         elements.devPanelTitle.textContent = normal ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'Choose a sabotage.';
         elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'is full'}. Exit with Menu or Esc.`;
         elements.devEffectDescription.textContent = normal ? 'Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.' : sabotage ? sabotage.effect : 'Pick any effect to see its mechanic and preview.';
@@ -4265,7 +4264,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.canvasHint.textContent = 'Tap anywhere to drop';
       elements.drop.setAttribute('aria-label', 'Drop the moving block');
       elements.mpCard.hidden = !game.multiplayer;
-      elements.devQuick.hidden = Boolean(multiplayer.active || game.multiplayer || game.phase !== 'playing');
       if (!game.multiplayer) {
         elements.gameCanvas.setAttribute('role', 'button');
         elements.gameCanvas.tabIndex = 0;
@@ -4273,7 +4271,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.gameCanvas.setAttribute('aria-label', 'Stacking game. Press Space to drop the moving block.');
         elements.dropKey.hidden = false;
         elements.gameHeading.textContent = 'Make it stack.';
-        elements.gameModeKicker.textContent = game.assisted ? 'Single player · build 01 · Assisted' : 'Single player · build 01';
+        elements.gameModeKicker.textContent = game.assisted ? 'Single player · Assisted' : 'Single player';
         elements.menu.textContent = 'Menu';
         elements.menu.setAttribute('aria-label', 'Return to menu');
         elements.modeLabel.textContent = 'Offline solo';
@@ -4540,7 +4538,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         stack: makeDevStack(), fallenPieces: [], fallingActors: [], moving: null, perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1,
         collapseClock: 0, collapseLevel: null, collapseStartLevel: null, collapseShake: 0, collapsingLevels: [],
-        score: 7, lastVote: null, lastSabotageWinner: sabotage ? sabotage.id : null, statusMessage: 'Offline developer sandbox.', bestAtStart: sessionBest,
+        score: 7, lastVote: null, lastSabotageWinner: sabotage ? sabotage.id : null, statusMessage: 'Offline practice.', bestAtStart: sessionBest,
         nextSpawnFromLeft: true, flavorCounter: 0, chatFlavorText: '', chatFlavorTime: 0, devLastDrop: null
       };
       spawnMovingBlock();
@@ -4553,7 +4551,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       elements.devFeedback.textContent = normal
         ? 'Normal mode: no sabotage is active. Use manual Drop to establish a baseline, or simulate a clean landing.'
-        : `Previewing ${sabotage.name}. The sample tower is ready; use manual Drop or Simulate clean drop to test its landing effect.`;
+        : `Previewing ${sabotage.name}. The sample tower is ready; use Drop or Simulate clean drop to test its landing effect.`;
       syncHud(true);
       return true;
     }
@@ -4568,7 +4566,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function startDevMode(id = devSelectedId) {
       if (multiplayer.active) {
-        elements.multiplayerStatus.textContent = 'Leave the multiplayer room before opening the offline DEV sandbox. The test bench never sends game messages.';
+        elements.multiplayerStatus.textContent = 'Leave the multiplayer room before opening offline practice.';
         return false;
       }
       if (game && game.devMode) return resetDevSandbox(id);
@@ -4582,7 +4580,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game = { devMode: true };
       resetDevSandbox(id);
       elements.gameHeading.textContent = 'Test every sabotage.';
-      elements.gameModeKicker.textContent = 'Developer test bench · offline';
+      elements.gameModeKicker.textContent = 'Practice · offline';
       setScreen('game');
       lastFrame = 0;
       syncHud(true);
@@ -4608,13 +4606,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.gameCanvas.tabIndex = 0;
       elements.gameCanvas.setAttribute('aria-disabled', 'false');
       elements.gameHeading.textContent = saved ? saved.heading : 'Make it stack.';
-      elements.gameModeKicker.textContent = saved ? saved.kicker : 'Single player · build 01';
+      elements.gameModeKicker.textContent = saved ? saved.kicker : 'Single player';
       setScreen(saved ? saved.screen : 'title');
       if (game) {
         syncHud(true);
         if (game.phase === 'playing' && soundEnabled) startAmbientBed();
       } else {
-        elements.devQuick.hidden = true;
         elements.mpCard.hidden = true;
         elements.modeLabel.textContent = 'Offline solo';
         updateBestLabels();
@@ -4628,7 +4625,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game || !game.devMode || !game.moving) return false;
       const id = devSelectedId;
       const sabotage = effectById(id);
-      const effectName = id === 'normal' ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'DEV sample';
+      const effectName = id === 'normal' ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'practice sample';
       const below = game.stack[game.stack.length - 1];
       const landingEffectId = effectActive('rollercoaster') ? 'rollercoaster' : '';
       const verticalOffset = landingEffectId === 'rollercoaster' && !reducedMotion
@@ -4752,7 +4749,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.soundToggle.addEventListener('click', toggleSound);
     elements.start.addEventListener('click', newGame);
     elements.devStart.addEventListener('click', () => startDevMode('turbo'));
-    elements.devQuick.addEventListener('click', () => startDevMode(devSelectedId));
     elements.devReset.addEventListener('click', () => resetDevSandbox(devSelectedId));
     elements.devDrop.addEventListener('click', simulateDevDrop);
     elements.again.addEventListener('click', handleAgain);

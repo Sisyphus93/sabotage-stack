@@ -487,3 +487,26 @@ describe('Top-block centre reference (F-018)', skipReason ? { skip: skipReason }
     } finally { page.close(); }
   });
 });
+
+describe('Practice entry point (F-020)', skipReason ? { skip: skipReason } : {}, () => {
+  test('practice is player-facing, scoreless and accessible from the title only', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true });
+    try {
+      const d = page.document;
+      const entry = d.getElementById('dev-mode-button');
+      assert.match(entry.textContent, /Practice.*Try any sabotage/);
+      assert.equal(d.getElementById('dev-quick-button'), null);
+      entry.click(); page.advanceAnimation(50);
+      assert.equal(d.getElementById('dev-panel').hidden, false);
+      assert.match(d.getElementById('game-mode-kicker').textContent, /Practice/);
+      assert.match(d.getElementById('dev-panel-description').textContent, /scoreless/);
+      assert.match(d.getElementById('menu-button').textContent, /Exit practice/);
+      d.getElementById('menu-button').click();
+      assert.equal(d.body.dataset.screen, 'title');
+      d.getElementById('start-button').click(); page.advanceAnimation(50);
+      assert.equal(d.getElementById('dev-panel').hidden, true);
+      assert.doesNotMatch(d.getElementById('game-mode-kicker').textContent, /build/i);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
