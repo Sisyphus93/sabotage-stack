@@ -563,6 +563,11 @@ html[data-theme="sunset"] .button { border-width: 2px; font-size: 19px; box-shad
 html[data-theme="sunset"] .button-primary, html[data-theme="sunset"] .room-actions .button-primary {
   border-color: #170B33; background: #FF6B35; color: #2A1200; box-shadow: 5px 5px 0 var(--amber);
 }
+/* Keep disabled lobby actions legible without resembling an enabled orange action. */
+html[data-theme="sunset"] .room-actions .button-primary:disabled {
+  opacity: 1; background: #2A1450; color: #DEC7F2; border-color: #DEC7F2;
+  border-style: dashed; box-shadow: none;
+}
 html[data-theme="sunset"] .button-primary:hover:not(:disabled), html[data-theme="sunset"] .room-actions .button-primary:hover:not(:disabled) { background: var(--amber); color: #2A1200; }
 html[data-theme="sunset"] .sound-toggle[aria-pressed="true"] { color: #2A1200; }
 html[data-theme="sunset"] .mode-pill { border-width: 2px; font-size: 17px; }

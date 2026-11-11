@@ -93,3 +93,18 @@ test('select controls share the themed keyboard focus outline (A-08)', () => {
   assert.match(html, /html\[data-theme="sunset"\] :focus-visible\s*\{\s*outline-color:\s*var\(--amber\)/);
   assert.match(html, /html\[data-theme="primetime"\] :focus-visible\s*\{\s*outline-color:\s*var\(--amber\)/);
 });
+
+test('Sunset disabled lobby primary remains legible and visibly inactive (A-12)', () => {
+  const html = fs.readFileSync(HTML, 'utf8');
+  const rule = /html\[data-theme="sunset"\] \.room-actions \.button-primary:disabled\s*\{([^}]*)\}/.exec(html);
+  assert.ok(rule); const css = rule[1];
+  assert.match(css, /opacity:\s*1/); assert.match(css, /border-style:\s*dashed/); assert.match(css, /box-shadow:\s*none/);
+  const fg = /color:\s*#([\da-f]{6})/i.exec(css)[1];
+  const bg = /background:\s*#([\da-f]{6})/i.exec(css)[1];
+  const luminance = hex => {
+    const rgb = hex.match(/../g).map(part => parseInt(part, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+    return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
+  };
+  const values = [luminance(fg), luminance(bg)].sort((a, b) => b - a);
+  assert.ok((values[0] + .05) / (values[1] + .05) >= 4.5);
+});
