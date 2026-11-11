@@ -398,3 +398,38 @@ describe('Host absence recovery (F-015)', skipReason ? { skip: skipReason } : {}
     } finally { await r.close(); }
   });
 });
+
+describe('Room reduced motion (F-017)', skipReason ? { skip: skipReason } : {}, () => {
+  test('one player can reduce the room and changing back restores full mode when nobody else requests it', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const select = r.players[0].document.getElementById('motion-select');
+      select.value = 'reduced'; select.dispatchEvent(new r.players[0].window.Event('change', { bubbles: true }));
+      await sleep(300);
+      assert.equal(r.room.players[0].reducedMotion, true);
+      assert.equal(r.app.roomManager.snapshot(r.room).reducedMotion, true);
+      for (const page of [r.host, ...r.players]) {
+        assert.equal(page.document.documentElement.dataset.motion, 'reduced');
+        assert.equal(page.document.getElementById('multiplayer-motion-status').hidden, false);
+        assert.equal(page.document.getElementById('room-motion-status').hidden, false);
+        assert.match(page.document.getElementById('sabotage-guide-summary').textContent, /11 of 16/);
+      }
+      for (const id of r.host.window.SabotageStack.Core.REDUCED_MOTION_EXCLUDED_IDS) assert.ok(!r.room.engine.votePool().includes(id));
+      const otherSelect = r.players[1].document.getElementById('motion-select');
+      otherSelect.value = 'reduced'; otherSelect.dispatchEvent(new r.players[1].window.Event('change', { bubbles: true }));
+      await sleep(150);
+      select.value = 'full'; select.dispatchEvent(new r.players[0].window.Event('change', { bubbles: true }));
+      await sleep(200);
+      assert.equal(r.room.players[0].reducedMotion, false, 'the room setting is not sent back as the personal preference');
+      assert.equal(r.app.roomManager.snapshot(r.room).reducedMotion, true, 'the other player still requests reduced motion');
+      otherSelect.value = 'full'; otherSelect.dispatchEvent(new r.players[1].window.Event('change', { bubbles: true }));
+      await sleep(300);
+      assert.equal(r.app.roomManager.snapshot(r.room).reducedMotion, false);
+      for (const page of [r.host, ...r.players]) {
+        assert.equal(page.document.documentElement.dataset.motion, 'full');
+        assert.equal(page.document.getElementById('multiplayer-motion-status').hidden, true);
+        assert.deepEqual(page.errors, []);
+      }
+    } finally { await r.close(); }
+  });
+});

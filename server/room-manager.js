@@ -204,7 +204,8 @@ class RoomManager {
       player.reducedMotion = reducedMotion;
     }
     room.lastActivityAt = this.now();
-    return safeSend(socket, { type: 'preferences.updated', reducedMotion });
+    safeSend(socket, { type: 'preferences.updated', reducedMotion });
+    this.broadcastState(room);
   }
 
   resumeRoom(socket, message) {
@@ -452,6 +453,7 @@ class RoomManager {
     if (!room) return null;
     return {
       code: room.code, mode: room.mode, phase: room.phase, roundNumber: room.roundNumber,
+      reducedMotion: Boolean(room.host.reducedMotion || room.players.some(player => player.connected && player.reducedMotion)),
       hostConnected: room.host.connected, canRematchWithoutHost: this.canRematchWithoutHost(room), bestTeamScore: room.bestTeamScore || 0,
       players: room.players.map(player => ({
         id: player.id, name: player.name, color: player.color,

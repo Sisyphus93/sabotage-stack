@@ -119,6 +119,8 @@ h1 span { display: block; color: var(--vermilion); }
 .sound-toggle[aria-pressed="true"] { background: var(--amber); }
 .sound-toggle svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .theme-picker { display: flex; align-items: center; gap: 7px; }
+.motion-select { width: 105px; }
+@media (max-width: 450px) { html:is([data-theme]) .brand-word { display: none; } html:is([data-theme]) .theme-select { width: 90px; } html:is([data-theme]) .motion-select { width: 82px; } }
 .theme-picker-label { color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .theme-select { min-height: 44px; max-width: 190px; padding: 0 9px; border: 1.5px solid var(--ink); border-radius: 11px; color: var(--ink); background: var(--paper-deep); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
 .solo-assist-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: -7px 0 5px; }
@@ -490,6 +492,7 @@ html[data-theme="primetime"] .vote-description, html[data-theme="primetime"] .vo
   .dev-effect-groups { max-height: none; overflow: visible; }
   .dev-effect-button { min-height: 44px; font-size: 11px; }
 }
+html[data-motion="reduced"] *, html[data-motion="reduced"] *::before, html[data-motion="reduced"] *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
@@ -757,6 +760,8 @@ html:is([data-theme]) .effect-meter { height: 8px; }
   html:is([data-theme]) .top-tools { flex: 0 0 auto; }
   html:is([data-theme]) .brand { flex: 1 1 0; min-width: 0; }
   html:is([data-theme]) .theme-select { width: 108px; max-width: 100%; }
+  html:is([data-theme]) .motion-select { width: 85px; }
+  @media (max-width: 450px) { html:is([data-theme]) .brand-word { display: none; } html:is([data-theme]) .theme-select { width: 90px; } html:is([data-theme]) .motion-select { width: 82px; } }
   html[data-theme="primetime"] .brand-word { font-size: 16px; }
   /* Same rule as desktop: border + padding is constant, so thicker borders never change card or stage size. */
   html:is([data-theme]) .play-card { padding: calc(9px - var(--bw)); }
@@ -923,6 +928,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <div class="top-tools">
         <div class="top-meta"><span class="live-dot" aria-hidden="true"></span><span id="connection-mode-label">Offline solo</span></div>
         <label class="theme-picker"><span class="theme-picker-label" aria-hidden="true">Theme</span><select id="theme-select" class="theme-select" aria-label="Colour theme"><option value="paper">Paper (default)</option><option value="sunset">Sunset Stack ’94</option><option value="primetime">Prime Time</option></select></label>
+        <label class="theme-picker"><span class="theme-picker-label" aria-hidden="true">Motion</span><select id="motion-select" class="theme-select motion-select" aria-label="Motion preference" aria-describedby="motion-help"><option value="system">System</option><option value="full">Full</option><option value="reduced">Reduced</option></select></label>
+        <span id="motion-help" class="sr-only">Reduced motion limits animation and excludes five sabotages from votes. System follows your device preference; Full overrides it for game motion, while device-level reduced CSS remains respected. In a room, one reduced-motion preference reduces the room.</span>
         <button id="sound-toggle" class="button sound-toggle" type="button" aria-pressed="false" aria-label="Sound off. Activate for quiet synthesized music and sound effects." aria-describedby="sound-status">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M16 9.2c1.2 1.4 1.2 4.2 0 5.6M18.5 6.8c2.3 2.8 2.3 7.6 0 10.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           <span id="sound-label">Sound off</span>
@@ -997,6 +1004,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div class="card-heading"><span class="eyebrow">Players</span><span id="room-player-count" class="timer-label">0 / 6</span></div>
             <h3 id="room-players-heading">The crew</h3>
             <ul id="room-player-list" class="room-player-list"></ul>
+            <p id="room-motion-status" class="room-hint" hidden>Reduced motion room: five motion-heavy sabotages are excluded from votes.</p>
             <p id="room-lobby-status" class="room-status" role="status" aria-live="polite">Waiting for players to join.</p>
             <div class="room-actions">
               <button id="room-start-button" class="button button-primary" type="button" disabled>Start round</button>
@@ -1063,6 +1071,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="card-heading"><span id="multiplayer-mode-label" class="eyebrow">Room</span><span id="multiplayer-room-code" class="timer-label">----</span></div>
               <h3 id="multiplayer-turn-heading">Your turn</h3>
               <p id="multiplayer-turn-status" class="vote-title">Waiting for the round to start.</p>
+              <p id="multiplayer-motion-status" class="room-hint" hidden>Reduced motion room: five motion-heavy sabotages are excluded from votes.</p>
               <p id="multiplayer-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
               <p id="multiplayer-sabotage-announcement" class="mp-sabotage-announcement" role="status" aria-live="polite" hidden></p>
               <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
@@ -1160,7 +1169,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <p class="room-hint"><strong>Competitive:</strong> Each player builds a separate tower. After 90 seconds, the highest tower wins; equal heights tie. A player who misses finishes their own stack. The host has one changeable vote for each sabotage.</p>
       </section>
       <details class="sabotage-guide">
-        <summary>Meet all 16 active sabotages</summary>
+        <summary id="sabotage-guide-summary">Meet all 16 active sabotages</summary>
         <ul id="sabotage-list" class="sabotage-list"></ul>
       </details>
     </div>
@@ -1714,6 +1723,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
     const elements = {
       gameAnnouncement: document.getElementById('game-announcement'),
+      motionSelect: document.getElementById('motion-select'), motionSummary: document.getElementById('sabotage-guide-summary'), roomMotionStatus: document.getElementById('room-motion-status'), mpMotionStatus: document.getElementById('multiplayer-motion-status'),
       themeSelect: document.getElementById('theme-select'), soloAutoDropSelect: document.getElementById('solo-auto-drop-select'), soloAutoDropHelp: document.getElementById('solo-auto-drop-help'),
       soundToggle: document.getElementById('sound-toggle'), soundLabel: document.getElementById('sound-label'), soundStatus: document.getElementById('sound-status'),
       title: document.getElementById('title-screen'), lobby: document.getElementById('room-screen'), game: document.getElementById('game-screen'), results: document.getElementById('results-screen'),
@@ -1755,7 +1765,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     // Keep alpha enabled: Spotlight masks a hole in its dark overlay to reveal the world below.
     const gameContext = elements.gameCanvas.getContext('2d');
     const resultsContext = elements.resultsCanvas.getContext('2d');
-    let reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const MOTION_STORAGE_KEY = 'sabotage-stack-motion-v1';
+    const motionPreferenceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let motionSetting = 'system';
+    try { const saved = window.localStorage && window.localStorage.getItem(MOTION_STORAGE_KEY); if (['system', 'full', 'reduced'].includes(saved)) motionSetting = saved; } catch (_) {}
+    function localReducedMotion() { return motionSetting === 'reduced' || (motionSetting === 'system' && motionPreferenceQuery.matches); }
+    let reducedMotion = localReducedMotion();
     let dpr = 1;
     let game = null;
     let devReturnState = null;
@@ -1870,9 +1885,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       try { socket.send(JSON.stringify(message)); return true; }
       catch (_) { return false; }
     }
-    function handleMotionPreferenceChange(event) {
-      reducedMotion = Boolean(event && event.matches);
-      if (multiplayer.active && multiplayer.connected) sendMultiplayer({ type: 'client.preferences', reducedMotion });
+    function refreshMotionState() {
+      reducedMotion = localReducedMotion() || Boolean(multiplayer.active && multiplayer.room && multiplayer.room.reducedMotion);
+      document.documentElement.dataset.motion = reducedMotion ? 'reduced' : 'full';
+      elements.motionSelect.value = motionSetting;
+      const total = Core.SABOTAGE_IDS.length;
+      const eligible = total - Core.REDUCED_MOTION_EXCLUDED_IDS.length;
+      elements.motionSummary.textContent = reducedMotion ? `Reduced motion: ${eligible} of ${total} sabotages eligible for votes (guide lists all)` : `Meet all ${total} active sabotages`;
+      const roomReduced = Boolean(multiplayer.active && multiplayer.room && multiplayer.room.reducedMotion);
+      elements.roomMotionStatus.hidden = !roomReduced;
+      elements.mpMotionStatus.hidden = !roomReduced;
       if (game) {
         if (reducedMotion) {
           camera = Math.max(0, 200 - (BASELINE - (game.stack.length + 1) * BLOCK_H));
@@ -1882,7 +1904,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         syncHud(true);
       }
     }
-    const motionPreferenceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function handleMotionPreferenceChange() {
+      if (multiplayer.active && multiplayer.connected) sendMultiplayer({ type: 'client.preferences', reducedMotion: localReducedMotion() });
+      refreshMotionState();
+    }
+    elements.motionSelect.value = motionSetting;
+    elements.motionSelect.addEventListener('change', () => {
+      motionSetting = ['system', 'full', 'reduced'].includes(elements.motionSelect.value) ? elements.motionSelect.value : 'system';
+      try { if (window.localStorage) window.localStorage.setItem(MOTION_STORAGE_KEY, motionSetting); } catch (_) {}
+      handleMotionPreferenceChange();
+    });
+    refreshMotionState();
     if (motionPreferenceQuery.addEventListener) motionPreferenceQuery.addEventListener('change', handleMotionPreferenceChange);
     else if (motionPreferenceQuery.addListener) motionPreferenceQuery.addListener(handleMotionPreferenceChange);
     function stopMultiplayerPing() {
@@ -1929,11 +1961,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         updateConnectionLabels();
         startMultiplayerPing();
         if (multiplayer.resumeToken && multiplayer.code) {
-          sendMultiplayer({ type: 'room.resume', code: multiplayer.code, resumeToken: multiplayer.resumeToken, reducedMotion });
+          sendMultiplayer({ type: 'room.resume', code: multiplayer.code, resumeToken: multiplayer.resumeToken, reducedMotion: localReducedMotion() });
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'create') {
-          sendMultiplayer({ type: 'room.create', mode: multiplayer.pendingAction.mode, reducedMotion });
+          sendMultiplayer({ type: 'room.create', mode: multiplayer.pendingAction.mode, reducedMotion: localReducedMotion() });
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'join') {
-          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, reducedMotion });
+          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, reducedMotion: localReducedMotion() });
         }
       });
       socket.addEventListener('message', event => {
@@ -2133,6 +2165,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       multiplayer.forceServerPosition = false;
       multiplayer.positionSequence = 0;
       multiplayer.sessionBest = 0;
+      refreshMotionState();
       elements.mpCard.hidden = true;
       elements.mpHostStatus.hidden = true;
       elements.resultsHostStatus.hidden = true;
@@ -2188,6 +2221,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const keepLobby = multiplayer.lobbyViewPhase !== null && multiplayer.lobbyViewPhase === state.phase;
       if (!keepLobby) multiplayer.lobbyViewPhase = null;
       multiplayer.room = state;
+      refreshMotionState();
       multiplayer.code = state.code || multiplayer.code;
       multiplayer.mode = state.mode || multiplayer.mode;
       if (Number.isFinite(Number(state.bestTeamScore))) multiplayer.sessionBest = Math.max(multiplayer.sessionBest || 0, Number(state.bestTeamScore) || 0);
@@ -4176,7 +4210,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.height.textContent = String(heightOf(game));
         elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'DEV PREVIEW';
         elements.devPanelTitle.textContent = normal ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'Choose a sabotage.';
-        elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'follows your system preference'}. Exit with Menu or Esc.`;
+        elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'is full'}. Exit with Menu or Esc.`;
         elements.devEffectDescription.textContent = normal ? 'Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.' : sabotage ? sabotage.effect : 'Pick any effect to see its mechanic and preview.';
         elements.devDrop.textContent = devSelectedId === 'superglue' ? 'Test +10 px snap' : 'Simulate clean drop';
         elements.devDrop.setAttribute('aria-label', devSelectedId === 'superglue' ? 'Automatically test a landing ten pixels off-centre' : `Automatically simulate a landing with ${previewName}`);

@@ -435,3 +435,29 @@ describe('Multiplayer onboarding (F-016)', skipReason ? { skip: skipReason } : {
     } finally { page.close(); }
   });
 });
+
+describe('Motion preference (F-017)', skipReason ? { skip: skipReason } : {}, () => {
+  test('defaults to device settings, supports overrides, persists, and updates guide eligibility', async () => {
+    const page = await boot(HTML, { reducedMotion: true });
+    let restored = null;
+    try {
+      const select = page.document.getElementById('motion-select');
+      const summary = page.document.getElementById('sabotage-guide-summary');
+      assert.equal(select.value, 'system');
+      assert.equal(page.document.documentElement.dataset.motion, 'reduced');
+      assert.match(summary.textContent, /11 of 16.*eligible/);
+      select.value = 'full'; select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+      assert.equal(page.document.documentElement.dataset.motion, 'full');
+      assert.match(summary.textContent, /all 16/);
+      assert.equal(page.window.localStorage.getItem('sabotage-stack-motion-v1'), 'full');
+      restored = await boot(HTML, { reducedMotion: true, storage: { 'sabotage-stack-motion-v1': 'full' } });
+      assert.equal(restored.document.getElementById('motion-select').value, 'full');
+      assert.equal(restored.document.documentElement.dataset.motion, 'full');
+      select.value = 'reduced'; select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+      assert.equal(page.document.documentElement.dataset.motion, 'reduced');
+      select.value = 'system'; select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+      assert.equal(page.document.documentElement.dataset.motion, 'reduced');
+      assert.deepEqual(page.errors, []); assert.deepEqual(restored.errors, []);
+    } finally { page.close(); if (restored) restored.close(); }
+  });
+});
