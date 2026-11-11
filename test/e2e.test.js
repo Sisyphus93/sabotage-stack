@@ -79,3 +79,45 @@ for (const mode of ['competitive', 'teamwork']) {
     });
   });
 }
+
+describe('Room navigation during live rounds (F-005)', skipReason ? { skip: skipReason } : {}, () => {
+  test('host and player stay in the room lobby until Back to round or a phase change', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const hostDocument = r.host.document;
+      const playerDocument = r.players[0].document;
+      const broadcastSnapshot = async () => {
+        r.room.engine.changed('game.state');
+        await sleep(100);
+      };
+
+      hostDocument.getElementById('menu-button').click();
+      assert.equal(hostDocument.body.dataset.screen, 'lobby', 'Room opens the lobby immediately for the host');
+      assert.equal(hostDocument.getElementById('room-close-button').hidden, false, 'the host can see Close room');
+      await broadcastSnapshot();
+      const hostAfterSnapshot = hostDocument.body.dataset.screen;
+
+      playerDocument.getElementById('menu-button').click();
+      assert.equal(playerDocument.body.dataset.screen, 'lobby', 'Room opens the lobby immediately for a player');
+      assert.equal(playerDocument.getElementById('room-leave-button').hidden, false, 'the player can see Leave room');
+      await broadcastSnapshot();
+      const playerAfterSnapshot = playerDocument.body.dataset.screen;
+
+      if (hostDocument.body.dataset.screen !== 'lobby') hostDocument.getElementById('menu-button').click();
+      if (playerDocument.body.dataset.screen !== 'lobby') playerDocument.getElementById('menu-button').click();
+      hostDocument.getElementById('room-return-button').click();
+      assert.equal(hostDocument.body.dataset.screen, 'game', 'Back to round returns the host to play');
+      await broadcastSnapshot();
+      const hostAfterReturnSnapshot = hostDocument.body.dataset.screen;
+
+      r.room.engine.finishCompetitiveRound(Date.now());
+      await sleep(150);
+      const afterPhaseChange = [hostDocument.body.dataset.screen, playerDocument.body.dataset.screen];
+
+      assert.deepEqual({ hostAfterSnapshot, playerAfterSnapshot, hostAfterReturnSnapshot, afterPhaseChange }, {
+        hostAfterSnapshot: 'lobby', playerAfterSnapshot: 'lobby', hostAfterReturnSnapshot: 'game', afterPhaseChange: ['results', 'results']
+      });
+      for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});

@@ -1741,7 +1741,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
       socket: null, connected: false, room: null, remoteGame: null, pendingAction: null,
       explicitLeave: false, reconnectTimer: null, reconnectDelay: 800, pingTimer: null,
-      positionSequence: 0, lastPositionSentAt: 0, dropPending: false,
+      positionSequence: 0, lastPositionSentAt: 0, dropPending: false, lobbyViewPhase: null,
       dropRequestPrefix: Math.random().toString(36).slice(2, 10), dropRequestSequence: 0,
       pendingDropId: null, pendingDropContext: null, forceServerPosition: false,
       lastEffectKey: '', resultPayload: null, sessionBest: 0
@@ -2094,6 +2094,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       multiplayer.resumeToken = null;
       multiplayer.room = null;
       multiplayer.remoteGame = null;
+      multiplayer.lobbyViewPhase = null;
       multiplayer.pendingAction = null;
       multiplayer.resultPayload = null;
       multiplayer.lastEffectKey = '';
@@ -2150,6 +2151,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function applyRoomSnapshot(state) {
       if (!state || typeof state !== 'object') return;
+      const keepLobby = multiplayer.lobbyViewPhase !== null && multiplayer.lobbyViewPhase === state.phase;
+      if (!keepLobby) multiplayer.lobbyViewPhase = null;
       multiplayer.room = state;
       multiplayer.code = state.code || multiplayer.code;
       multiplayer.mode = state.mode || multiplayer.mode;
@@ -2160,13 +2163,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       renderLobby(state);
       if (state.phase !== 'playing' && multiplayer.dropPending) clearMultiplayerPendingDrop(null, false);
       if (state.phase === 'lobby') {
+        multiplayer.lobbyViewPhase = null;
         setScreen('lobby');
       } else if (state.phase === 'playing') {
         applyMultiplayerGame(state.game);
-        setScreen('game');
+        if (!keepLobby) setScreen('game');
       } else if (state.phase === 'results') {
-        if (state.game) showMultiplayerResults(state.game.results);
-        setScreen('results');
+        if (!keepLobby && state.game) showMultiplayerResults(state.game.results);
+        if (!keepLobby) setScreen('results');
       }
       mpSessionSave();
     }
@@ -4413,6 +4417,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function returnToRoom() {
       if (!multiplayer.active || !multiplayer.room) return;
+      multiplayer.lobbyViewPhase = multiplayer.room.phase || null;
       renderLobby(multiplayer.room);
       setScreen('lobby');
       elements.roomReturn.focus({ preventScroll: true });
@@ -4466,7 +4471,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.closeJoin.addEventListener('click', () => elements.joinDialog.close());
     elements.cancelJoin.addEventListener('click', () => elements.joinDialog.close());
     elements.roomStart.addEventListener('click', () => sendMultiplayer({ type: 'round.start' }));
-    elements.roomReturn.addEventListener('click', () => { setScreen('game'); if (canDropMultiplayer()) elements.drop.focus({ preventScroll: true }); });
+    elements.roomReturn.addEventListener('click', () => { multiplayer.lobbyViewPhase = null; setScreen('game'); if (canDropMultiplayer()) elements.drop.focus({ preventScroll: true }); });
     elements.roomRematch.addEventListener('click', () => sendMultiplayer({ type: 'round.rematch' }));
     elements.roomLeave.addEventListener('click', leaveMultiplayerRoom);
     elements.roomClose.addEventListener('click', leaveMultiplayerRoom);
