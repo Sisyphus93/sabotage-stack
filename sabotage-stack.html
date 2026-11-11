@@ -1210,6 +1210,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <input id="join-room-code" class="text-field room-code-input" name="code" maxlength="4" autocomplete="off" autocapitalize="characters" required>
       <label class="field-label" for="join-display-name">Display name</label>
       <input id="join-display-name" class="text-field" name="name" maxlength="12" autocomplete="nickname" required>
+      <label class="room-hint"><input id="join-spectator" type="checkbox"> Watch as spectator (no playing or voting; motion preference affects only your view)</label>
       <p id="join-status" class="room-status" role="status" aria-live="polite">Names are shown as plain text and may be shortened to 12 characters.</p>
       <div id="join-connection-actions" class="room-actions" hidden><button class="button" type="button" data-connection-retry>Retry</button><button class="button" type="button" data-connection-solo>Play solo</button></div>
       <div class="room-actions"><button class="button button-primary" type="submit">Join game</button><button id="cancel-join" class="button" type="button">Cancel</button></div>
@@ -1941,7 +1942,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!action || multiplayer.resumeToken) return;
       resetMultiplayerSession(true);
       multiplayer.active = true; multiplayer.explicitLeave = false;
-      multiplayer.role = action.type === 'create' ? 'host' : 'player';
+      multiplayer.role = action.type === 'create' ? 'host' : action.spectate ? 'spectator' : 'player';
       multiplayer.mode = action.mode || null; multiplayer.code = action.code || null;
       mpSetStatus('Connecting to the game server…');
       connectMultiplayer(action);
@@ -1965,7 +1966,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.motionSelect.value = motionSetting;
       const total = Core.SABOTAGE_IDS.length;
       const eligible = total - Core.REDUCED_MOTION_EXCLUDED_IDS.length;
-      elements.motionSummary.textContent = reducedMotion ? `Reduced motion: ${eligible} of ${total} sabotages eligible for votes (guide lists all)` : `Meet all ${total} active sabotages`;
+      elements.motionSummary.textContent = multiplayer.active && multiplayer.role === 'spectator' && localReducedMotion() && !(multiplayer.room && multiplayer.room.reducedMotion)
+        ? `Your view uses reduced motion; the room vote pool follows the host and players (guide lists all ${total}).`
+        : reducedMotion ? `Reduced motion: ${eligible} of ${total} sabotages eligible for votes (guide lists all)` : `Meet all ${total} active sabotages`;
       const roomReduced = Boolean(multiplayer.active && multiplayer.room && multiplayer.room.reducedMotion);
       elements.roomMotionStatus.hidden = !roomReduced;
       elements.mpMotionStatus.hidden = !roomReduced;
@@ -2040,7 +2043,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'create') {
           sendMultiplayer({ type: 'room.create', mode: multiplayer.pendingAction.mode, reducedMotion: localReducedMotion() });
         } else if (multiplayer.pendingAction && multiplayer.pendingAction.type === 'join') {
-          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, reducedMotion: localReducedMotion() });
+          sendMultiplayer({ type: 'room.join', code: multiplayer.pendingAction.code, name: multiplayer.pendingAction.name, spectate: Boolean(multiplayer.pendingAction.spectate), reducedMotion: localReducedMotion() });
         }
       });
       socket.addEventListener('message', event => {
@@ -2458,7 +2461,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (state.phase === 'playing' && state.game) {
         const g = state.game;
         const current = g.team && g.team.currentPlayerName;
-        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (g.vote ? 'Room vote' : current ? `${current}'s turn` : 'Round live') : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
+        elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (g.vote ? 'Room vote' : current ? `${current}'s turn` : 'Round live') : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack';
         elements.mpTurnStatus.textContent = g.paused ? (g.pauseReason === 'all-players-idle' ? 'All players are idle. The timer is paused.' : 'Everyone is disconnected. The timer is paused.')
           : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : 'Idle players are skipped until ready.')
           : multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every connected, active stack.' : 'Build your own tower. Room votes hit every connected, active stack.';
@@ -2496,7 +2499,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const motion = team ? team.motion : competitor ? competitor.motion : null;
       const activeTargetId = team ? team.currentPlayerId : multiplayer.playerId;
       let active = effects.find(effect => effect.targetPlayerId == null || effect.targetPlayerId === activeTargetId) || null;
-      if (!active && remote.mode === 'competitive' && multiplayer.role === 'host' && effects.length) active = effects[0];
+      if (!active && remote.mode === 'competitive' && multiplayer.role !== 'player' && effects.length) active = effects[0];
       let pending = null;
       if (team) {
         const pendingEffects = effects.filter(effect => effect.targetPlayerId != null && effect.targetPlayerId !== team.currentPlayerId);
@@ -2546,7 +2549,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         remotePlayers: remote.players || [], remoteEffects: effects,
         role: multiplayer.role
       };
-      if (remote.mode === 'competitive' && multiplayer.role === 'host' && remote.players && remote.players.length) {
+      if (remote.mode === 'competitive' && multiplayer.role !== 'player' && remote.players && remote.players.length) {
         const hostStacks = remote.players;
         view.stack = competitor ? competitor.blocks : hostStacks[0].blocks;
         view.moving = null;
@@ -2576,7 +2579,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (newRound) { camera = 0; zoomScale = 1; lastFrame = 0; }
       if (pendingDropStateTransition(view)) clearMultiplayerPendingDrop(null, false);
       elements.mpCard.hidden = false;
-      elements.gameModeKicker.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · Room ${multiplayer.code || ''}`;
+      elements.gameModeKicker.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.role === 'spectator' ? 'Spectator · ' : ''}Room ${multiplayer.code || ''}`;
       elements.menu.textContent = 'Room';
       elements.menu.setAttribute('aria-label', 'Return to room details');
       elements.modeLabel.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.connected ? 'connected' : 'reconnecting'}`;
@@ -3947,7 +3950,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game) return;
       setCanvasResolution(elements.gameCanvas, gameContext);
       const ctx = gameContext;
-      if (game.multiplayer && game.mode === 'competitive' && multiplayer.role === 'host') {
+      if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') {
         drawCompetitiveHostBoard(ctx);
         if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
         else elements.toast.classList.remove('is-visible');
@@ -4349,6 +4352,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             elements.voteHelp.textContent = 'Set a tie-break choice. It applies only if player votes tie; change it until the vote closes.';
             const tiebreak = game.vote.hostTiebreak ? effectById(game.vote.hostTiebreak) : null;
             elements.voteSubtitle.textContent = tiebreak ? `Host tie-break set to ${tiebreak.name}. It applies only if player votes tie.` : 'The tower pauses between turns. Players vote; choose a tie-break, even if no one votes.';
+          } else if (multiplayer.role === 'spectator') {
+            elements.voteHelp.textContent = 'Spectators can watch the vote but cannot vote.';
+            elements.voteSubtitle.textContent = 'The tower pauses between turns while players vote.';
           } else if (game.currentPlayerId === multiplayer.playerId) {
             elements.voteHelp.textContent = 'You are taking a turn and cannot vote in this pause. Watch your teammates decide.';
             elements.voteSubtitle.textContent = 'The tower pauses between turns. You are currently taking a turn, so watch the vote.';
@@ -4384,7 +4390,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : teamworkRoomVote ? (multiplayer.room && !multiplayer.room.hostConnected ? 'Host disconnected. Players vote; tied votes are random.' : 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.')
           : hostAwayCompetitive ? 'Host disconnected. Competitive votes are skipped until the host returns.' : 'Pick a sabotage when voting opens.';
         elements.voteHelp.textContent = teamworkRoomVote
-          ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : 'Vote once during a between-turn pause; change your choice until it closes.'
+          ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : multiplayer.role === 'spectator' ? 'Spectators watch the vote; only players can vote.' : 'Vote once during a between-turn pause; change your choice until it closes.'
           : remoteVote ? (multiplayer.role === 'host' ? 'You have one vote; change it until voting closes.' : 'The host has one changeable vote.')
           : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
         elements.voteState.textContent = hostAwayCompetitive ? 'Voting paused while host is away' : `Vote opens in ${seconds} seconds`;
@@ -4398,7 +4404,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function syncHud(force = false) {
       if (!game) return;
-      elements.gameStage.classList.toggle('competitive-host', Boolean(game.multiplayer && game.mode === 'competitive' && multiplayer.role === 'host'));
+      elements.gameStage.classList.toggle('competitive-host', Boolean(game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player'));
       if (game.devMode) {
         elements.stageVoteStrip.hidden = true;
         const normal = devSelectedId === 'normal';
@@ -4445,7 +4451,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.controlRow.hidden = false;
       elements.drop.hidden = false;
       elements.canvasHint.hidden = false;
-      elements.controlHelp.innerHTML = game.multiplayer && multiplayer.role === 'host'
+      elements.controlHelp.innerHTML = game.multiplayer && multiplayer.role === 'spectator' ? 'Watching the room.<br>Spectators do not play or vote.'
+        : game.multiplayer && multiplayer.role === 'host'
         ? (game.mode === 'teamwork' ? 'Take turns building.<br>Only tied votes come to you.' : 'Watch the stacks.<br>Choose one sabotage per vote.')
         : game.multiplayer && game.mode === 'teamwork' ? 'Take turns building.<br>Vote on your phone between turns.'
         : 'One press, one drop.<br>Keep stacking during votes.';
@@ -4475,7 +4482,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.mpCard.hidden = false;
         const turnName = game.currentPlayerName || 'Next player';
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
-        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
+        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack';
         if (game.paused) {
           elements.mpTurnStatus.textContent = game.pauseReason === 'all-players-idle' ? 'All players are idle. Waiting for someone to return.' : 'Everyone is disconnected. The round is paused.';
           elements.mpTurnTimer.textContent = 'Paused';
@@ -4491,21 +4498,21 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         } else {
           elements.mpTurnTimerLabel.textContent = 'Round timer';
           const self = (game.remotePlayers || []).find(player => player.playerId === multiplayer.playerId);
-          elements.mpTurnStatus.textContent = multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every active stack.'
+          elements.mpTurnStatus.textContent = multiplayer.role !== 'player' ? 'Everyone builds independently. Room votes hit every active stack.'
             : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.';
           elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(game.remainingSeconds || 0))}s`;
         }
         const selfTeamPlayer = game.mode === 'teamwork' ? (game.remotePlayers || []).find(player => player.id === multiplayer.playerId) : null;
         elements.teamReady.hidden = !(selfTeamPlayer && selfTeamPlayer.idle && multiplayer.connected && game.phase === 'playing');
         elements.teamSkip.hidden = !(game.mode === 'teamwork' && multiplayer.role === 'host' && multiplayer.connected && !game.paused && !game.vote && game.currentPlayerId && game.phase === 'playing');
-        const hostView = multiplayer.role === 'host';
+        const hostView = multiplayer.role !== 'player';
         const activePlayer = canDropMultiplayer();
         elements.dropKey.hidden = hostView;
         elements.gameCanvas.setAttribute('role', hostView ? 'img' : 'button');
         elements.gameCanvas.tabIndex = hostView ? -1 : 0;
         elements.gameCanvas.setAttribute('aria-disabled', String(hostView || !activePlayer));
         elements.gameCanvas.setAttribute('aria-label', hostView
-          ? (game.mode === 'teamwork' ? 'Live Teamwork shared tower. Host view only; players take turns on their phones.' : 'Live Competitive scoreboard showing each player’s independent stack.')
+          ? (game.mode === 'teamwork' ? 'Live Teamwork shared tower. Players take turns on their phones.' : 'Live Competitive scoreboard showing each player’s independent stack.')
           : game.mode === 'teamwork' && !activePlayer ? `Shared tower. Waiting for ${turnName} to take their turn.` : 'Stacking game. Press Space or tap to drop the moving block.');
         elements.canvasHint.hidden = hostView;
         elements.canvasHint.textContent = hostView ? 'Live room view · players drop on their phones'
@@ -4522,9 +4529,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.drop.disabled = true;
           elements.dropLabel.textContent = 'ROUND PAUSED';
           elements.motion.textContent = 'WAITING FOR PLAYERS';
-        } else if (multiplayer.role === 'host') {
+        } else if (multiplayer.role !== 'player') {
           elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'HOST VIEW';
+          elements.dropLabel.textContent = multiplayer.role === 'host' ? 'HOST VIEW' : 'SPECTATOR';
           elements.motion.textContent = game.vote ? 'ROOM VOTE LIVE' : 'WATCH THE TOWER';
         } else if (multiplayer.dropPending) {
           elements.drop.disabled = true;
@@ -4874,11 +4881,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       resetMultiplayerSession(true);
       mpSessionClear();
       multiplayer.active = true;
-      multiplayer.role = 'player';
+      const spectate = document.getElementById('join-spectator').checked;
+      multiplayer.role = spectate ? 'spectator' : 'player';
       multiplayer.code = code;
       multiplayer.explicitLeave = false;
       elements.joinStatus.textContent = 'Connecting to the room…';
-      connectMultiplayer({ type: 'join', code, name: Array.from(name).slice(0, 12).join('') });
+      connectMultiplayer({ type: 'join', code, name: Array.from(name).slice(0, 12).join(''), spectate });
     }
     function leaveMultiplayerRoom() {
       if (!multiplayer.active) return;

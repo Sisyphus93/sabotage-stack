@@ -57,7 +57,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | A-06 | P3 | | | Macro Zoom draws blocks over the bottom hint; the chat flavour pop overlaps the tower. | fixed, awaiting your check | fix(A-06), single commit on this branch | |
 | A-07 | P3 | | | In Sunset the speed and effect chip wraps to two lines and covers more of the stage. | fixed, awaiting your check | fix(A-07), single commit on this branch | |
 | A-08 | P3 | | | #theme-select keeps the browser's default focus ring instead of the themed one. | fixed, awaiting your check | fix(A-08), single commit on this branch | |
-| A-09 | P3 | | | Late joiners get a clear 'This room has already started.' but no way to watch. Idea: spectator join. | todo | | |
+| A-09 | P3 | | | Late joiners get a clear 'This room has already started.' but no way to watch. Idea: spectator join. | fixed, awaiting your check | fix(A-09), single commit on this branch | |
 | A-10 | P3 | | | The context menu is disabled on every button, which also removes long-press actions for assistive tools. | todo | | |
 | A-11 | P3 | | | The Competitive host board is about 405 px wide inside an 870 px panel: small for a screen meant to be streamed. | todo | | |
 | A-12 | P3 | | | The disabled Start round button is 2.48:1 in Sunset: exempt from contrast rules, but hard to read as a button at all. | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-09, spectators:** owner approved the idea. Join form offers a watch-only role for live rooms and results; spectators cannot play, vote, skip or rematch, and their local motion choice does not alter the player vote pool. They receive the host-style Competitive board, reconnect for up to two minutes, and have 16 bounded slots per room. Existing player limits and host controls are unchanged. Node 22.22.3: `npm test` passed 132/132, including both modes, reconnect, permissions and capacity. Visual spectator layout should be checked on phone and desktop.
 
 - **A-08, select focus:** select controls now use the same visible focus outline and theme colours as other controls. Node 22.22.3: `npm test` passed 128/128; actual focus-ring rendering requires a browser check.
 

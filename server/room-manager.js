@@ -4,6 +4,8 @@ const crypto = require('node:crypto');
 const { RoundEngine } = require('./round-engine');
 
 const MAX_PLAYERS = 6;
+const MAX_SPECTATORS = 16;
+const SPECTATOR_RECONNECT_MS = 120_000;
 const HOST_ABSENCE_GRACE_MS = 10_000;
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const PLAYER_COLORS = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#7A6AA6', '#C96F8A']);
@@ -152,6 +154,7 @@ class RoomManager {
     // A socket that was replaced by a newer connection (phone changed network, tab refreshed, laptop slept) closes late.
     // That must not mark the person disconnected, end their Competitive run, or silence the host's new socket.
     if (session.role === 'host' ? room.host.socket !== socket
+      : session.role === 'spectator' ? (room.spectators.find(item => item.id === session.spectatorId) || {}).socket !== socket
       : (room.players.find(item => item.id === session.playerId) || {}).socket !== socket) return;
     room.lastActivityAt = this.now();
     if (session.role === 'host') {
@@ -160,6 +163,9 @@ class RoomManager {
       room.host.disconnectedAt = this.now();
       room.host.absenceReadyBroadcast = false;
       if (room.engine) room.engine.hostDisconnected();
+    } else if (session.role === 'spectator') {
+      const spectator = room.spectators.find(item => item.id === session.spectatorId);
+      if (spectator) { spectator.connected = false; spectator.socket = null; spectator.disconnectedAt = this.now(); }
     } else {
       const player = room.players.find(item => item.id === session.playerId);
       if (player) {
@@ -181,7 +187,7 @@ class RoomManager {
     const now = this.now();
     const room = {
       code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now,
-      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion), disconnectedAt: null, absenceReadyBroadcast: false }, players: [], roundNumber: 0, game: null, engine: null,
+      host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion), disconnectedAt: null, absenceReadyBroadcast: false }, players: [], spectators: [], roundNumber: 0, game: null, engine: null,
       bestTeamScore: 0
     };
     this.rooms.set(code, room);
@@ -204,7 +210,18 @@ class RoomManager {
       this.joinFailures += 1;
       return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
     }
-    if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started.');
+    if (message.spectate === true) {
+      this.pruneSpectators(room, now);
+      if (room.spectators.length >= MAX_SPECTATORS) return this.error(socket, 'SPECTATORS_FULL', 'This room has reached its spectator limit.');
+      const spectator = { id: this.newId(), token: this.newToken(), socket, connected: true, disconnectedAt: null };
+      room.spectators.push(spectator);
+      room.lastActivityAt = now;
+      this.sessions.set(socket, { roomCode: code, role: 'spectator', spectatorId: spectator.id });
+      safeSend(socket, { type: 'room.joined', code, role: 'spectator', resumeToken: spectator.token, state: this.snapshot(room) });
+      this.broadcastState(room);
+      return;
+    }
+    if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started. Choose Watch as spectator to view it.');
     if (room.players.length >= MAX_PLAYERS) return this.error(socket, 'ROOM_FULL', 'This room already has six players.');
     const name = uniqueDisplayName(message.name, room.players);
     const player = {
@@ -226,6 +243,10 @@ class RoomManager {
     const room = this.rooms.get(session.roomCode);
     if (!room) return this.error(socket, 'ROOM_NOT_FOUND', 'That room is no longer available.');
     const reducedMotion = Boolean(message.reducedMotion);
+    if (session.role === 'spectator') {
+      safeSend(socket, { type: 'preferences.updated', reducedMotion });
+      return;
+    }
     if (session.role === 'host') {
       room.host.reducedMotion = reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = reducedMotion;
@@ -249,6 +270,8 @@ class RoomManager {
 
     let role = null;
     let playerId = null;
+    let spectatorId = null;
+    this.pruneSpectators(room, this.now());
     if (this.tokensMatch(token, room.host.token)) {
       role = 'host';
       this.detachSuperseded(room.host.socket, socket);
@@ -269,10 +292,18 @@ class RoomManager {
         if (typeof message.reducedMotion === 'boolean') player.reducedMotion = message.reducedMotion;
         // The round engine restores a disconnected Competitive stack only within its grace window.
       }
+      if (!role) {
+        const spectator = room.spectators.find(item => this.tokensMatch(token, item.token));
+        if (spectator) {
+          role = 'spectator'; spectatorId = spectator.id;
+          this.detachSuperseded(spectator.socket, socket);
+          spectator.connected = true; spectator.socket = socket; spectator.disconnectedAt = null;
+        }
+      }
     }
     if (!role) return this.error(socket, 'INVALID_RESUME', 'Reconnect token was not recognized for this room.');
     room.lastActivityAt = this.now();
-    this.sessions.set(socket, { roomCode: code, role, playerId });
+    this.sessions.set(socket, { roomCode: code, role, playerId, spectatorId });
     if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
     const packet = { type: 'room.resumed', code, role, state: this.snapshot(room) };
     if (playerId) packet.playerId = playerId;
@@ -319,6 +350,12 @@ class RoomManager {
     if (!room) { this.sessions.delete(socket); return; }
     if (session.role === 'host') {
       this.error(socket, 'HOST_CANNOT_LEAVE', 'The host can close the room from the stream view.');
+      return;
+    }
+    if (session.role === 'spectator') {
+      room.spectators = room.spectators.filter(item => item.id !== session.spectatorId);
+      this.sessions.delete(socket);
+      safeSend(socket, { type: 'room.left', code: room.code });
       return;
     }
     const index = room.players.findIndex(player => player.id === session.playerId);
@@ -434,12 +471,17 @@ class RoomManager {
   tick() {
     const now = this.now();
     for (const room of this.rooms.values()) {
+      this.pruneSpectators(room, now);
       if (room.engine && room.phase === 'playing') room.engine.tick(now);
       if (!room.host.absenceReadyBroadcast && this.canRematchWithoutHost(room, now)) {
         room.host.absenceReadyBroadcast = true;
         this.broadcastState(room);
       }
     }
+  }
+
+  pruneSpectators(room, now = this.now()) {
+    room.spectators = room.spectators.filter(item => item.connected || now - item.disconnectedAt < SPECTATOR_RECONNECT_MS);
   }
 
   closeRoomForHost(socket) {
@@ -451,7 +493,7 @@ class RoomManager {
   closeRoom(roomOrCode, reason = 'Room closed.') {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room || !this.rooms.has(room.code)) return false;
-    const sockets = [room.host.socket, ...room.players.map(player => player.socket)].filter(Boolean);
+    const sockets = [room.host.socket, ...room.players.map(player => player.socket), ...room.spectators.map(spectator => spectator.socket)].filter(Boolean);
     for (const socket of sockets) {
       safeSend(socket, { type: 'room.closed', code: room.code, reason });
       this.sessions.delete(socket);
@@ -521,6 +563,7 @@ class RoomManager {
   broadcast(room, message) {
     safeSend(room.host.socket, message);
     for (const player of room.players) if (player.connected) safeSend(player.socket, message);
+    for (const spectator of room.spectators) if (spectator.connected) safeSend(spectator.socket, message);
   }
 
   error(socket, code, message, details = null) {

@@ -448,3 +448,43 @@ describe('Room-code guessing limit (A-03)', () => {
     assert.equal(rm.rooms.get(code).players.length, 1);
   });
 });
+
+describe('Spectator role (A-09)', () => {
+  test('late spectators receive updates and resume, but cannot affect the room', () => {
+    let now = 1_000_000; const rm = new RoomManager({ now: () => now, random: rng(12) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(), a = mk(), b = mk(), viewer = mk();
+    for (const socket of [host, a, b, viewer]) rm.connect(socket);
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const room = [...rm.rooms.values()][0];
+    for (const [socket, name] of [[a, 'A'], [b, 'B']]) rm.receive(socket, JSON.stringify({ type: 'room.join', code: room.code, name }));
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    rm.receive(viewer, JSON.stringify({ type: 'room.join', code: room.code, name: 'Viewer', spectate: true, reducedMotion: true }));
+    const joined = viewer.sent.find(message => message.type === 'room.joined');
+    assert.equal(joined.role, 'spectator'); assert.equal(room.players.length, 2); assert.equal(rm.snapshot(room).reducedMotion, false);
+    for (const type of ['player.drop', 'player.position', 'vote.cast', 'team.skip', 'round.rematch']) {
+      rm.receive(viewer, JSON.stringify({ type, x: 0, option: 'turbo' }));
+      assert.equal(viewer.sent.at(-1).type, 'error', `${type} must be rejected`);
+    }
+    rm.receive(viewer, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.equal(rm.snapshot(room).reducedMotion, false);
+    viewer.sent.length = 0; room.engine.changed('game.state');
+    assert.ok(viewer.sent.some(message => message.type === 'room.delta' || message.type === 'room.state'));
+    rm.disconnect(viewer); const resumed = mk(); rm.connect(resumed);
+    rm.receive(resumed, JSON.stringify({ type: 'room.resume', code: room.code, resumeToken: joined.resumeToken }));
+    assert.equal(resumed.sent.find(message => message.type === 'room.resumed').role, 'spectator');
+    rm.receive(resumed, JSON.stringify({ type: 'room.leave' }));
+    assert.equal(room.spectators.length, 0); assert.equal(room.players.length, 2);
+  });
+  test('spectator slots are bounded and disconnected slots expire', () => {
+    let now = 1_000_000; const rm = new RoomManager({ now: () => now });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'competitive' }));
+    const room = [...rm.rooms.values()][0]; const viewers = [];
+    for (let i = 0; i < 17; i++) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code: room.code, spectate: true })); viewers.push(socket); }
+    assert.equal(room.spectators.length, 16); assert.equal(viewers[16].sent.at(-1).code, 'SPECTATORS_FULL');
+    rm.disconnect(viewers[0]); now += 120_000; rm.tick();
+    rm.receive(viewers[16], JSON.stringify({ type: 'room.join', code: room.code, spectate: true }));
+    assert.ok(viewers[16].sent.some(message => message.type === 'room.joined'));
+  });
+});

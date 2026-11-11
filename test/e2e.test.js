@@ -549,3 +549,31 @@ describe('Player identity without colour (A-05)', skipReason ? { skip: skipReaso
     } finally { await r.close(); }
   });
 });
+
+describe('Late spectator view (A-09)', skipReason ? { skip: skipReason } : {}, () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: spectator can watch, reconnect and see results without playing`, async () => {
+    const r = await startRoom(mode); let viewer;
+    try {
+      const url = `http://127.0.0.1:${r.app.server.address().port}/`;
+      viewer = await boot(HTML, { url, reducedMotion: true });
+      const d = viewer.document;
+      d.getElementById('join-game-button').click(); d.getElementById('join-room-code').value = r.room.code;
+      d.getElementById('join-display-name').value = 'Viewer'; d.getElementById('join-spectator').checked = true;
+      d.getElementById('join-form').dispatchEvent(new viewer.window.Event('submit', { bubbles: true, cancelable: true }));
+      await sleep(500);
+      assert.equal(d.body.dataset.screen, 'game');
+      assert.match(d.getElementById('game-mode-kicker').textContent, /Spectator/);
+      assert.equal(d.getElementById('drop-button').disabled, true);
+      assert.equal(d.getElementById('game-stage').classList.contains('competitive-host'), mode === 'competitive');
+      assert.equal(r.app.roomManager.snapshot(r.room).reducedMotion, false);
+      assert.equal(r.room.players.length, 2);
+      r.room.spectators[0].socket.terminate(); await sleep(1500);
+      assert.equal(r.room.spectators[0].connected, true, 'spectator reconnects');
+      if (mode === 'teamwork') r.room.engine.finishTeamRound(Date.now()); else r.room.engine.finishCompetitiveRound(Date.now());
+      await sleep(350);
+      assert.equal(d.body.dataset.screen, 'results');
+      assert.equal(d.querySelector('.multiplayer-result-actions button').disabled, true);
+      assert.deepEqual(viewer.errors, []);
+    } finally { if (viewer) viewer.close(); await r.close(); }
+  });
+});
