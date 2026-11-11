@@ -879,6 +879,57 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   .mini-stack { transform: rotateX(5deg) rotateY(-4deg); }
 }
 
+
+/* TRUE VOLUMETRIC LAYER ---------------------------------------------------- */
+#title-screen { position: relative; overflow: hidden; }
+.home-3d-canvas {
+  position: absolute; inset: 0; z-index: 0; display: none; width: 100%; height: 100%; pointer-events: none;
+  opacity: .96; filter: saturate(1.08) contrast(1.04);
+}
+.home-grid, #title-screen .home-bottom { position: relative; z-index: 1; }
+.game-3d-canvas, .results-3d-canvas {
+  position: absolute; inset: 0; z-index: 0; display: none; width: 100%; height: 100%; pointer-events: none;
+}
+.game-stage.is-3d-active .game-3d-canvas,
+.results-frame.is-3d-active .results-3d-canvas,
+#title-screen.three-d-active .home-3d-canvas { display: block; }
+.game-stage.is-3d-active #game-canvas,
+.results-frame.is-3d-active #results-canvas { opacity: 0; }
+.game-stage.is-3d-active #game-canvas,
+.results-frame.is-3d-active #results-canvas { transition: opacity .24s ease; }
+.results-frame { position: relative; }
+.three-d-capable .button,
+.three-d-capable .mode-pill,
+.three-d-capable .side-card,
+.three-d-capable .preview-card,
+.three-d-capable .status-kicker,
+.three-d-capable .brand-mark,
+.three-d-capable .effect-icon,
+.three-d-capable .vote-icon {
+  transform-style: preserve-3d;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease, filter .22s ease;
+}
+.three-d-capable .button:hover:not(:disabled),
+.three-d-capable .mode-pill:not(:disabled):hover {
+  transform: translateY(-3px) translateZ(9px) rotateX(3deg) rotateY(-1deg);
+  filter: drop-shadow(0 10px 8px color-mix(in srgb, var(--ink) 16%, transparent));
+}
+.three-d-capable .side-card:hover,
+.three-d-capable .preview-card:hover {
+  transform: translateY(-2px) rotateX(.5deg) rotateY(-.7deg);
+  box-shadow: 7px 10px 0 color-mix(in srgb, var(--paper-deep) 70%, transparent), 0 18px 28px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+.three-d-capable .brand-mark { box-shadow: 4px 5px 0 color-mix(in srgb, var(--vermilion) 54%, transparent), 0 0 18px color-mix(in srgb, var(--teal) 28%, transparent); }
+.three-d-capable .brand-mark:hover { transform: rotateY(18deg) rotateX(-8deg) translateZ(7px); }
+.three-d-capable .effect-icon, .three-d-capable .vote-icon { filter: drop-shadow(4px 5px 0 color-mix(in srgb, var(--ink) 22%, transparent)); }
+#title-screen.three-d-active h1 { text-shadow: 3px 5px 0 color-mix(in srgb, var(--ink) 13%, transparent), 0 0 34px color-mix(in srgb, var(--teal) 16%, transparent); }
+#title-screen.three-d-active .home-copy { animation: deck-copy-arrive .8s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes deck-copy-arrive { from { opacity: 0; transform: translate3d(-18px, 10px, -20px); } to { opacity: 1; transform: translate3d(0,0,0); } }
+@media (prefers-reduced-motion: reduce) {
+  #title-screen.three-d-active .home-copy { animation: none; }
+  .three-d-capable .button, .three-d-capable .mode-pill, .three-d-capable .side-card, .three-d-capable .preview-card { transition-duration: .01ms; }
+}
+
 </style>
 </head>
 <body>
@@ -1029,11 +1080,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
     <main>
       <section id="title-screen" class="screen is-active" aria-labelledby="title-heading">
+        <canvas id="home-3d-canvas" class="home-3d-canvas" width="1280" height="760" aria-hidden="true"></canvas>
         <div class="home-grid">
           <div class="home-copy">
             <div class="status-kicker"><span class="live-dot" aria-hidden="true"></span> HOLO-DECK 3D · A tiny tower. A very loud chat.</div>
             <h1 id="title-heading">STACK THE BLOCKS.<span>CHAT RUINS YOUR LIFE.</span></h1>
-            <p class="hero-description">One moving block. One very small window for a perfect drop. Every few seconds, <strong>chat gets a vote</strong> on how badly to mess with your timing.</p>
+            <p class="hero-description">A volumetric tower you can feel in the air. One moving block, one tiny window, and every few seconds <strong>chat rewrites the laws of gravity</strong>.</p>
             <div class="primary-row">
               <button id="start-button" class="button button-primary" type="button">Play solo <span class="arrow" aria-hidden="true">↗</span></button>
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
@@ -1111,12 +1163,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading" role="heading" aria-level="1">Make it stack.</h2></div>
+          <div><div id="game-mode-kicker" class="eyebrow">Single player · volumetric deck</div><h2 id="game-heading" role="heading" aria-level="1">Enter the deck.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="solo-pause-button" class="button" type="button" hidden>Pause</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
             <div id="game-stage" class="game-stage">
+              <canvas id="game-3d-canvas" class="game-3d-canvas" width="360" height="520" aria-hidden="true"></canvas>
               <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
               <div class="canvas-hud" aria-hidden="false">
                 <div class="stage-system-readout" aria-hidden="true"><i></i><span>HOLO DECK</span><strong>3D // LIVE</strong></div>
@@ -1220,13 +1273,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="results-screen" class="screen" aria-labelledby="results-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading" role="heading" aria-level="1">A tower of ambition.</h2></div>
+          <div><div class="eyebrow">Volumetric replay · single player</div><h2 id="results-heading" role="heading" aria-level="1">A tower of ambition, in depth.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span>Results</span></div>
         </div>
         <p id="results-host-status" class="room-status" role="status" aria-live="polite" hidden></p>
         <div id="multiplayer-results" class="multiplayer-results" hidden></div>
         <div id="solo-result-layout" class="result-layout">
           <div class="results-frame">
+            <canvas id="results-3d-canvas" class="results-3d-canvas" width="360" height="520" aria-hidden="true"></canvas>
             <canvas id="results-canvas" width="360" height="520" role="img" aria-label="Final tower results drawing"></canvas>
           </div>
           <section class="result-info" aria-label="Run summary">
@@ -1298,6 +1352,286 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     {"event":"music.bed","cue":"warm-chord-bed","pictureBeat":"A quiet three-note chord fades in during the live run, changes slowly, and fades out at results"},
     {"event":"run.result","cue":"closing-motif","pictureBeat":"The final stack drawing settles on the results screen"}
   ]
+  </script>
+
+  <script>
+  /* A tiny dependency-free WebGL renderer. It is deliberately optional: the audited 2D canvas remains the
+     accessibility and no-WebGL fallback, while capable browsers get the real volumetric deck. */
+  (() => {
+    'use strict';
+    const THEMES = Object.freeze({
+      paper: Object.freeze({ clear: [0.018, 0.045, 0.07, 1], blocks: ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F'], accent: '#2EC4B6', gold: '#E3A33B', line: '#5ED9CE' }),
+      sunset: Object.freeze({ clear: [0.045, 0.008, 0.12, 1], blocks: ['#FFC53D', '#2EC4B6', '#9B5DE5', '#FF5964'], accent: '#2EC4B6', gold: '#FFC53D', line: '#FF8FAB' }),
+      primetime: Object.freeze({ clear: [0.004, 0.018, 0.12, 1], blocks: ['#FFC83D', '#35D0E8', '#F2F5FF', '#E5322D'], accent: '#35D0E8', gold: '#FFC83D', line: '#9DB2FF' })
+    });
+    const COLOR_MAP = Object.freeze({
+      sunset: Object.freeze({ '#E3A33B': '#FFC53D', '#2F8478': '#2EC4B6', '#7FA6BD': '#9B5DE5', '#D5472F': '#FF5964' }),
+      primetime: Object.freeze({ '#E3A33B': '#FFC83D', '#2F8478': '#35D0E8', '#7FA6BD': '#F2F5FF', '#D5472F': '#E5322D' })
+    });
+    const hex = value => {
+      const text = String(value || '').replace('#', '');
+      if (!/^[0-9a-f]{6}$/i.test(text)) return [1, 1, 1];
+      return [0, 2, 4].map(index => parseInt(text.slice(index, index + 2), 16) / 255);
+    };
+    const shade = (color, amount) => color.map(channel => Math.max(0, Math.min(1, channel * amount)));
+    const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    const normalize = value => {
+      const length = Math.hypot(value[0], value[1], value[2]) || 1;
+      return value.map(channel => channel / length);
+    };
+    function perspective(fov, aspect, near, far) {
+      const f = 1 / Math.tan(fov / 2); const range = 1 / (near - far);
+      return new Float32Array([f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (near + far) * range, -1, 0, 0, near * far * 2 * range, 0]);
+    }
+    function lookAt(eye, target, up = [0, 1, 0]) {
+      const z = normalize(sub(eye, target));
+      const x = normalize([up[1] * z[2] - up[2] * z[1], up[2] * z[0] - up[0] * z[2], up[0] * z[1] - up[1] * z[0]]);
+      const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+      return new Float32Array([x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0,
+        -(x[0] * eye[0] + x[1] * eye[1] + x[2] * eye[2]), -(y[0] * eye[0] + y[1] * eye[1] + y[2] * eye[2]), -(z[0] * eye[0] + z[1] * eye[1] + z[2] * eye[2]), 1]);
+    }
+    function multiply(a, b) {
+      const out = new Float32Array(16);
+      for (let column = 0; column < 4; column += 1) {
+        for (let row = 0; row < 4; row += 1) {
+          out[column * 4 + row] = a[row] * b[column * 4] + a[4 + row] * b[column * 4 + 1] + a[8 + row] * b[column * 4 + 2] + a[12 + row] * b[column * 4 + 3];
+        }
+      }
+      return out;
+    }
+    function compile(gl, type, source) {
+      const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader) || '3D shader failed');
+      return shader;
+    }
+    function program(gl) {
+      const vertex = compile(gl, gl.VERTEX_SHADER, `
+        attribute vec3 a_position;
+        attribute vec3 a_color;
+        attribute vec3 a_normal;
+        uniform mat4 u_matrix;
+        uniform float u_point_size;
+        varying vec3 v_color;
+        varying float v_light;
+        varying float v_point_size;
+        void main() {
+          gl_Position = u_matrix * vec4(a_position, 1.0);
+          v_color = a_color;
+          v_light = 0.56 + 0.44 * max(dot(normalize(a_normal), normalize(vec3(-0.45, 0.85, 0.7))), 0.0);
+          v_point_size = u_point_size;
+          gl_PointSize = u_point_size;
+        }
+      `);
+      const fragment = compile(gl, gl.FRAGMENT_SHADER, `
+        precision mediump float;
+        varying vec3 v_color;
+        varying float v_light;
+        varying float v_point_size;
+        void main() {
+          float alpha = 1.0;
+          if (v_point_size > 1.5) {
+            vec2 point = gl_PointCoord - vec2(.5);
+            alpha = 1.0 - smoothstep(.18, .5, length(point));
+          }
+          gl_FragColor = vec4(v_color * v_light, alpha);
+        }
+      `);
+      const linked = gl.createProgram(); gl.attachShader(linked, vertex); gl.attachShader(linked, fragment); gl.linkProgram(linked);
+      if (!gl.getProgramParameter(linked, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(linked) || '3D program failed');
+      return linked;
+    }
+
+    class SabotageStack3D {
+      constructor(canvas, mode = 'game') {
+        this.canvas = canvas; this.mode = mode; this.ready = false; this.gl = null; this.pointer = [0, 0]; this.lastSize = '';
+        try {
+          const gl = canvas && canvas.getContext && (canvas.getContext('webgl2', { alpha: true, antialias: true }) || canvas.getContext('webgl', { alpha: true, antialias: true }));
+          if (!gl || typeof gl.createShader !== 'function') return;
+          this.gl = gl; this.program = program(gl);
+          this.locations = {
+            position: gl.getAttribLocation(this.program, 'a_position'), color: gl.getAttribLocation(this.program, 'a_color'), normal: gl.getAttribLocation(this.program, 'a_normal'),
+            matrix: gl.getUniformLocation(this.program, 'u_matrix'), pointSize: gl.getUniformLocation(this.program, 'u_point_size')
+          };
+          this.buffers = { position: gl.createBuffer(), color: gl.createBuffer(), normal: gl.createBuffer() };
+          gl.enable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.lineWidth(1);
+          this.ready = true;
+        } catch (_) { this.ready = false; this.gl = null; }
+      }
+      setParallax(x, y) { this.pointer[0] = Math.max(-1, Math.min(1, Number(x) || 0)); this.pointer[1] = Math.max(-1, Math.min(1, Number(y) || 0)); }
+      resize() {
+        if (!this.ready) return;
+        const rect = this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : null;
+        const width = Math.max(1, Math.round((rect && rect.width) || this.canvas.clientWidth || (this.mode === 'home' ? 900 : 360)));
+        const height = Math.max(1, Math.round((rect && rect.height) || this.canvas.clientHeight || (this.mode === 'home' ? 600 : 520)));
+        const dpr = Math.min(2, Number(window.devicePixelRatio) || 1); const key = `${width}x${height}x${dpr}`;
+        if (this.lastSize !== key) { this.canvas.width = Math.round(width * dpr); this.canvas.height = Math.round(height * dpr); this.lastSize = key; }
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      }
+      theme(name) { return THEMES[name] || THEMES.paper; }
+      color(value, name) {
+        const mapped = COLOR_MAP[name] && COLOR_MAP[name][String(value || '').toUpperCase()];
+        return hex(mapped || value || this.theme(name).accent);
+      }
+      reset(mode, name) {
+        this.positions = []; this.colors = []; this.normals = []; this.lines = []; this.lineColors = []; this.lineNormals = [];
+        this.points = []; this.pointColors = []; this.pointNormals = []; this.currentTheme = this.theme(name);
+        this.mode = mode;
+      }
+      warp(point) {
+        const tilt = this.sceneTilt || 0; const pivot = this.scenePivot || 0; const dy = point[1] - pivot; const c = Math.cos(tilt); const s = Math.sin(tilt);
+        return [point[0] * c - dy * s, pivot + point[0] * s + dy * c, point[2]];
+      }
+      vertex(target, point, color, normal) {
+        target.positions.push(...this.warp(point)); target.colors.push(...color); target.normals.push(...normal);
+      }
+      triangle(a, b, c, color, normal) {
+        this.vertex(this, a, color, normal); this.vertex(this, b, color, normal); this.vertex(this, c, color, normal);
+      }
+      face(a, b, c, d, color, normal) { this.triangle(a, b, c, color, normal); this.triangle(a, c, d, color, normal); }
+      box(x, y, width, height, depth, color, rotation = 0) {
+        const base = this.color(color, this.themeName); const top = shade(base, 1.22); const side = shade(base, .68); const back = shade(base, .5);
+        const cx = x + width / 2; const bottom = y; const topY = y + height; const z0 = -depth / 2; const z1 = depth / 2;
+        const turn = point => { const dx = point[0] - cx; const dy = point[1] - bottom; const c = Math.cos(rotation); const s = Math.sin(rotation); return [cx + dx * c - dy * s, bottom + dx * s + dy * c, point[2]]; };
+        const p = (px, py, pz) => turn([px, py, pz]);
+        this.face(p(x, bottom, z1), p(x + width, bottom, z1), p(x + width, topY, z1), p(x, topY, z1), base, [0, 0, 1]);
+        this.face(p(x + width, bottom, z0), p(x, bottom, z0), p(x, topY, z0), p(x + width, topY, z0), back, [0, 0, -1]);
+        this.face(p(x, bottom, z0), p(x, bottom, z1), p(x, topY, z1), p(x, topY, z0), side, [-1, 0, 0]);
+        this.face(p(x + width, bottom, z1), p(x + width, bottom, z0), p(x + width, topY, z0), p(x + width, topY, z1), side, [1, 0, 0]);
+        this.face(p(x, topY, z1), p(x + width, topY, z1), p(x + width, topY, z0), p(x, topY, z0), top, [0, 1, 0]);
+        this.face(p(x, bottom, z0), p(x + width, bottom, z0), p(x + width, bottom, z1), p(x, bottom, z1), shade(base, .42), [0, -1, 0]);
+      }
+      line(a, b, color, normal = [0, 1, 0]) {
+        this.vertex({ positions: this.lines, colors: this.lineColors, normals: this.lineNormals }, a, color, normal);
+        this.vertex({ positions: this.lines, colors: this.lineColors, normals: this.lineNormals }, b, color, normal);
+      }
+      ring(x, y, radiusX, radiusZ, color, segments = 48) {
+        const tone = this.color(color, this.themeName);
+        for (let index = 0; index < segments; index += 1) {
+          const a = (index / segments) * Math.PI * 2; const b = ((index + 1) / segments) * Math.PI * 2;
+          this.line([x + Math.cos(a) * radiusX, y, Math.sin(a) * radiusZ], [x + Math.cos(b) * radiusX, y, Math.sin(b) * radiusZ], tone, [0, 1, 0]);
+        }
+      }
+      point(position, color, normal = [0, 1, 0]) {
+        const tone = this.color(color, this.themeName); this.vertex({ positions: this.points, colors: this.pointColors, normals: this.pointNormals }, position, tone, normal);
+      }
+      grid(themeName, dense = false) {
+        const tone = this.color(this.currentTheme.line, themeName); const gold = this.color(this.currentTheme.gold, themeName);
+        for (let x = -12; x <= 12; x += dense ? 1 : 2) this.line([x, 0, -10], [x, 0, 10], tone);
+        for (let z = -10; z <= 10; z += dense ? 1 : 2) this.line([-12, 0, z], [12, 0, z], tone);
+        for (const x of [-8, 8]) { this.line([x, 0, -8], [x, 8, -8], gold); this.line([x, 0, 8], [x, 8, 8], gold); }
+        for (let y = 1; y < 10; y += 1.5) this.line([-8, y, -8], [8, y, -8], tone);
+      }
+      home(time, themeName) {
+        const theme = this.theme(themeName); this.grid(themeName, false);
+        const colours = theme.blocks;
+        for (let index = 0; index < 13; index += 1) {
+          const angle = index * .72 + time * .22; const radius = 2.2 + Math.sin(index * 1.7) * .35;
+          const x = Math.cos(angle) * radius - 1.3; const z = Math.sin(angle) * radius; const y = .45 + index * .57 + Math.sin(time * .8 + index) * .12;
+          this.box(x, y, Math.max(1.5, 3.6 - index * .09), .48, .86, colours[index % colours.length], Math.sin(angle) * .08);
+          this.ring(x + .6, y + .32, 1.45, .7, index % 2 ? theme.accent : theme.gold, 28);
+        }
+        for (let index = 0; index < 34; index += 1) {
+          const angle = index * 2.399 + time * .08; const radius = 4 + (index % 7) * .42;
+          this.point([Math.cos(angle) * radius, 1 + (index % 9) * .55, Math.sin(angle) * radius], index % 3 ? theme.accent : theme.gold);
+        }
+      }
+      canonicalX(value) { return -6 + (Number(value) || 0) / 30; }
+      game(state, themeName, time, reducedMotion) {
+        const theme = this.theme(themeName); this.grid(themeName, true);
+        if (state && state.multiplayer && state.mode === 'competitive' && state.role !== 'player' && Array.isArray(state.remotePlayers)) {
+          const players = state.remotePlayers; const width = 12 / Math.max(1, players.length);
+          players.forEach((player, index) => {
+            const columnLeft = -6 + index * width; const blocks = Array.isArray(player.blocks) ? player.blocks : [];
+            for (const block of blocks) {
+              const blockWidth = Math.max(.18, (Number(block.right) - Number(block.left)) / 360 * width);
+              this.box(columnLeft + (Number(block.left) || 0) / 360 * width, (Number(block.level) || 0) * .72, blockWidth, .62, block.color || theme.blocks[index % theme.blocks.length], 0);
+            }
+            if (!player.ended && !player.collapsed && player.moving) {
+              const moverWidth = Math.max(.18, Number(player.moving.width || 30) / 360 * width);
+              this.box(columnLeft + (Number(player.moving.left) || 0) / 360 * width, (Number(player.moving.level) || blocks.length) * .72, moverWidth, .62, player.moving.color || theme.gold, 0);
+              this.ring(columnLeft + ((Number(player.moving.left) || 0) + Number(player.moving.width || 30) / 2) / 360 * width, (Number(player.moving.level) || blocks.length) * .72 + .68, moverWidth * .62, .3, theme.accent, 28);
+            }
+            this.line([columnLeft, 0, -.65], [columnLeft, Math.max(1, blocks.length * .72 + .8), -.65], this.color(theme.line, themeName));
+          });
+          return;
+        }
+        const stack = Array.isArray(state && state.stack) ? state.stack : [];
+        const collapsed = new Set(Array.isArray(state && state.collapsingLevels) ? state.collapsingLevels : []);
+        const maxLevel = Math.max(1, stack.length);
+        for (const block of stack) {
+          if (collapsed.has(block.level)) continue;
+          const level = Number(block.level) || 0; const width = Math.max(.45, (Number(block.right) - Number(block.left)) / 30);
+          const left = this.canonicalX(block.left); const y = level * .72;
+          this.box(left, y, width, .64, block.color || theme.blocks[level % theme.blocks.length], 0);
+          if (block.perfect) this.ring(left + width / 2, y + .67, Math.max(.55, width * .34), .32, theme.gold, 32);
+        }
+        const moving = state && state.moving;
+        if (moving && state.phase === 'playing') {
+          const width = Math.max(.45, Number(moving.width) / 30); const y = (Number(moving.level) || maxLevel) * .72;
+          this.box(this.canonicalX(moving.left), y, width, .64, moving.color || theme.gold, 0);
+          this.ring(this.canonicalX(moving.left) + width / 2, y + .68, width * .6, .42, theme.accent, reducedMotion ? 24 : 42);
+          if (moving.decoy) this.box(this.canonicalX(moving.decoy.left), y, width, .64, theme.line, 0);
+        }
+        if (Array.isArray(state && state.fallingActors)) {
+          for (const actor of state.fallingActors.slice(-12)) {
+            const level = Math.max(-1, (480 - Number(actor.y || 480)) / 30); const width = Math.max(.35, Number(actor.width || 22) / 30);
+            this.box(this.canonicalX(actor.x), level * .72, width, .52, actor.color || theme.gold, Number(actor.angle) || 0);
+          }
+        }
+        const effect = state && state.activeEffect; const effectId = effect && effect.id;
+        if (effectId === 'portal') { this.ring(-5.8, maxLevel * .36, .55, 1.1, theme.accent, 36); this.ring(5.8, maxLevel * .36, .55, 1.1, theme.accent, 36); }
+        if (effectId === 'spotlight') this.ring(this.canonicalX((stack.at(-1) || { left: 80, right: 280 }).left), maxLevel * .72 + .4, 1.6, 1.6, theme.gold, 48);
+        if (effectId === 'magnet' && moving && stack.length) {
+          const below = stack.at(-1); const target = this.canonicalX((below.left + below.right) / 2); const origin = this.canonicalX(moving.left) + Number(moving.width) / 60;
+          this.line([origin, maxLevel * .72 + .3, .55], [target, (maxLevel - 1) * .72 + .72, .55], this.color(theme.gold, themeName));
+        }
+        for (let index = 0; index < 26; index += 1) {
+          const angle = index * 1.91 + time * .15; const radius = 5 + (index % 5) * .35;
+          this.point([Math.cos(angle) * radius, 1.2 + (index % 7) * .7, Math.sin(angle) * radius], index % 2 ? theme.accent : theme.gold);
+        }
+      }
+      results(data, themeName) {
+        const theme = this.theme(themeName); this.grid(themeName, false); const blocks = Array.isArray(data && data.blocks) ? data.blocks : [];
+        const scale = Math.min(1, 7.6 / Math.max(1, blocks.length * .72));
+        for (const block of blocks) {
+          const level = Number(block.level) || 0; const width = Math.max(.35, (Number(block.right) - Number(block.left)) / 30) * scale;
+          this.box(this.canonicalX(block.left) * scale, level * .72 * scale, width, .62 * scale, block.color || theme.gold, 0);
+          if (block.perfect) this.ring(this.canonicalX((block.left + block.right) / 2) * scale, level * .72 * scale + .66 * scale, width * .35, .25, theme.gold, 28);
+        }
+        for (let index = 0; index < 40; index += 1) {
+          const a = index * 1.71; this.point([Math.cos(a) * (4 + index % 4), 1 + (index % 8) * .5, Math.sin(a) * (4 + index % 4)], index % 2 ? theme.accent : theme.gold);
+        }
+      }
+      upload(buffer, values) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(values), gl.DYNAMIC_DRAW); }
+      bind(buffer, location) { const gl = this.gl; gl.bindBuffer(gl.ARRAY_BUFFER, buffer); gl.enableVertexAttribArray(location); gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0); }
+      drawBatch(positions, colors, normals, mode, matrix, pointSize = 1) {
+        if (!positions.length) return; const gl = this.gl; this.upload(this.buffers.position, positions); this.upload(this.buffers.color, colors); this.upload(this.buffers.normal, normals);
+        this.bind(this.buffers.position, this.locations.position); this.bind(this.buffers.color, this.locations.color); this.bind(this.buffers.normal, this.locations.normal);
+        gl.uniform1f(this.locations.pointSize, pointSize); gl.uniformMatrix4fv(this.locations.matrix, false, matrix); gl.drawArrays(mode, 0, positions.length / 3);
+      }
+      render(mode, themeName, time, state = null, reducedMotion = false) {
+        if (!this.ready) return; this.resize(); const gl = this.gl; const theme = this.theme(themeName); this.themeName = themeName; this.reset(mode, themeName);
+        const effect = state && state.activeEffect;
+        this.sceneTilt = effect && effect.id === 'pisa' && !reducedMotion ? Math.sin(Number(effect.elapsed) * 2.5) * .16 : 0;
+        this.scenePivot = Math.max(.1, (Array.isArray(state && state.stack) ? state.stack.length - 1 : 1) * .36);
+        const sceneTime = reducedMotion ? 0 : time;
+        if (mode === 'home') this.home(sceneTime, themeName); else if (mode === 'results') this.results(state, themeName); else this.game(state, themeName, sceneTime, reducedMotion);
+        const remoteHeight = state && Array.isArray(state.remotePlayers) ? Math.max(0, ...state.remotePlayers.map(player => Number(player.height) || (Array.isArray(player.blocks) ? player.blocks.length : 0))) : 0;
+        const height = Math.max(1, Array.isArray(state && state.stack) ? state.stack.length : Array.isArray(state && state.blocks) ? state.blocks.length : remoteHeight || (mode === 'home' ? 8 : 1)); const top = mode === 'home' ? 3.8 : mode === 'results' ? Math.min(5.5, height * .28) : Math.max(1.8, (height - 1) * .72 * .48);
+        const zoom = mode === 'game' && state && state.activeEffect && state.activeEffect.id === 'zoom' ? .58 : .72;
+        const aspect = this.canvas.width / Math.max(1, this.canvas.height); const projection = perspective(zoom, aspect, .1, 80);
+        const sway = reducedMotion ? 0 : Math.sin(time * .36) * .32 + this.pointer[0] * .55;
+        const shake = !reducedMotion && state && state.activeEffect && state.activeEffect.id === 'earthquake' ? Math.sin(time * 43) * .16 : 0;
+        const eye = [sway, top + 4.4 + (reducedMotion ? 0 : this.pointer[1] * .28), 15.5]; const target = [shake, top, 0]; const matrix = multiply(projection, lookAt(eye, target));
+        const bg = mode === 'home' ? [0, 0, 0, 0] : theme.clear; gl.clearColor(bg[0], bg[1], bg[2], bg[3]); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(this.program); gl.disable(gl.DEPTH_TEST); this.drawBatch(this.lines, this.lineColors, this.lineNormals, gl.LINES, matrix, 1); gl.enable(gl.DEPTH_TEST); this.drawBatch(this.positions, this.colors, this.normals, gl.TRIANGLES, matrix, 1); gl.disable(gl.DEPTH_TEST); this.drawBatch(this.points, this.pointColors, this.pointNormals, gl.POINTS, matrix, reducedMotion ? 2.2 : 4.2); gl.enable(gl.DEPTH_TEST);
+      }
+      renderHome(time, theme, reducedMotion) { this.render('home', theme, time, null, reducedMotion); }
+      renderGame(state, theme, time, reducedMotion) { this.render('game', theme, time, state, reducedMotion); }
+      renderResults(data, theme, time, reducedMotion) { this.render('results', theme, time, data, reducedMotion); }
+    }
+    window.SabotageStack3D = SabotageStack3D;
+  })();
   </script>
 
   <script>
@@ -1836,7 +2170,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
-      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), game3dCanvas: document.getElementById('game-3d-canvas'), home3dCanvas: document.getElementById('home-3d-canvas'), resultsCanvas: document.getElementById('results-canvas'), results3dCanvas: document.getElementById('results-3d-canvas'), resultsFrame: document.querySelector('.results-frame'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
@@ -1890,6 +2224,39 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     let zoomScale = 1;
     let lastFrame = 0;
     let uiClock = 0;
+    const threeD = { home: null, game: null, results: null, enabled: false, pointerX: 0, pointerY: 0 };
+    function set3DVisibility(screen) {
+      const homeReady = Boolean(threeD.home && threeD.home.ready);
+      const gameReady = Boolean(threeD.game && threeD.game.ready);
+      const resultsReady = Boolean(threeD.results && threeD.results.ready);
+      elements.title.classList.toggle('three-d-active', screen === 'title' && homeReady);
+      elements.gameStage.classList.toggle('is-3d-active', screen === 'game' && gameReady);
+      if (elements.resultsFrame) elements.resultsFrame.classList.toggle('is-3d-active', screen === 'results' && resultsReady && Boolean(resultData));
+    }
+    function setup3D() {
+      if (!window.SabotageStack3D) return;
+      try {
+        threeD.home = new window.SabotageStack3D(elements.home3dCanvas, 'home');
+        threeD.game = new window.SabotageStack3D(elements.game3dCanvas, 'game');
+        threeD.results = new window.SabotageStack3D(elements.results3dCanvas, 'results');
+        threeD.enabled = Boolean(threeD.home.ready || threeD.game.ready || threeD.results.ready);
+      } catch (_) { threeD.enabled = false; }
+      document.documentElement.classList.toggle('three-d-capable', threeD.enabled);
+      set3DVisibility(document.body.dataset.screen || 'title');
+    }
+    function render3DFrame(timestamp) {
+      if (!threeD.enabled) return;
+      const seconds = (Number(timestamp) || 0) / 1000;
+      for (const renderer of [threeD.home, threeD.game, threeD.results]) renderer?.setParallax(threeD.pointerX, threeD.pointerY);
+      const screen = document.body.dataset.screen || 'title';
+      if (screen === 'title' && threeD.home && threeD.home.ready) threeD.home.renderHome(seconds, currentTheme, reducedMotion);
+      if (screen === 'game' && game && threeD.game && threeD.game.ready) threeD.game.renderGame(game, currentTheme, seconds, reducedMotion);
+      if (screen === 'results' && resultData && threeD.results && threeD.results.ready) threeD.results.renderResults(resultData, currentTheme, seconds, reducedMotion);
+    }
+    window.addEventListener('pointermove', event => {
+      threeD.pointerX = (Number(event.clientX) / Math.max(1, window.innerWidth) - .5) * 2;
+      threeD.pointerY = (Number(event.clientY) / Math.max(1, window.innerHeight) - .5) * 2;
+    }, { passive: true });
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
     const multiplayer = {
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
@@ -1952,6 +2319,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
+      set3DVisibility(name);
       if (changed && name === 'title') resetGameAnnouncements();
       // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
       if (changed && name === 'game') document.documentElement.scrollTop = 0;
@@ -4898,6 +5266,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
         drawResults(resultData, resultReveal);
       }
+      render3DFrame(timestamp);
       uiClock += dt;
       if (uiClock >= .12) { uiClock = 0; if (game) syncHud(); }
       requestAnimationFrame(frame);
@@ -5334,6 +5703,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     syncSoundButton();
     applyTheme(currentTheme, false);
     resizeCanvases();
+    setup3D();
     updateBestLabels();
     window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(CANVAS_THEMES)), getTheme: () => currentTheme, setTheme: name => applyTheme(name) });
     const savedMultiplayerSession = mpSessionRead();
