@@ -571,3 +571,16 @@ describe('Connection wait and recovery (F-021)', skipReason ? { skip: skipReason
     } finally { page.close(); }
   });
 });
+
+describe('Phone text sizing (F-022)', () => {
+  test('phone rules set readable floors for vote, effect, status and compact controls', () => {
+    const html = fs.readFileSync(HTML, 'utf8');
+    const css = html.slice(html.indexOf('/* F-022:'), html.indexOf('</style>'));
+    assert.match(css, /@media \(max-width: 700px\)/);
+    assert.match(css, /\.vote-name\s*\{\s*font-size:\s*max\(14px/);
+    assert.match(css, /\.stage-vote-count\s*\{\s*font-size:\s*12px/);
+    assert.match(css, /\.game-live\s*\{\s*font-size:\s*12px/);
+    assert.match(css, /\[data-theme="sunset"\] \.effect-name\s*\{\s*font-size:\s*14px/);
+    assert.match(css, /\.vote-name\s*\{[^}]*white-space:\s*normal/);
+  });
+});
