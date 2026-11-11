@@ -12,7 +12,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 
 | ID | Sev | Effort | Decision first? | Title | Status | Commit | You verified |
 |---|---|---|---|---|---|---|---|
-| F-001 | P0 | larger |  | The playfield shrinks to nothing on short or zoomed viewports, and overflows a 1280×800 laptop | todo | | |
+| F-001 | P0 | larger |  | The playfield shrinks to nothing on short or zoomed viewports, and overflows a 1280×800 laptop | fixed, awaiting your check | fix(F-001), single commit on this branch | |
 | F-002 | P1 | quick |  | Forced auto-drop (3.5 s solo, 10 s Teamwork) cannot be adjusted; an untouched solo run is over in 11 seconds | todo | | |
 | F-003 | P1 | quick |  | Vote keys 1/2/3 do nothing while the Drop button or the canvas has focus, which is the default | todo | | |
 | F-004 | P1 | larger |  | On phones the vote and effect cards are below the fold, and the play card blocks scrolling to them | todo | | |
@@ -67,4 +67,10 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
 
-- (none yet)
+- **F-001, commit hash:** AGENTS.md asks for the hash of the fix in the F-001 row of the same commit, which is circular (writing the hash into the commit changes the hash). The row names the commit instead; `git log --oneline -1` on this branch prints the hash.
+- **F-001, what changed and why:** the board is now the largest 360:520 box that still leaves room for the chrome above it and the Drop row below it, with a 240 px floor; the play card is top-aligned instead of centred against the taller side stack (that centring was what pushed the board and Drop below the fold on a 1280×800 laptop); `.control-row` follows the card instead of the stage, which removes the horizontal scroll at 400 % zoom; and entering the game now scrolls the new screen to the top. Two intended consequences: the board is ~9 % smaller at 1280×800 (405 → 369 px wide) in exchange for Drop staying on screen, and below the 240 px floor (≈347 px tall) a short viewport scrolls instead of shrinking further, so at 200 %/400 % zoom and in phone landscape the whole board is reached with a small scroll.
+- **F-001, deliberately not done:** the suggested "move the side cards under the stage at short heights" was left out. The board is portrait, so on a 844×390 landscape screen it is height-bound and moving the cards under it gains the board nothing while pushing the vote card further away (F-004's subject).
+- **F-001, left alone — needs its own finding:** the results screen reuses the same height-driven sizing (`.results-frame`, no floor). Measured identical before and after this fix; F-001 was scoped to the playfield.
+- **F-001, left alone:** at 1280×800 the side stack is still 795 px tall, so the page scrolls ~215 px to reach the effect card. That is the desktop side of F-004's subject, not the playfield.
+- **F-001, left alone:** in Sunset and Prime Time the document is 322 px wide at a 320 px viewport (2 px over) because of the themed play-card box-shadow. Pre-existing and untouched.
+- **A-11 is now a little further off:** the Competitive host board measures 369 px wide at 1280×800 (405 before) because F-001 spends ~36 px of board width on keeping Drop on screen.
