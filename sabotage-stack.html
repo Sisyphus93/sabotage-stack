@@ -1057,6 +1057,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <p id="multiplayer-turn-status" class="vote-title">Waiting for the round to start.</p>
               <p id="multiplayer-sabotage-announcement" class="mp-sabotage-announcement" role="status" aria-live="polite" hidden></p>
               <div class="turn-timer-row"><span id="multiplayer-turn-timer-label">Turn timer</span><strong id="multiplayer-turn-timer">—</strong></div>
+              <button id="team-skip-button" class="button" type="button" hidden>Skip current turn</button>
+              <button id="team-ready-button" class="button button-primary" type="button" hidden>I’m ready to play</button>
               <ul id="multiplayer-player-list" class="room-player-list compact-player-list" aria-live="polite"></ul>
             </section>
             <section id="vote-card" class="side-card vote-card" aria-labelledby="vote-heading">
@@ -1138,7 +1140,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <ol class="how-steps">
         <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <details class="sabotage-guide">
@@ -1690,6 +1692,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       joinButton: document.getElementById('join-game-button'), joinDialog: document.getElementById('join-dialog'), joinForm: document.getElementById('join-form'), joinCode: document.getElementById('join-room-code'), joinName: document.getElementById('join-display-name'), joinStatus: document.getElementById('join-status'), closeJoin: document.getElementById('close-join'), cancelJoin: document.getElementById('cancel-join'),
       hostModeButtons: Array.from(document.querySelectorAll('[data-host-mode]')), modeLabel: document.getElementById('connection-mode-label'), gameModeKicker: document.getElementById('game-mode-kicker'), multiplayerStatus: document.getElementById('multiplayer-status'),
       roomMode: document.getElementById('room-mode-label'), roomConnection: document.getElementById('room-connection-status'), roomCode: document.getElementById('room-code-display'), roomInviteHint: document.getElementById('room-invite-hint'), roomPlayerCount: document.getElementById('room-player-count'), roomPlayers: document.getElementById('room-player-list'), roomStatus: document.getElementById('room-lobby-status'), roomStart: document.getElementById('room-start-button'), roomReturn: document.getElementById('room-return-button'), roomRematch: document.getElementById('room-rematch-button'), roomLeave: document.getElementById('room-leave-button'), roomClose: document.getElementById('room-close-button'), copyRoomLink: document.getElementById('copy-room-link'),
+      teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
       gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
@@ -2010,16 +2013,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         applyRemotePosition(message);
         return;
       }
-      if (message.type === 'turn.auto-drop') {
-        if (message.playerId === multiplayer.playerId && game && multiplayer.mode === 'teamwork') {
-          clearMultiplayerPendingDrop(null, false);
-          game.awaitingAutoDrop = true;
-          game.turnRemaining = 0;
-          game.autoDropRemaining = Math.max(0, (Number(message.deadline) - Date.now()) / 1000);
-          sendMultiplayerDrop(true);
-        }
-        return;
-      }
       if (message.type === 'drop.ack') {
         if (message.playerId === multiplayer.playerId && message.requestId && message.requestId === multiplayer.pendingDropId) {
           clearMultiplayerPendingDrop(message.requestId, false);
@@ -2036,7 +2029,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         return;
       }
       if (message.type === 'round.paused') {
-        if (game) game.statusMessage = 'Everyone is disconnected. The round is paused.';
+        if (game) game.statusMessage = message.reason === 'all-players-idle' ? 'All players are idle. The round is paused.' : 'Everyone is disconnected. The round is paused.';
         return;
       }
       if (message.type === 'round.resumed') {
@@ -2200,7 +2193,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const current = player.id === currentId || player.playerId === currentId;
       const status = document.createElement('span');
       status.className = 'player-connection';
-      status.textContent = !player.connected ? 'Offline' : player.ended ? 'Finished' : current ? 'Turn' : 'Ready';
+      status.textContent = !player.connected ? 'Offline' : player.ended ? 'Finished' : player.idle ? 'Idle' : current ? 'Turn' : 'Ready';
       li.append(status);
       return li;
     }
@@ -2254,7 +2247,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           : state.canStart ? 'Everyone is in. The host can start when ready.'
           : 'Waiting for at least two connected players. The room locks when the host starts.';
       } else if (state.phase === 'playing') {
-        elements.roomStatus.textContent = state.game && state.game.paused ? 'Round paused until someone reconnects.' : 'The round is live. Use Back to round to return to play.';
+        elements.roomStatus.textContent = state.game && state.game.paused ? (state.game.pauseReason === 'all-players-idle' ? 'Round paused until a player is ready.' : 'Round paused until someone reconnects.') : 'The round is live. Use Back to round to return to play.';
       } else {
         elements.roomStatus.textContent = host ? 'Round complete. Start a rematch when the crew is ready.' : 'Round complete. Waiting for the host to start a rematch.';
       }
@@ -2262,8 +2255,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const g = state.game;
         const current = g.team && g.team.currentPlayerName;
         elements.mpTurnHeading.textContent = g.mode === 'teamwork' ? (g.vote ? 'Room vote' : current ? `${current}'s turn` : 'Round live') : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
-        elements.mpTurnStatus.textContent = g.paused ? 'Everyone is disconnected. The timer is paused.'
-          : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : g.team.awaitingAutoDrop ? 'Time! Automatic drop requested…' : 'Shared tower · fixed player order')
+        elements.mpTurnStatus.textContent = g.paused ? (g.pauseReason === 'all-players-idle' ? 'All players are idle. The timer is paused.' : 'Everyone is disconnected. The timer is paused.')
+          : g.mode === 'teamwork' ? (g.vote ? 'Vote between turns. Teammates decide; the host breaks ties.' : 'Idle players are skipped until ready.')
           : multiplayer.role === 'host' ? 'Everyone builds independently. Room votes hit every connected, active stack.' : 'Build your own tower. Room votes hit every connected, active stack.';
         const seconds = g.mode === 'teamwork' ? g.vote ? g.vote.remaining : g.team.awaitingAutoDrop ? g.team.autoDropRemaining : g.team.turnRemaining : g.remainingSeconds;
         elements.mpTurnTimerLabel.textContent = g.mode === 'teamwork' && g.vote ? 'Vote closes' : 'Turn timer';
@@ -2336,7 +2329,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         collapseClock: previous ? previous.collapseClock : 0, collapseLevel: previous ? previous.collapseLevel : null,
         collapseStartLevel: previous ? previous.collapseStartLevel : null, collapseShake: previous ? previous.collapseShake : 0,
         collapsingLevels: previous ? previous.collapsingLevels.slice() : [],
-        paused: Boolean(remote.paused), pausedByAll: Boolean(remote.paused),
+        paused: Boolean(remote.paused), pauseReason: remote.pauseReason, pausedByAll: Boolean(remote.paused),
         currentPlayerId: team ? team.currentPlayerId : null,
         currentPlayerName: team ? team.currentPlayerName : null,
         currentTurnId: team ? team.turnId : null,
@@ -4083,14 +4076,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
         elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role === 'host' ? 'Room standings' : 'Your stack';
         if (game.paused) {
-          elements.mpTurnStatus.textContent = 'Everyone is disconnected. The round is paused.';
+          elements.mpTurnStatus.textContent = game.pauseReason === 'all-players-idle' ? 'All players are idle. Waiting for someone to return.' : 'Everyone is disconnected. The round is paused.';
           elements.mpTurnTimer.textContent = 'Paused';
         } else if (!multiplayer.connected) {
           elements.mpTurnStatus.textContent = 'Connection lost. Rejoining automatically…';
           elements.mpTurnTimer.textContent = '—';
         } else if (game.mode === 'teamwork') {
           elements.mpTurnStatus.textContent = game.vote ? 'Vote between turns. Teammates decide; the host breaks ties.'
-            : game.awaitingAutoDrop ? 'Time! Automatic drop requested…' : ownTurn ? 'Move the block and drop before the timer runs out.' : 'Shared tower · fixed player order';
+            : ownTurn ? 'Drop before time runs out or your turn will be skipped.' : 'Shared tower · idle players are skipped until ready.';
           elements.mpTurnTimerLabel.textContent = game.vote ? 'Vote closes' : 'Turn timer';
           elements.mpTurnTimer.textContent = game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
             : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
@@ -4100,6 +4093,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.';
           elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(game.remainingSeconds || 0))}s`;
         }
+        const selfTeamPlayer = game.mode === 'teamwork' ? (game.remotePlayers || []).find(player => player.id === multiplayer.playerId) : null;
+        elements.teamReady.hidden = !(selfTeamPlayer && selfTeamPlayer.idle && multiplayer.connected && game.phase === 'playing');
+        elements.teamSkip.hidden = !(game.mode === 'teamwork' && multiplayer.role === 'host' && multiplayer.connected && !game.paused && !game.vote && game.currentPlayerId && game.phase === 'playing');
         const hostView = multiplayer.role === 'host';
         const activePlayer = canDropMultiplayer();
         elements.dropKey.hidden = hostView;
@@ -4553,6 +4549,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.joinCode.addEventListener('input', () => { elements.joinCode.value = elements.joinCode.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4); });
     elements.closeJoin.addEventListener('click', () => elements.joinDialog.close());
     elements.cancelJoin.addEventListener('click', () => elements.joinDialog.close());
+    elements.teamSkip.addEventListener('click', () => { if (game) sendMultiplayer({ type: 'team.skip', turnId: game.currentTurnId }); });
+    elements.teamReady.addEventListener('click', () => sendMultiplayer({ type: 'team.ready' }));
     elements.roomStart.addEventListener('click', () => sendMultiplayer({ type: 'round.start' }));
     elements.roomReturn.addEventListener('click', () => { multiplayer.lobbyViewPhase = null; setScreen('game'); if (canDropMultiplayer()) elements.drop.focus({ preventScroll: true }); });
     elements.roomRematch.addEventListener('click', () => sendMultiplayer({ type: 'round.rematch' }));

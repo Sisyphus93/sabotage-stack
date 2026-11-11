@@ -254,3 +254,33 @@ describe('Teamwork drop-based HUD (F-009)', skipReason ? { skip: skipReason } : 
     } finally { await r.close(); }
   });
 });
+
+describe('Teamwork idle controls (F-010)', skipReason ? { skip: skipReason } : {}, () => {
+  test('host can skip, timeout marks idle, and player can return explicitly', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const engine = r.room.engine, team = engine.game.team;
+      engine.game.nextVoteAt = 100000;
+      const firstId = team.currentPlayerId;
+      const firstName = r.room.players.find(p => p.id === firstId).name;
+      const firstPage = r.players[firstName === 'Ann' ? 0 : 1];
+      assert.equal(r.host.document.getElementById('team-skip-button').hidden, false);
+      assert.equal(firstPage.document.getElementById('team-skip-button').hidden, true);
+      r.host.document.getElementById('team-skip-button').click(); await sleep(300);
+      assert.notEqual(team.currentPlayerId, firstId);
+      assert.equal(engine.player(firstId).teamIdle, false);
+      team.turnExpiresAt = Date.now() - 1;
+      const idleId = team.currentPlayerId;
+      const idleName = r.room.players.find(p => p.id === idleId).name;
+      const idlePage = r.players[idleName === 'Ann' ? 0 : 1];
+      engine.tick(Date.now() + 100); await sleep(400);
+      assert.equal(engine.player(idleId).teamIdle, true);
+      assert.equal(idlePage.document.getElementById('team-ready-button').hidden, false);
+      assert.match(idlePage.document.getElementById('multiplayer-player-list').textContent, /Idle/);
+      idlePage.document.getElementById('team-ready-button').click(); await sleep(300);
+      assert.equal(engine.player(idleId).teamIdle, false);
+      assert.equal(idlePage.document.getElementById('team-ready-button').hidden, true);
+      for (const page of [r.host, ...r.players]) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});

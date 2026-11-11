@@ -49,6 +49,7 @@ class RoundEngine {
     const now = this.now();
     for (const player of this.players) {
       player.ended = false;
+      player.teamIdle = false;
       player.blocksPlaced = 0;
       player.perfects = 0;
       player.sabotageCount = 0;
@@ -59,7 +60,7 @@ class RoundEngine {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
       lastSabotage: null, sabotageSequence: 0,
-      activeEffects: [], pendingSabotage: null, teamSabotageQueue: [], paused: false, pausedAt: null,
+      activeEffects: [], pendingSabotage: null, teamSabotageQueue: [], paused: false, pausedAt: null, pauseReason: null,
       team: this.mode === 'teamwork' ? {
         stack: [Core.makeBase()], fallen: [], perfects: 0, score: 0,
         turnOrder: this.players.map(player => player.id), turnIndex: -1,
@@ -242,10 +243,10 @@ class RoundEngine {
     for (let offset = 1; offset <= count; offset += 1) {
       const index = (team.turnIndex + offset + count) % count;
       const candidate = this.connectedPlayer(team.turnOrder[index]);
-      if (candidate) { nextIndex = index; break; }
+      if (candidate && !candidate.teamIdle) { nextIndex = index; break; }
     }
     if (nextIndex == null) {
-      this.pauseIfNoConnected(now);
+      this.pauseIfNoAvailable(now);
       return false;
     }
     const player = this.player(team.turnOrder[nextIndex]);
@@ -545,10 +546,8 @@ class RoundEngine {
     if (!team.turnActive || team.currentPlayerId !== playerId || Number(message.turnId) !== team.turnId) return { ok: false, code: 'NOT_YOUR_TURN' };
     const player = this.connectedPlayer(playerId);
     if (!player) return { ok: false, code: 'PLAYER_INACTIVE' };
-    const auto = Boolean(message.auto);
-    if (auto && !team.awaitingAutoDrop) return { ok: false, code: 'AUTO_DROP_NOT_REQUESTED' };
-    if (team.awaitingAutoDrop && now > team.autoDropDeadlineAt) return { ok: false, code: 'TURN_EXPIRED' };
-    if (now > team.turnExpiresAt && !team.awaitingAutoDrop) return { ok: false, code: 'TURN_EXPIRED' };
+    if (message.auto) return { ok: false, code: 'AUTO_DROP_NOT_REQUESTED' };
+    if (now >= team.turnExpiresAt || game.paused) return { ok: false, code: 'TURN_EXPIRED' };
     const checked = this.validateReportedX(team.moving, team.stack, team, playerId, message.x, now, 'DROP_POSITION_OUT_OF_SYNC');
     if (!checked.ok) return { ...checked, requestId: message.requestId };
     if (message.sequence != null && Number(message.sequence) < player.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: team.moving.left };
@@ -800,16 +799,10 @@ class RoundEngine {
       return true;
     }
     if (team.turnActive) {
-      if (!team.awaitingAutoDrop && now >= team.turnExpiresAt) {
-        team.awaitingAutoDrop = true;
-        team.autoDropDeadlineAt = team.turnExpiresAt + AUTO_DROP_GRACE_MS;
-        this.onEvent('turn.auto-drop', { playerId: team.currentPlayerId, turnId: team.turnId, deadline: team.autoDropDeadlineAt });
-        this.changed('game.state');
-        if (now >= team.autoDropDeadlineAt) this.forfeitTeamTurn(now);
-        return true;
-      }
-      if (team.awaitingAutoDrop && now >= team.autoDropDeadlineAt) {
-        this.forfeitTeamTurn(now);
+      if (now >= team.turnExpiresAt) {
+        const player = this.player(team.currentPlayerId);
+        if (player) player.teamIdle = true;
+        this.forfeitTeamTurn(now, 'timeout');
         return true;
       }
       if (changed) this.changed('game.state');
@@ -820,9 +813,10 @@ class RoundEngine {
     return true;
   }
 
-  forfeitTeamTurn(now = this.now()) {
+  forfeitTeamTurn(now = this.now(), reason = 'forfeit') {
     const team = this.game.team;
     const playerId = team.currentPlayerId;
+    if (!team.turnActive || !playerId) return false;
     // A forfeited turn has no landing, so its drop-based sabotage remains pending for the next affected block.
     team.turnActive = false;
     team.awaitingAutoDrop = false;
@@ -830,7 +824,8 @@ class RoundEngine {
     team.autoDropDeadlineAt = null;
     team.turnIndex = team.turnOrder.indexOf(playerId);
     team.currentPlayerId = null;
-    this.onEvent('turn.forfeited', { playerId, turnId: team.turnId });
+    this.onEvent('turn.forfeited', { playerId, turnId: team.turnId, reason });
+    if (this.pauseIfNoAvailable(now)) return true;
     if (this.game.elapsed >= this.game.nextVoteAt) this.openVote(now);
     else this.startTeamTurn(now, true);
     this.changed('game.state');
@@ -841,14 +836,15 @@ class RoundEngine {
     if (!game || game.phase !== 'playing') return;
     if (this.mode === 'teamwork') {
       if (!this.players.some(player => player.connected && !player.ended)) {
+        if (!game.paused) game.pausedAt = now;
         game.paused = true;
-        game.pausedAt = now;
-        this.onEvent('round.paused', { reason: 'all-players-disconnected' });
+        game.pauseReason = 'all-players-disconnected';
+        this.onEvent('round.paused', { reason: game.pauseReason });
         this.changed('game.state');
         return;
       }
       if (game.team.turnActive && game.team.currentPlayerId === playerId) this.forfeitTeamTurn(now);
-      else this.changed('game.state');
+      else if (!this.pauseIfNoAvailable(now)) this.changed('game.state');
       return;
     }
     const competitor = game.competitors.find(item => item.playerId === playerId);
@@ -862,7 +858,7 @@ class RoundEngine {
   playerReconnected(playerId, now = this.now()) {
     const game = this.game;
     if (!game || game.phase !== 'playing') return;
-    if (this.mode === 'teamwork' && game.paused) {
+    if (this.mode === 'teamwork' && game.paused && this.players.some(player => player.connected && !player.ended && !player.teamIdle)) {
       const shift = Math.max(0, now - game.pausedAt);
       const team = game.team;
       if (team.turnExpiresAt != null) team.turnExpiresAt += shift;
@@ -871,6 +867,7 @@ class RoundEngine {
       for (const effect of game.activeEffects) if (!effect.untilDrop) effect.expiresAt += shift;
       game.paused = false;
       game.pausedAt = null;
+      game.pauseReason = null;
       game.lastTickAt = now;
       if (team.turnActive && !this.connectedPlayer(team.currentPlayerId)) this.forfeitTeamTurn(now);
       else if (!team.turnActive && !game.vote) this.startTeamTurn(now, Boolean(team.moving));
@@ -894,13 +891,35 @@ class RoundEngine {
     this.changed('game.state');
   }
 
-  pauseIfNoConnected(now = this.now()) {
-    if (this.mode !== 'teamwork' || this.players.some(player => player.connected && !player.ended)) return false;
-    this.game.paused = true;
-    this.game.pausedAt = now;
-    this.onEvent('round.paused', { reason: 'all-players-disconnected' });
-    this.changed('game.state');
+  pauseIfNoAvailable(now = this.now()) {
+    if (this.mode !== 'teamwork' || this.players.some(player => player.connected && !player.ended && !player.teamIdle)) return false;
+    if (!this.game.paused) {
+      this.game.paused = true;
+      this.game.pausedAt = now;
+      this.game.pauseReason = this.players.some(player => player.connected && !player.ended) ? 'all-players-idle' : 'all-players-disconnected';
+      this.onEvent('round.paused', { reason: this.game.pauseReason });
+      this.changed('game.state');
+    }
     return true;
+  }
+
+  teamReady(playerId, now = this.now()) {
+    const game = this.game;
+    const player = this.connectedPlayer(playerId);
+    if (this.mode !== 'teamwork' || !game || game.phase !== 'playing' || !player) return { ok: false, code: 'PLAYER_INACTIVE' };
+    if (!player.teamIdle) return { ok: false, code: 'ALREADY_READY' };
+    player.teamIdle = false;
+    if (game.paused) this.playerReconnected(playerId, now);
+    else this.changed('game.state');
+    return { ok: true };
+  }
+
+  hostSkipTeamTurn(turnId, now = this.now()) {
+    const game = this.game;
+    if (this.mode !== 'teamwork' || !game || game.phase !== 'playing' || game.paused || game.vote || !game.team.turnActive || Number(turnId) !== game.team.turnId)
+      return { ok: false, code: 'TURN_NOT_ACTIVE' };
+    this.forfeitTeamTurn(now, 'host-skip');
+    return { ok: true };
   }
 
   snapshot(now = this.now()) {
@@ -916,7 +935,7 @@ class RoundEngine {
     } : null;
     const common = {
       mode: game.mode, phase: game.phase, roundNumber: game.roundNumber,
-      elapsed: game.elapsed, paused: game.paused, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
+      elapsed: game.elapsed, paused: game.paused, pauseReason: game.pauseReason, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
       lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
       activeEffects: game.activeEffects.map(effect => ({
@@ -959,7 +978,7 @@ class RoundEngine {
       });
     }
     common.players ||= this.players.map(player => ({
-      id: player.id, name: player.name, color: player.color, connected: player.connected, ended: Boolean(player.ended),
+      id: player.id, name: player.name, color: player.color, connected: player.connected, idle: Boolean(player.teamIdle), ended: Boolean(player.ended),
       lastPositionSeq: Number.isInteger(player.lastPositionSeq) ? player.lastPositionSeq : -1,
       blocksPlaced: player.blocksPlaced || 0, perfects: player.perfects || 0, sabotageCount: player.sabotageCount || 0
     }));

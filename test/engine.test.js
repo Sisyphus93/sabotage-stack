@@ -390,6 +390,7 @@ describe('Teamwork drop-based sabotage (F-009)', () => {
     assert.ok(engine.hasEffect('turbo', target, clock.t), 'forfeit did not consume it');
     engine.consumeDropEffects(team.currentPlayerId, clock.t);
     assert.ok(engine.hasEffect('turbo', target, clock.t), 'another player cannot consume it');
+    assert.equal(engine.teamReady(target, clock.t).ok, true);
     engine.forfeitTeamTurn(clock.t);
     if (engine.game.vote) engine.resolveVote(clock.t);
     assert.equal(team.currentPlayerId, target);
@@ -432,5 +433,73 @@ describe('Teamwork drop-based sabotage (F-009)', () => {
     assert.equal(engine.hasEffect('turbo', 'a', clock.t + 5000), false);
     engine.addEffect('portal', 'a', clock.t);
     assert.equal(engine.hasEffect('portal', 'a', clock.t + 8000), false);
+  });
+});
+
+describe('Teamwork idle turns (F-010)', () => {
+  test('timeout forfeits without a drop and skips that player until ready', () => {
+    const { engine, clock } = makeEngine('teamwork', 151);
+    const team = engine.game.team;
+    const first = team.currentPlayerId;
+    const initialStack = structuredClone(team.stack);
+    engine.addEffect('turbo', first, clock.t);
+    clock.t += 10000;
+    assert.equal(engine.drop(first, { turnId: team.turnId, x: team.moving.left }).code, 'TURN_EXPIRED');
+    engine.tick(clock.t);
+    assert.deepEqual(team.stack, initialStack);
+    assert.equal(engine.player(first).teamIdle, true);
+    assert.ok(engine.hasEffect('turbo', first, clock.t));
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.notEqual(team.currentPlayerId, first);
+    engine.forfeitTeamTurn(clock.t);
+    assert.notEqual(team.currentPlayerId, first);
+    assert.equal(engine.teamReady(first, clock.t).ok, true);
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(team.currentPlayerId, first);
+  });
+
+  test('all idle pauses until explicit ready, including across disconnects', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 152);
+    engine.game.nextVoteAt = Infinity;
+    clock.t += 10000; engine.tick(clock.t);
+    clock.t += 10000; engine.tick(clock.t);
+    assert.equal(engine.game.paused, true);
+    assert.equal(engine.snapshot().pauseReason, 'all-players-idle');
+    const frozen = engine.game.elapsed;
+    clock.t += 60000; engine.tick(clock.t);
+    assert.equal(engine.game.elapsed, frozen);
+    players[0].connected = false; engine.playerDisconnected(players[0].id, clock.t);
+    players[0].connected = true; engine.playerReconnected(players[0].id, clock.t);
+    assert.equal(engine.game.paused, true, 'reconnection alone does not make an idle player ready');
+    assert.equal(engine.teamReady(players[0].id, clock.t).ok, true);
+    assert.equal(engine.game.paused, false);
+    assert.equal(engine.game.team.currentPlayerId, players[0].id);
+    assert.equal(engine.game.team.turnExpiresAt, clock.t + 10000);
+  });
+
+  test('a vote pauses if the only non-idle player disconnects', () => {
+    const { engine, clock, players } = makeEngine('teamwork', 154);
+    players[0].teamIdle = true;
+    engine.openVote(clock.t);
+    players[1].connected = false;
+    engine.playerDisconnected(players[1].id, clock.t);
+    assert.equal(engine.game.paused, true);
+    assert.equal(engine.game.pauseReason, 'all-players-idle');
+    const voteDeadline = engine.game.vote.closesAt;
+    clock.t += 30000;
+    engine.teamReady(players[0].id, clock.t);
+    assert.equal(engine.game.paused, false);
+    assert.equal(engine.game.vote.closesAt, voteDeadline + 30000);
+  });
+
+  test('host skip is turn-specific and never consumes the effect or marks the player idle', () => {
+    const { engine, clock } = makeEngine('teamwork', 153);
+    const team = engine.game.team, player = team.currentPlayerId, turn = team.turnId;
+    engine.addEffect('portal', player, clock.t);
+    assert.equal(engine.hostSkipTeamTurn(turn, clock.t).ok, true);
+    assert.equal(engine.hostSkipTeamTurn(turn, clock.t).ok, false);
+    assert.equal(engine.player(player).teamIdle, false);
+    assert.equal(engine.effectFor('portal', player, clock.t).dropsRemaining, 3);
+    assert.equal(team.stack.length, 1);
   });
 });
