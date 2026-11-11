@@ -1349,7 +1349,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'earthquake', name: 'Earthquake', category: 'trajectory', caption: 'The foundations have a few objections.', effect: 'The playfield trembles by up to 8 px sideways and 3 px vertically for 5 seconds; block physics stay unchanged.' },
       { id: 'pisa', name: 'The Pisa Tilt', category: 'trajectory', caption: 'Architecture is subjective, really.', effect: 'The view eases into a gentle sway of up to 16° for 5 seconds.' },
       { id: 'spotlight', name: 'Spotlight', category: 'optical', caption: 'One corner of the stage is under observation.', effect: 'Blacks out the whole field, leaving only a narrow, steady beam on one edge of the tower.' },
-      { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover appears for 0.35 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
+      { id: 'peekaboo', name: 'Peekaboo', category: 'optical', caption: 'Now you see it… now you don’t.', effect: 'The mover stays visible for 0.31 seconds, fades over 40 ms, then stays hidden for 0.35 seconds.' },
       { id: 'zoom', name: 'Macro Zoom', category: 'optical', caption: 'Extreme close-up. Don’t blink.', effect: 'A 1.85× view locks onto the top platform; wall rebounds can leave the frame.' },
       { id: 'double', name: 'The Shell Game', category: 'optical', caption: 'Follow the cracked block.', effect: 'A decoy travels in the opposite direction; a small crack marks the real mover.' },
       { id: 'accordion', name: 'The Accordion', category: 'geometry', caption: 'Wide, narrow, wide again.', effect: 'Breathes between 45% and 100% of the supporting tower width on a 0.8-second cycle.' },
@@ -1508,7 +1508,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const phase = time % 0.7;
     if (phase < 0.31) return 1;
     if (phase < 0.35) return 1 - (phase - 0.31) / 0.04;
-    if (phase < 0.39) return (phase - 0.35) / 0.04;
     return 0;
   }
   function rollercoasterOffset(elapsed, phase = 0) {

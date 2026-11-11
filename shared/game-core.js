@@ -124,7 +124,6 @@
     const phase = time % 0.7;
     if (phase < 0.31) return 1;
     if (phase < 0.35) return 1 - (phase - 0.31) / 0.04;
-    if (phase < 0.39) return (phase - 0.35) / 0.04;
     return 0;
   }
   function rollercoasterOffset(elapsed, phase = 0) {

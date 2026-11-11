@@ -549,3 +549,18 @@ describe('Effect rebalance (F-019)', () => {
     }
   });
 });
+
+describe('Peekaboo opacity (F-025)', () => {
+  test('fades once and stays hidden until the next cycle', () => {
+    assert.equal(Core.peekabooOpacity(.30), 1);
+    assert.ok(Math.abs(Core.peekabooOpacity(.33) - .5) < 1e-9);
+    for (const time of [.35, .37, .385, .39, .55, .699]) assert.equal(Core.peekabooOpacity(time), 0, `time ${time}`);
+    assert.equal(Core.peekabooOpacity(.7), 1);
+    let prior = 1;
+    for (let time = .31; time < .7; time += .001) {
+      const opacity = Core.peekabooOpacity(time);
+      assert.ok(opacity <= prior + 1e-9, `unexpected flash at ${time}`);
+      prior = opacity;
+    }
+  });
+});
