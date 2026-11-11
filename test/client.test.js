@@ -741,3 +741,59 @@ describe('Competitive viewer board sizing (A-11)', () => {
     assert.match(rule[1], /width:\s*min\(100%,\s*max\(calc\(100dvh/);
   });
 });
+
+describe('Solo pause (A-13)', skipReason ? { skip: skipReason } : {}, () => {
+  test('freezes motion, auto-drop and votes, rejects inputs and resumes without a time jump', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true, storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, seed: 2 });
+    try {
+      const d = page.document, w = page.window, pause = d.getElementById('solo-pause-button');
+      d.getElementById('start-button').click(); page.advanceAnimation(8200);
+      const canvas = d.getElementById('game-canvas'), vote = d.querySelector('.vote-option');
+      assert.equal(vote.disabled, false);
+      pause.click(); assert.equal(pause.textContent, 'Resume');
+      assert.equal(d.getElementById('round-status').textContent, 'Paused');
+      assert.equal(d.getElementById('drop-button').disabled, true); assert.equal(vote.disabled, true);
+      const before = page.png(canvas); const countdown = d.getElementById('vote-countdown').textContent;
+      const height = d.getElementById('height-display').textContent;
+      assert.equal(w.SabotageStack.voteAdapter.submit(0), false);
+      w.dispatchEvent(new w.KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }));
+      canvas.dispatchEvent(new w.Event('pointerdown', { bubbles: true, cancelable: true }));
+      page.advanceAnimation(10000);
+      assert.deepEqual(page.png(canvas), before); assert.equal(d.getElementById('vote-countdown').textContent, countdown);
+      assert.equal(d.getElementById('height-display').textContent, height);
+      pause.click(); assert.equal(pause.textContent, 'Pause'); assert.equal(vote.disabled, false);
+      page.advanceAnimation(500); assert.notDeepEqual(page.png(canvas), before);
+      page.advanceAnimation(5000); assert.equal(d.getElementById('stage-vote-strip').hidden, true);
+      d.getElementById('menu-button').click(); d.getElementById('start-button').click();
+      assert.equal(pause.textContent, 'Pause'); assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('automatic drop clock does not advance during pause', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true });
+    try {
+      const d = page.document; d.getElementById('start-button').click(); page.advanceAnimation(1000);
+      d.getElementById('solo-pause-button').click(); page.advanceAnimation(6000);
+      assert.equal(d.getElementById('height-display').textContent, '0');
+      d.getElementById('solo-pause-button').click(); page.advanceAnimation(2800);
+      assert.notEqual(d.getElementById('height-display').textContent, '0');
+    } finally { page.close(); }
+  });
+});
+
+test('solo pause freezes an active sabotage timer (A-13)', skipReason ? { skip: skipReason } : {}, async () => {
+  const page = await boot(HTML, { manualAnimationFrame: true, storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, seed: 2 });
+  try {
+    const d = page.document; d.getElementById('start-button').click();
+    page.advanceAnimation(13400);
+    const effect = d.getElementById('effect-name').textContent;
+    assert.notEqual(effect, 'No sabotage active'); assert.notEqual(effect, 'Sabotage over');
+    const timer = d.getElementById('effect-time').textContent;
+    d.getElementById('solo-pause-button').click(); page.advanceAnimation(10000);
+    assert.equal(d.getElementById('effect-name').textContent, effect);
+    assert.equal(d.getElementById('effect-time').textContent, timer);
+    assert.equal(d.getElementById('game-canvas').getAttribute('aria-disabled'), 'true');
+    d.getElementById('solo-pause-button').click(); page.advanceAnimation(9000);
+    assert.equal(d.getElementById('effect-name').textContent, 'Sabotage over');
+    assert.deepEqual(page.errors, []);
+  } finally { page.close(); }
+});

@@ -61,11 +61,13 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | A-10 | P3 | | | The context menu is disabled on every button, which also removes long-press actions for assistive tools. | fixed, awaiting your check | fix(A-10), single commit on this branch | |
 | A-11 | P3 | | | The Competitive host board is about 405 px wide inside an 870 px panel: small for a screen meant to be streamed. | fixed, awaiting your check | fix(A-11), single commit on this branch | |
 | A-12 | P3 | | | The disabled Start round button is 2.48:1 in Sunset: exempt from contrast rules, but hard to read as a button at all. | fixed, awaiting your check | fix(A-12), single commit on this branch | |
-| A-13 | P3 | | | There is no pause in solo other than hiding the tab. | todo | | |
+| A-13 | P3 | | | There is no pause in solo other than hiding the tab. | fixed, awaiting your check | fix(A-13), single commit on this branch | |
 
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-13, solo pause:** owner chose a full freeze. Pause/Resume stops the solo simulation, mover, auto-drop, voting and effect timers; drops and votes are rejected until resume, with no elapsed-time jump. The position tone stops during pause. Multiplayer and scoreless Practice are unchanged; ambient sound may continue. Node 22.22.3: `npm test` passed 138/138, including timer, interaction and multiplayer checks. Check the new heading control on a narrow phone in each theme.
 
 - **A-12, disabled Sunset lobby action:** replaced opacity fading with a legible dark/cream disabled treatment, dashed border and no raised shadow; enabled orange style is unchanged. Node 22.22.3: `npm test` passed 135/135, including computed color-ratio check. Browser visual check is still advisable.
 

@@ -40,6 +40,7 @@ for (const mode of ['competitive', 'teamwork']) {
         const engine = r.room.engine;
         assert.equal(engine.game.phase, 'playing');
         for (const page of [r.host, ...r.players]) assert.equal(page.document.body.dataset.screen, 'game');
+        for (const page of [r.host, ...r.players]) assert.equal(page.document.getElementById('solo-pause-button').hidden, true, 'multiplayer is not paused locally');
 
         // Spotlight on whoever is on stage; checked immediately so a Teamwork turn rotation cannot interfere.
         const targetId = mode === 'teamwork' ? engine.game.team.currentPlayerId : r.room.players[0].id;

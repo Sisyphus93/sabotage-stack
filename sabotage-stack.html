@@ -174,7 +174,7 @@ h1 span { display: block; color: var(--vermilion); }
   min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px;
 }
 .screen-heading h2 { margin: 0; color: var(--ink); font: 650 clamp(23px, 2.7vw, 32px)/1.05 var(--font-head); }
-.heading-actions { display: flex; align-items: center; gap: 10px; }
+.heading-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .game-live { display: inline-flex; align-items: center; gap: 8px; color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
 .game-layout {
   min-height: calc(100dvh - 144px); display: grid; grid-template-columns: minmax(330px, 1fr) minmax(300px, 350px);
@@ -371,7 +371,7 @@ html:not([data-theme]) #effect-label, html[data-theme="paper"] #effect-label { c
   .home-aside { display: none; }
   .primary-row { margin: 20px 0 15px; }
   .home-bottom { padding: 10px 0; font-size: 12px; }
-  .screen-heading { min-height: 42px; margin-bottom: 9px; }
+  .screen-heading { min-height: 42px; margin-bottom: 9px; flex-wrap: wrap; }
   .screen-heading h2 { font-size: 22px; }
   .game-layout { min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
   .play-card { padding: 8px; border-radius: 13px; }
@@ -1056,7 +1056,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
           <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading" role="heading" aria-level="1">Make it stack.</h2></div>
-          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
+          <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="solo-pause-button" class="button" type="button" hidden>Pause</button><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
@@ -1776,7 +1776,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       mpHostStatus: document.getElementById('multiplayer-host-status'), resultsHostStatus: document.getElementById('results-host-status'),
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
-      menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
+      pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
       gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
@@ -2786,7 +2786,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function updatePositionTone() {
       const active = positionAudioEnabled && soundEnabled && audioContext && audioContext.state === 'running' && masterGain &&
-        game && game.phase === 'playing' && game.moving && game.stack && game.stack.length &&
+        game && game.phase === 'playing' && !game.soloPaused && game.moving && game.stack && game.stack.length &&
         document.body.dataset.screen === 'game' && !document.hidden && !document.querySelector('dialog[open]') &&
         (!game.multiplayer || canDropMultiplayer());
       if (!active) { stopPositionTone(); return; }
@@ -2913,7 +2913,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       camera = 0; zoomScale = 1;
       const autoDropSeconds = soloAutoDropSetting === 'off' ? 0 : Number(soloAutoDropSetting);
       game = {
-        phase: 'playing', elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
+        phase: 'playing', soloPaused: false, elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
         autoDropSeconds, autoDropPauseRemaining: 0, assisted: soloAutoDropSetting !== SOLO_AUTO_DROP_DEFAULT,
         stack: [Core.makeBase()], fallenPieces: [], fallingActors: [], moving: null,
         perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
@@ -3008,7 +3008,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (changed) syncHud(true);
     }
     function receiveVote(event) {
-      if (!game || game.phase !== 'playing' || !game.vote) return false;
+      if (!game || game.phase !== 'playing' || game.soloPaused || !game.vote) return false;
       game.vote.votes = Core.recordVote(game.vote.votes, event, game.vote.options);
       game.statusMessage = 'Vote counted. Change your mind before the vote closes.';
       syncHud(true);
@@ -3018,7 +3018,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const voteEngine = Object.freeze({ receive: receiveVote });
     const manualVoteAdapter = {
       submit(optionIndex) {
-        if (!game || !game.vote) return false;
+        if (!game || game.soloPaused || !game.vote) return false;
         const option = game.vote.options[Number(optionIndex)];
         if (!option) return false;
         if (multiplayer.active) {
@@ -3214,7 +3214,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         sendMultiplayerDrop(false, requestId);
         return;
       }
-      if (!game || game.phase !== 'playing') return;
+      if (!game || game.phase !== 'playing' || game.soloPaused) return;
       if (game.devMode) game.devLastDrop = null;
       completeDrop();
     }
@@ -4348,7 +4348,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
         if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
-        button.disabled = !voting || !canChoose;
+        button.disabled = !voting || !canChoose || Boolean(game.soloPaused);
         button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
         button.classList.toggle('is-your-pick', isSoloPick || isCompetitivePick);
         if (voting && (!remoteVote || (game.mode === 'competitive' && multiplayer.role === 'host'))) button.setAttribute('aria-pressed', String(isSoloPick || isCompetitivePick));
@@ -4419,6 +4419,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function syncHud(force = false) {
       if (!game) return;
+      elements.pause.hidden = Boolean(game.multiplayer || game.devMode || game.phase !== 'playing');
+      elements.pause.textContent = game.soloPaused ? 'Resume' : 'Pause';
       elements.gameStage.classList.toggle('competitive-host', Boolean(game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player'));
       if (game.devMode) {
         elements.stageVoteStrip.hidden = true;
@@ -4477,8 +4479,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (!game.multiplayer) {
         elements.gameCanvas.setAttribute('role', 'button');
         elements.gameCanvas.tabIndex = 0;
-        elements.gameCanvas.setAttribute('aria-disabled', 'false');
-        elements.gameCanvas.setAttribute('aria-label', 'Stacking game. Press Space to drop the moving block.');
+        elements.gameCanvas.setAttribute('aria-disabled', String(Boolean(game.soloPaused)));
+        elements.gameCanvas.setAttribute('aria-label', game.soloPaused ? 'Game paused. Use Resume to continue.' : 'Stacking game. Press Space to drop the moving block.');
+        if (game.soloPaused) elements.canvasHint.textContent = 'Paused · use Resume to continue';
         elements.dropKey.hidden = false;
         elements.gameHeading.textContent = 'Make it stack.';
         elements.gameModeKicker.textContent = game.assisted ? 'Single player · Assisted' : 'Single player';
@@ -4492,7 +4495,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.statPerfects.textContent = String(game.perfects);
       elements.statSpeed.textContent = String(Math.round(gameSpeed()));
       elements.bestInline.textContent = String(game.multiplayer ? multiplayer.sessionBest : sessionBest);
-      elements.roundStatus.textContent = game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
+      elements.roundStatus.textContent = game.soloPaused ? 'Paused' : game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
       if (game.multiplayer) {
         elements.mpCard.hidden = false;
         const turnName = game.currentPlayerName || 'Next player';
@@ -4583,7 +4586,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         syncVotePanel();
         return;
       }
-      if (game.phase !== 'playing') {
+      if (game.soloPaused) {
+        elements.drop.disabled = true;
+        elements.dropLabel.textContent = 'PAUSED';
+        elements.motion.textContent = 'PAUSED';
+      } else if (game.phase !== 'playing') {
         elements.drop.disabled = true;
         elements.dropLabel.textContent = game.phase === 'collapse' ? 'TOWER DOWN' : 'RUN OVER';
         elements.motion.textContent = 'STACK COLLAPSED';
@@ -4609,15 +4616,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.effectTime.textContent = 'Ready';
         elements.effectMeter.style.width = '0%';
       }
-      if (game.activeEffect && game.phase === 'playing') elements.motion.textContent = stageEffectStatus(game.activeEffect);
+      if (game.activeEffect && game.phase === 'playing' && !game.soloPaused) elements.motion.textContent = stageEffectStatus(game.activeEffect);
       syncVotePanel();
     }
 
     function frame(timestamp) {
       const dt = lastFrame ? Math.min(50, Math.max(0, timestamp - lastFrame)) / 1000 : 0;
-      frameDt = dt;
+      frameDt = game && game.soloPaused ? 0 : dt;
       lastFrame = timestamp;
-      if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
+      if (game && game.soloPaused) { /* All solo simulation clocks stay frozen. */ }
+      else if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
       else updateGame(dt);
       updateAmbientBed();
       updatePositionTone();
@@ -4983,6 +4991,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     elements.roomLeave.addEventListener('click', leaveMultiplayerRoom);
     elements.roomClose.addEventListener('click', leaveMultiplayerRoom);
     elements.copyRoomLink.addEventListener('click', copyInviteLink);
+    elements.pause.addEventListener('click', () => {
+      if (!game || game.multiplayer || game.devMode || game.phase !== 'playing') return;
+      game.soloPaused = !game.soloPaused;
+      lastFrame = 0;
+      if (game.soloPaused) stopPositionTone();
+      announceGame(game.soloPaused ? 'Game paused.' : 'Game resumed.');
+      syncHud(true);
+    });
     elements.how.addEventListener('click', () => elements.dialog.showModal());
     elements.closeHow.addEventListener('click', () => elements.dialog.close());
     elements.dialog.addEventListener('click', event => {
