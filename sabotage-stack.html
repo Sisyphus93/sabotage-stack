@@ -823,7 +823,63 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   html[data-theme="sunset"] .effect-name { font-size: 14px; }
   html[data-theme="sunset"] .sabotage-list strong { font-size: 12px; }
 }
-  </style>
+/* HOLO DECK: a physical-feeling 3D stage layered over the single-file canvas renderer. */
+.game-stage {
+  perspective: 1100px;
+  transform-style: preserve-3d;
+  isolation: isolate;
+  background: var(--paper);
+}
+.game-stage::before,
+.game-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.game-stage::before {
+  border: 1px solid color-mix(in srgb, var(--teal) 38%, transparent);
+  box-shadow: inset 0 0 28px color-mix(in srgb, var(--teal) 14%, transparent), inset 0 -22px 36px color-mix(in srgb, var(--ink) 10%, transparent);
+  transform: translateZ(14px);
+}
+.game-stage::after {
+  opacity: .14;
+  background: repeating-linear-gradient(0deg, transparent 0 5px, color-mix(in srgb, var(--ink) 30%, transparent) 6px, transparent 7px 12px);
+  mix-blend-mode: overlay;
+  transform: translateZ(18px);
+}
+#game-canvas { position: relative; z-index: 0; transform: translateZ(0); }
+.canvas-hud { transform: translateZ(24px); }
+.stage-system-readout {
+  position: absolute; top: 14px; left: 50%; display: flex; align-items: center; gap: 7px;
+  padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--teal) 65%, var(--ink));
+  border-radius: 999px; color: var(--teal); background: color-mix(in srgb, var(--paper) 88%, transparent);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--teal) 20%, transparent), 0 3px 0 color-mix(in srgb, var(--ink) 12%, transparent);
+  font: 800 9px/1 var(--font-ui); letter-spacing: .14em; transform: translateX(-50%); white-space: nowrap;
+}
+.stage-system-readout strong { color: var(--amber); font-size: 10px; }
+.stage-system-readout i { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+.stage-depth-label {
+  position: absolute; left: 14px; bottom: 15px; color: color-mix(in srgb, var(--ink) 66%, transparent);
+  font: 700 8px/1 var(--font-ui); letter-spacing: .16em; writing-mode: vertical-rl; transform: rotate(180deg);
+}
+.stage-axis-label {
+  position: absolute; right: 14px; bottom: 15px; color: color-mix(in srgb, var(--teal) 76%, var(--ink));
+  font: 800 8px/1 var(--font-ui); letter-spacing: .12em; text-align: right;
+}
+.stage-axis-label span { display: block; margin-top: 4px; color: color-mix(in srgb, var(--ink) 56%, transparent); font-size: 7px; }
+.preview-card { perspective: 900px; transform-style: preserve-3d; }
+.mini-stage { perspective: 800px; }
+.mini-stack { transform: rotateX(9deg) rotateY(-8deg) rotateZ(-1deg) translateZ(8px); transform-style: preserve-3d; filter: drop-shadow(12px 18px 0 rgba(42,37,32,.14)); }
+.mini-block { transform: translateZ(8px); box-shadow: inset 0 3px 0 rgba(255,255,255,.34), 7px 5px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+.mini-mover { transform: translateY(-39px) translateZ(18px) rotateY(-2deg); box-shadow: 0 0 12px rgba(227,163,59,.5), 7px 5px 0 color-mix(in srgb, var(--ink) 24%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .game-stage::after { opacity: .08; }
+  .mini-stack { transform: rotateX(5deg) rotateY(-4deg); }
+}
+
+</style>
 </head>
 <body>
   <svg class="sabotage-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -975,7 +1031,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <section id="title-screen" class="screen is-active" aria-labelledby="title-heading">
         <div class="home-grid">
           <div class="home-copy">
-            <div class="status-kicker"><span class="live-dot" aria-hidden="true"></span> A tiny tower. A very loud chat.</div>
+            <div class="status-kicker"><span class="live-dot" aria-hidden="true"></span> HOLO-DECK 3D · A tiny tower. A very loud chat.</div>
             <h1 id="title-heading">STACK THE BLOCKS.<span>CHAT RUINS YOUR LIFE.</span></h1>
             <p class="hero-description">One moving block. One very small window for a perfect drop. Every few seconds, <strong>chat gets a vote</strong> on how badly to mess with your timing.</p>
             <div class="primary-row">
@@ -1006,7 +1062,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           </div>
           <aside class="home-aside" aria-label="Game preview">
             <div class="preview-card">
-              <div class="preview-heading"><span>Tonight's architecture</span><span>Very stable*</span></div>
+              <div class="preview-heading"><span>HOLO-DECK / 3D BUILD</span><span>DEPTH 03</span></div>
               <div class="mini-stage" aria-hidden="true">
                 <div class="mini-stack">
                   <span class="mini-block"></span><span class="mini-block"></span><span class="mini-block"></span><span class="mini-block"></span><span class="mini-block"></span><span class="mini-block"></span><span class="mini-block"></span>
@@ -1063,6 +1119,9 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div id="game-stage" class="game-stage">
               <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
               <div class="canvas-hud" aria-hidden="false">
+                <div class="stage-system-readout" aria-hidden="true"><i></i><span>HOLO DECK</span><strong>3D // LIVE</strong></div>
+                <div class="stage-depth-label" aria-hidden="true">DEPTH FIELD / 03</div>
+                <div class="stage-axis-label" aria-hidden="true">X&nbsp;&nbsp;Y&nbsp;&nbsp;Z<span>PARALLAX LOCKED</span></div>
                 <div class="height-chip" role="group" aria-label="Blocks placed">
                   <span>HEIGHT</span><strong id="height-display">0</strong>
                 </div>
@@ -2915,7 +2974,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       game = {
         phase: 'playing', soloPaused: false, elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
         autoDropSeconds, autoDropPauseRemaining: 0, assisted: soloAutoDropSetting !== SOLO_AUTO_DROP_DEFAULT,
-        stack: [Core.makeBase()], fallenPieces: [], fallingActors: [], moving: null,
+        stack: [Core.makeBase()], fallenPieces: [], fallingActors: [], particles: [], moving: null,
         perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1,
         collapseClock: 0, collapseLevel: null, collapseStartLevel: null, collapseShake: 0, collapsingLevels: [],
@@ -3151,6 +3210,60 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         angle: 0, spin: side * randomBetween(1.1, 3.8), color: piece.color || '#2F8478', age: 0
       });
     }
+    function spawnImpactBurst(block, perfect = false) {
+      if (!game || !block) return;
+      if (!Array.isArray(game.particles)) game.particles = [];
+      const count = reducedMotion ? 4 : perfect ? 18 : 9;
+      const centre = (Number(block.left) + Number(block.right)) / 2;
+      const y = BASELINE - ((Number(block.level) || 0) + 1) * BLOCK_H + BLOCK_H / 2;
+      const color = perfect ? canvasTheme().amber : (block.color || canvasTheme().teal);
+      for (let index = 0; index < count; index += 1) {
+        const angle = -Math.PI + (Math.PI * index) / Math.max(1, count - 1) + (Math.random() - .5) * .28;
+        const speed = perfect ? randomBetween(28, 82) : randomBetween(18, 54);
+        game.particles.push({
+          x: centre + (Math.random() - .5) * Math.max(8, block.right - block.left), y,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - (perfect ? 16 : 3),
+          life: perfect ? randomBetween(.42, .8) : randomBetween(.26, .5), age: 0,
+          size: perfect ? randomBetween(1.3, 3.1) : randomBetween(1, 2.1), color,
+          spin: Math.random() * Math.PI, perfect
+        });
+      }
+      if (game.particles.length > 84) game.particles.splice(0, game.particles.length - 84);
+    }
+    function updateParticles(dt) {
+      if (!game || !Array.isArray(game.particles)) return;
+      for (const particle of game.particles) {
+        particle.age += dt;
+        particle.vy += 95 * dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.spin += dt * 6;
+      }
+      game.particles = game.particles.filter(particle => particle.age < particle.life);
+    }
+    function drawParticles(ctx, cameraOffset) {
+      if (!game || !Array.isArray(game.particles)) return;
+      const theme = canvasTheme();
+      ctx.save();
+      for (const particle of game.particles) {
+        const progress = Math.max(0, Math.min(1, particle.age / particle.life));
+        const alpha = (1 - progress) * (particle.perfect ? .92 : .68);
+        const size = particle.size * (1 - progress * .35);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = themedColor(particle.color) || theme.amber;
+        ctx.translate(particle.x, particle.y + cameraOffset);
+        ctx.rotate(particle.spin);
+        ctx.beginPath();
+        ctx.moveTo(0, -size * 1.8); ctx.lineTo(size, 0); ctx.lineTo(0, size * 1.8); ctx.lineTo(-size, 0); ctx.closePath(); ctx.fill();
+        ctx.rotate(-particle.spin); ctx.translate(-particle.x, -(particle.y + cameraOffset));
+        if (particle.perfect && size > 1.2) {
+          ctx.strokeStyle = theme.onDark; ctx.globalAlpha = alpha * .5; ctx.lineWidth = .55;
+          ctx.beginPath(); ctx.moveTo(particle.x - size * 3, particle.y + cameraOffset); ctx.lineTo(particle.x + size * 3, particle.y + cameraOffset); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
     function updateFallingActors(dt) {
       if (!game) return;
       for (const actor of game.fallingActors) {
@@ -3169,6 +3282,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         actor.age += dt;
       }
       game.fallingActors = game.fallingActors.filter(actor => actor.collapseActor && !actor.started || (actor.age < 1.2 && actor.y < HEIGHT + 40));
+      updateParticles(dt);
     }
 
     function sendMultiplayerDrop(auto = false, requestId = null) {
@@ -3270,6 +3384,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       consumeLocalDropEffect();
       game.stack.push(outcome.placed);
+      spawnImpactBurst(outcome.placed, outcome.perfect);
       playCue(outcome.perfect ? 'block.perfect' : 'block.land');
       game.score = heightOf(game);
       if (game.devMode && !(game.devLastDrop && game.devLastDrop.automatic)) {
@@ -3527,6 +3642,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const fill = themedColor(color) || theme.fallbackBlock;
       ctx.save();
       ctx.globalAlpha = alpha;
+      if (width >= 7 && height >= 5) drawBlockDepth(ctx, x, y, width, height, color, alpha, perfect, true);
       if (width < 7 || height < 5) {
         ctx.fillStyle = fill; ctx.fillRect(x, y, width, height);
         ctx.strokeStyle = theme.inkDeep; ctx.lineWidth = .8; ctx.strokeRect(x, y, width, height);
@@ -3561,6 +3677,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (canvasTheme().pixel) { drawPixelBlock(ctx, x, y, width, height, color, alpha, perfect); return; }
       ctx.save();
       ctx.globalAlpha = alpha;
+      drawBlockDepth(ctx, x, y, width, height, color, alpha, perfect, false);
       const radius = Math.min(5, Math.max(1, width / 8));
       ctx.beginPath();
       ctx.roundRect(x, y, width, height, radius);
@@ -3618,6 +3735,124 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ctx.closePath();
       ctx.fill();
     }
+    // The game rules stay flat and deterministic; this renderer gives the same geometry a chunky, readable
+    // third dimension. Every face is derived from the canonical block rectangle, so multiplayer and accessibility
+    // modes never disagree about where a block actually lands.
+    function drawBlockDepth(ctx, x, y, width, height, color, alpha = 1, perfect = false, pixel = false) {
+      if (width <= 0 || height <= 0) return;
+      const theme = canvasTheme();
+      const fill = themedColor(color) || theme.fallbackBlock;
+      const depth = Math.max(2.5, Math.min(pixel ? 6 : 11, 3.2 + height * (pixel ? .18 : .28)));
+      const dx = depth * (pixel ? .8 : .72);
+      const dy = -depth * (pixel ? .36 : .44);
+      const dark = mixColor(fill, theme.inkDeep || '#101010', pixel ? .34 : .28);
+      const light = mixColor(fill, '#FFFFFF', pixel ? .35 : .28);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      // A low, offset shadow makes separate blocks read as solid objects instead of stickers.
+      ctx.fillStyle = pixel ? 'rgba(23,11,51,.34)' : 'rgba(42,37,32,.16)';
+      ctx.beginPath();
+      ctx.moveTo(x + 2, y + height + 2); ctx.lineTo(x + width + dx + 2, y + height + dy + 2);
+      ctx.lineTo(x + width + dx + 2, y + height + dy + depth * .42 + 2); ctx.lineTo(x + 2, y + height + depth * .42 + 2); ctx.closePath(); ctx.fill();
+      // Far top plane.
+      ctx.fillStyle = light;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.lineTo(x + width + dx, y + dy); ctx.lineTo(x + width, y); ctx.closePath(); ctx.fill();
+      // Right-hand side plane.
+      ctx.fillStyle = dark;
+      ctx.beginPath();
+      ctx.moveTo(x + width, y); ctx.lineTo(x + width + dx, y + dy); ctx.lineTo(x + width + dx, y + height + dy); ctx.lineTo(x + width, y + height); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = pixel ? theme.inkDeep : mixColor(fill, theme.inkDeep || '#101010', .55);
+      ctx.lineWidth = pixel ? .9 : .72;
+      ctx.beginPath(); ctx.moveTo(x + width, y); ctx.lineTo(x + width + dx, y + dy); ctx.lineTo(x + width + dx, y + height + dy); ctx.lineTo(x + width, y + height); ctx.stroke();
+      // A tiny seam sells the depth even at the minimum mobile stage size.
+      ctx.strokeStyle = pixel ? 'rgba(255,243,226,.32)' : 'rgba(255,255,255,.30)';
+      ctx.lineWidth = .65;
+      ctx.beginPath(); ctx.moveTo(x + dx * .35, y + dy * .35); ctx.lineTo(x + width + dx * .35, y + dy * .35); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawHoloStage(ctx, elapsed, cameraOffset, worldBase, stack, moving) {
+      const theme = canvasTheme();
+      const isNeon = Boolean(theme.pixel || theme.sky);
+      const horizon = 178;
+      const floor = Math.max(horizon + 30, Math.min(HEIGHT + 18, Number(worldBase) || BASELINE));
+      const vpX = WIDTH / 2 + (reducedMotion ? 0 : Math.sin(elapsed * .42) * 5);
+      const line = isNeon ? (theme.teal || '#35D0E8') : '#2F8478';
+      const gold = theme.amber || '#E3A33B';
+      ctx.save();
+      ctx.lineCap = 'round';
+      // The stage floor is a perspective grid, not a flat stripe. It scrolls under the tower as the camera climbs.
+      ctx.fillStyle = isNeon ? 'rgba(6,18,56,.20)' : 'rgba(47,132,120,.035)';
+      ctx.beginPath(); ctx.moveTo(0, horizon); ctx.lineTo(WIDTH, horizon); ctx.lineTo(WIDTH, HEIGHT); ctx.lineTo(0, HEIGHT); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = isNeon ? 'rgba(53,208,232,.34)' : 'rgba(47,132,120,.18)';
+      ctx.lineWidth = isNeon ? 1.1 : .75;
+      const basePoints = [-84, -36, 12, 60, 108, 156, 204, 252, 300, 348, 396, 444];
+      for (const baseX of basePoints) {
+        ctx.beginPath(); ctx.moveTo(vpX, horizon); ctx.lineTo(baseX, HEIGHT + 12); ctx.stroke();
+      }
+      const drift = ((elapsed * (isNeon ? 8 : 3) + cameraOffset * .13) % 36 + 36) % 36;
+      for (let index = 0; index < 9; index += 1) {
+        const distance = 16 + index * 30 + drift;
+        const y = horizon + (floor - horizon) * Math.min(.98, distance / (distance + 148));
+        if (y > HEIGHT + 8) continue;
+        ctx.globalAlpha = isNeon ? Math.max(.12, .48 - index * .035) : Math.max(.05, .22 - index * .018);
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // A thin horizon rail and little depth ticks frame the playable volume.
+      ctx.strokeStyle = isNeon ? 'rgba(255,200,61,.72)' : 'rgba(42,37,32,.23)';
+      ctx.lineWidth = isNeon ? 1.4 : 1;
+      ctx.beginPath(); ctx.moveTo(12, horizon); ctx.lineTo(WIDTH - 12, horizon); ctx.stroke();
+      for (const x of [24, 72, 120, 168, 216, 264, 312, 336]) {
+        ctx.beginPath(); ctx.moveTo(x, horizon - 3); ctx.lineTo(x, horizon + 3); ctx.stroke();
+      }
+      // The tower has a holographic axis and a breathing halo. These are visual only; no gameplay coordinate is moved.
+      const top = stack && stack.length ? stack[stack.length - 1] : Core.makeBase();
+      const topX = (top.left + top.right) / 2;
+      const topY = BASELINE - ((top.level || 0) + 1) * BLOCK_H + cameraOffset;
+      const axisBottom = Math.min(HEIGHT - 4, Math.max(topY + 16, floor));
+      ctx.setLineDash([2, 7]); ctx.lineWidth = isNeon ? 1.1 : .8;
+      ctx.strokeStyle = isNeon ? 'rgba(255,200,61,.34)' : 'rgba(47,132,120,.18)';
+      ctx.beginPath(); ctx.moveTo(topX, topY - 22); ctx.lineTo(topX, axisBottom); ctx.stroke(); ctx.setLineDash([]);
+      const pulse = reducedMotion ? 1 : .82 + Math.sin(elapsed * 2.2) * .12;
+      ctx.strokeStyle = isNeon ? `rgba(255,200,61,${.5 * pulse})` : `rgba(47,132,120,${.22 * pulse})`;
+      ctx.lineWidth = isNeon ? 1.5 : 1;
+      ctx.beginPath(); ctx.ellipse(topX, topY + 2, Math.max(23, (top.right - top.left) * .7), 8 + (isNeon ? 3 : 1), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(topX, topY + 2, Math.max(16, (top.right - top.left) * .44), 4 + (isNeon ? 2 : .5), 0, 0, Math.PI * 2); ctx.stroke();
+      // Four floating brackets give the field a volume boundary on tall towers.
+      const bracketY = Math.max(82, Math.min(340, topY - 56));
+      ctx.strokeStyle = isNeon ? 'rgba(53,208,232,.56)' : 'rgba(47,132,120,.25)'; ctx.lineWidth = 1;
+      for (const side of [-1, 1]) {
+        const x = side < 0 ? 22 : WIDTH - 22;
+        const inward = side < 0 ? 11 : -11;
+        ctx.beginPath(); ctx.moveTo(x, bracketY); ctx.lineTo(x + inward, bracketY); ctx.lineTo(x + inward, bracketY + 12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, bracketY + 24); ctx.lineTo(x + inward, bracketY + 24); ctx.lineTo(x + inward, bracketY + 12); ctx.stroke();
+      }
+      // A moving block leaves a shallow parallax wake, especially legible against the grid.
+      if (moving && game && game.phase === 'playing') {
+        const y = BASELINE - ((moving.level || 0) + 1) * BLOCK_H + cameraOffset;
+        const direction = Number(moving.direction) < 0 ? -1 : 1;
+        const gradient = ctx.createLinearGradient(moving.left, y, moving.left - direction * 42, y);
+        gradient.addColorStop(0, isNeon ? 'rgba(255,200,61,.38)' : 'rgba(227,163,59,.22)');
+        gradient.addColorStop(1, 'rgba(227,163,59,0)');
+        ctx.strokeStyle = gradient; ctx.lineWidth = Math.max(1, moving.width * .035);
+        ctx.beginPath(); ctx.moveTo(moving.left + (direction < 0 ? moving.width : 0), y + 8); ctx.lineTo(moving.left - direction * 44 + (direction < 0 ? moving.width : 0), y + 8); ctx.stroke();
+      }
+      ctx.restore();
+      // The base platform is deliberately drawn after the grid and before the stack.
+      if (floor < HEIGHT + 16) {
+        ctx.save();
+        ctx.globalAlpha = isNeon ? .9 : .58;
+        ctx.fillStyle = isNeon ? 'rgba(6,18,56,.82)' : 'rgba(231,220,197,.72)';
+        ctx.beginPath(); ctx.ellipse(WIDTH / 2, floor + 5, 126, 17, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = isNeon ? gold : line; ctx.lineWidth = isNeon ? 1.4 : 1;
+        ctx.beginPath(); ctx.ellipse(WIDTH / 2, floor + 3, 122, 13, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.ellipse(WIDTH / 2, floor + 3, 91, 8, 0, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     function paintSunsetSky(ctx, w, h) {
       const gradient = ctx.createLinearGradient(0, 0, 0, h);
       gradient.addColorStop(0, '#FF6B35'); gradient.addColorStop(.32, '#FF5964');
@@ -4020,6 +4255,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           for (let cx = 0; cx < WIDTH; cx += 18) { if (((cx / 18) | 0) % 2 === 0) ctx.fillRect(cx, worldBase + 8, 18, 7); else ctx.fillRect(cx, worldBase + 19, 18, 7); }
         }
       }
+      drawHoloStage(ctx, game.elapsed, cameraOffset, worldBase, game.stack, moving);
       const collapsingLevels = new Set(game.collapsingLevels || []);
       for (const block of game.stack) {
         if (collapsingLevels.has(block.level)) continue;
@@ -4049,6 +4285,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (actor.collapseActor && !actor.started) continue;
         drawActor(ctx, actor, cameraOffset);
       }
+      drawParticles(ctx, cameraOffset);
       let movingY = moving ? BASELINE - (moving.level + 1) * BLOCK_H + cameraOffset : 0;
       if (moving && game.phase === 'playing') {
         const verticalOffset = effectId === 'rollercoaster' && !reducedMotion
@@ -4248,10 +4485,37 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.resultScale.textContent = resultScale < .999 ? `Stack fitted to ${(resultScale * 100).toFixed(1)}% so every block stays in frame. Fallen pieces are drawn beneath the shared baseline.` : 'Full-size block geometry. The collapse point and fallen pieces are shown below.';
       drawResults(data, resultReveal);
     }
+    function drawResultHoloBackdrop(ctx) {
+      const theme = canvasTheme();
+      const isNeon = Boolean(theme.pixel || theme.sky);
+      const horizon = 170;
+      const floor = 440;
+      const vpX = 180;
+      ctx.save();
+      ctx.strokeStyle = isNeon ? 'rgba(53,208,232,.26)' : 'rgba(47,132,120,.13)';
+      ctx.lineWidth = isNeon ? 1.1 : .75;
+      for (const baseX of [-80, -28, 24, 76, 128, 180, 232, 284, 336, 388, 440]) {
+        ctx.beginPath(); ctx.moveTo(vpX, horizon); ctx.lineTo(baseX, HEIGHT + 10); ctx.stroke();
+      }
+      for (let index = 0; index < 8; index += 1) {
+        const distance = 18 + index * 31;
+        const y = horizon + (floor - horizon) * Math.min(.98, distance / (distance + 150));
+        ctx.globalAlpha = isNeon ? Math.max(.12, .42 - index * .035) : Math.max(.05, .18 - index * .016);
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = isNeon ? 'rgba(255,200,61,.58)' : 'rgba(47,132,120,.22)';
+      ctx.lineWidth = isNeon ? 1.5 : 1;
+      ctx.beginPath(); ctx.ellipse(WIDTH / 2, floor + 4, 124, 16, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(WIDTH / 2, floor + 4, 89, 8, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
     function drawResults(data, reveal) {
       setCanvasResolution(elements.resultsCanvas, resultsContext);
       const ctx = resultsContext;
       paintThemeSky(ctx, WIDTH, HEIGHT);
+      drawResultHoloBackdrop(ctx);
       ctx.fillStyle = canvasTheme().glowBlob;
       ctx.beginPath(); ctx.ellipse(280, 110, 110, 132, -.25, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = canvasTheme().gridLine; ctx.lineWidth = 1;
