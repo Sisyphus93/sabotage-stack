@@ -601,3 +601,33 @@ describe('Teamwork effect duration explanation (F-024)', skipReason ? { skip: sk
     } finally { page.close(); }
   });
 });
+
+describe('Sound preference (F-027)', skipReason ? { skip: skipReason } : {}, () => {
+  test('persists the choice and only creates audio after a subsequent user gesture', async () => {
+    const contexts = [];
+    const param = () => ({ value: 0, setTargetAtTime(){}, setValueAtTime(){}, cancelScheduledValues(){}, linearRampToValueAtTime(){}, exponentialRampToValueAtTime(){} });
+    class FakeAudio {
+      constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {}; contexts.push(this); }
+      createGain() { return { gain: param(), connect(){} }; }
+      createOscillator() { return { frequency: param(), connect(){}, start(){}, stop(){} }; }
+      async resume() { this.state = 'running'; }
+    }
+    const page = await boot(HTML, { AudioContextImpl: FakeAudio }); let restored;
+    try {
+      const toggle = page.document.getElementById('sound-toggle');
+      assert.equal(toggle.getAttribute('aria-pressed'), 'false');
+      toggle.click(); await page.sleep(0);
+      assert.equal(toggle.getAttribute('aria-pressed'), 'true');
+      assert.equal(page.window.localStorage.getItem('sabotage-stack-sound-v1'), 'on');
+      restored = await boot(HTML, { AudioContextImpl: FakeAudio, storage: { 'sabotage-stack-sound-v1': 'on' } });
+      assert.equal(restored.document.getElementById('sound-toggle').getAttribute('aria-pressed'), 'true');
+      assert.equal(contexts.length, 1, 'reload must not create or resume audio');
+      restored.document.getElementById('start-button').click(); await restored.sleep(0);
+      assert.equal(contexts.length, 2); assert.equal(contexts[1].state, 'running');
+      restored.document.getElementById('sound-toggle').click();
+      assert.equal(restored.window.localStorage.getItem('sabotage-stack-sound-v1'), 'off');
+      assert.equal(restored.document.getElementById('sound-toggle').getAttribute('aria-pressed'), 'false');
+      assert.deepEqual(page.errors, []); assert.deepEqual(restored.errors, []);
+    } finally { page.close(); if (restored) restored.close(); }
+  });
+});

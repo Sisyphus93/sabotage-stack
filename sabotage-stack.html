@@ -1825,7 +1825,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       : typeof window.webkitAudioContext === 'function' ? window.webkitAudioContext : null;
     let audioContext = null;
     let masterGain = null;
+    const SOUND_STORAGE_KEY = 'sabotage-stack-sound-v1';
     let soundEnabled = false;
+    try { soundEnabled = window.localStorage && window.localStorage.getItem(SOUND_STORAGE_KEY) === 'on'; } catch (_) {}
+    let audioStarting = false;
     let audioUnavailable = !AudioContextConstructor;
     let ambientBed = null;
     const AMBIENT_CHORDS = Object.freeze([
@@ -2734,16 +2737,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ambientBed.nextChange = now + 8;
     }
 
-    async function toggleSound() {
-      if (audioUnavailable || !AudioContextConstructor) { syncSoundButton(); return; }
-      if (soundEnabled) {
-        stopAmbientBed(.08);
-        soundEnabled = false;
-        try { if (audioContext && masterGain) masterGain.gain.setTargetAtTime(0, audioContext.currentTime, .025); }
-        catch (_) { audioUnavailable = true; }
-        syncSoundButton();
-        return;
-      }
+    function saveSoundPreference() {
+      try { if (window.localStorage) window.localStorage.setItem(SOUND_STORAGE_KEY, soundEnabled ? 'on' : 'off'); } catch (_) {}
+    }
+    async function unlockSound() {
+      if (!soundEnabled || audioUnavailable || !AudioContextConstructor || audioStarting || (audioContext && audioContext.state === 'running')) return;
+      audioStarting = true;
       try {
         if (!audioContext) {
           audioContext = new AudioContextConstructor();
@@ -2752,20 +2751,36 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           masterGain.connect(audioContext.destination);
         }
         await audioContext.resume();
+        if (!soundEnabled) return;
         masterGain.gain.cancelScheduledValues(audioContext.currentTime);
         masterGain.gain.setTargetAtTime(.32, audioContext.currentTime, .035);
-        soundEnabled = true;
-        syncSoundButton();
-        if (game && game.phase === 'playing') {
-          playCue('run.start');
-          startAmbientBed();
-        }
+        if (game && game.phase === 'playing') { playCue('run.start'); startAmbientBed(); }
       } catch (_) {
-        soundEnabled = false;
         audioUnavailable = true;
         syncSoundButton();
-      }
+      } finally { audioStarting = false; }
     }
+    function toggleSound() {
+      if (audioUnavailable || !AudioContextConstructor) { syncSoundButton(); return; }
+      soundEnabled = !soundEnabled;
+      saveSoundPreference();
+      if (!soundEnabled) {
+        stopAmbientBed(.08);
+        try { if (audioContext && masterGain) masterGain.gain.setTargetAtTime(0, audioContext.currentTime, .025); }
+        catch (_) { audioUnavailable = true; }
+      } else if (audioContext && audioContext.state === 'running') {
+        try { masterGain.gain.setTargetAtTime(.32, audioContext.currentTime, .035); startAmbientBed(); } catch (_) { audioUnavailable = true; }
+      } else unlockSound();
+      syncSoundButton();
+    }
+    // Restoring a preference never creates or resumes an AudioContext on load.
+    // A subsequent player gesture unlocks audio; the toggle handles its own gesture.
+    function unlockSoundOnGesture(event) {
+      if (elements.soundToggle.contains(event.target)) return;
+      unlockSound();
+    }
+    document.addEventListener('click', unlockSoundOnGesture, true);
+    document.addEventListener('keydown', unlockSoundOnGesture, true);
 
     // Serialize game announcements so simultaneous turn, vote and effect changes are not overwritten.
     const announcementQueue = [];
