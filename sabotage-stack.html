@@ -293,6 +293,7 @@ html[data-theme="primetime"] .vote-description, html[data-theme="primetime"] .vo
 .stat-box span { display: block; margin-bottom: 4px; color: var(--ink); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .stat-box strong { display: block; color: var(--ink); font: 650 19px/1 var(--font-head); font-variant-numeric: tabular-nums; }
 .effect-card { border-left: 5px solid var(--vermilion); background: var(--paper-deep); }
+html:not([data-theme]) #effect-label, html[data-theme="paper"] #effect-label { color: #5B5145; }
 .effect-headline { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .effect-icon { position: relative; width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; border: 1.5px solid var(--ink); border-radius: 12px; color: var(--ink); background: var(--paper); }
 .effect-icon::after { content: ""; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border: 1.5px solid var(--paper-deep); border-radius: 50%; background: var(--vermilion); }
@@ -937,7 +938,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   </svg>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand" aria-label="Sabotage Stack">
+      <div class="brand" role="group" aria-label="Sabotage Stack">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 17h16v3H4zM6 12h12v3H6zM8 7h8v3H8zM10 2h4v3h-4z" fill="currentColor"/><path d="m18 5 2-2m-1 5 3-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         </span>
@@ -977,7 +978,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               </select>
             </div>
             <p id="solo-auto-drop-help" class="solo-assist-help" aria-live="polite">Standard timing. The timer pauses for the first 2 seconds of each vote.</p>
-            <div class="mode-row" aria-label="Game modes">
+            <div class="mode-row" role="group" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
               <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game" aria-describedby="multiplayer-setup-help">Teamwork <span class="soon">Host a room</span></button>
               <button id="competitive-button" class="mode-pill" type="button" data-host-mode="competitive" aria-label="Host a Competitive game" aria-describedby="multiplayer-setup-help">Competitive <span class="soon">Host a room</span></button>
@@ -1009,7 +1010,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="room-screen" class="screen" aria-labelledby="room-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="room-mode-label" class="eyebrow">Multiplayer lobby</div><h2 id="room-heading">Room's getting busy.</h2></div>
+          <div><div id="room-mode-label" class="eyebrow">Multiplayer lobby</div><h2 id="room-heading" role="heading" aria-level="1">Room's getting busy.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="room-connection-status">Connected</span></span></div>
         </div>
         <div class="room-lobby-layout">
@@ -1038,7 +1039,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="game-screen" class="screen" aria-labelledby="game-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading">Make it stack.</h2></div>
+          <div><div id="game-mode-kicker" class="eyebrow">Single player</div><h2 id="game-heading" role="heading" aria-level="1">Make it stack.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span><span id="round-status">Round live</span></span><button id="menu-button" class="button" type="button" aria-label="Return to menu">Menu</button></div>
         </div>
         <div class="game-layout">
@@ -1046,7 +1047,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <div id="game-stage" class="game-stage">
               <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
               <div class="canvas-hud" aria-hidden="false">
-                <div class="height-chip" aria-label="Blocks placed">
+                <div class="height-chip" role="group" aria-label="Blocks placed">
                   <span>HEIGHT</span><strong id="height-display">0</strong>
                 </div>
                 <div id="motion-chip" class="motion-chip">140 px/s</div>
@@ -1142,7 +1143,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 
       <section id="results-screen" class="screen" aria-labelledby="results-heading" aria-hidden="true">
         <div class="screen-heading">
-          <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading">A tower of ambition.</h2></div>
+          <div><div class="eyebrow">Run complete · single player</div><h2 id="results-heading" role="heading" aria-level="1">A tower of ambition.</h2></div>
           <div class="heading-actions"><span class="game-live"><span class="live-dot" aria-hidden="true"></span>Results</span></div>
         </div>
         <p id="results-host-status" class="room-status" role="status" aria-live="polite" hidden></p>

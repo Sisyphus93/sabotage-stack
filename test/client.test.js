@@ -631,3 +631,27 @@ describe('Sound preference (F-027)', skipReason ? { skip: skipReason } : {}, () 
     } finally { page.close(); if (restored) restored.close(); }
   });
 });
+
+describe('Screen headings and labels (F-028)', skipReason ? { skip: skipReason } : {}, () => {
+  test('each screen has a level-one heading and named groups have semantic roles', async () => {
+    const page = await boot(HTML);
+    try {
+      for (const [screen, heading] of [['title-screen', 'title-heading'], ['room-screen', 'room-heading'], ['game-screen', 'game-heading'], ['results-screen', 'results-heading']]) {
+        const node = page.document.getElementById(heading);
+        assert.ok(page.document.getElementById(screen).contains(node));
+        assert.ok(node.tagName === 'H1' || (node.getAttribute('role') === 'heading' && node.getAttribute('aria-level') === '1'));
+      }
+      for (const selector of ['.brand', '.mode-row', '.height-chip']) assert.equal(page.document.querySelector(selector).getAttribute('role'), 'group');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('Paper effect label has at least 4.5 to 1 contrast on its card', () => {
+    const luminance = hex => {
+      const values = hex.match(/../g).map(c => parseInt(c, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
+      return .2126 * values[0] + .7152 * values[1] + .0722 * values[2];
+    };
+    const html = fs.readFileSync(HTML, 'utf8');
+    assert.match(html, /#effect-label\s*\{\s*color:\s*#5B5145/i);
+    assert.ok((luminance('E7DCC5') + .05) / (luminance('5B5145') + .05) >= 4.5);
+  });
+});
