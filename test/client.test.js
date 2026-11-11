@@ -200,3 +200,83 @@ describe('Keyboard vote shortcuts work from interactive focus (F-003)', skipReas
     } finally { page.close(); }
   });
 });
+
+// F-004: phone players can reach the live vote and effect from the stage, and scroll everywhere else.
+describe('Mobile vote and touch access (F-004)', skipReason ? { skip: skipReason } : {}, () => {
+  test('the stage vote strip mirrors the live vote and returns to the normal HUD when closed', async () => {
+    const page = await boot(HTML, {
+      storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' },
+      manualAnimationFrame: true,
+      seed: 2
+    });
+    try {
+      const { document } = page;
+      const strip = document.getElementById('stage-vote-strip');
+      const stage = document.getElementById('game-stage');
+      const motion = document.getElementById('motion-chip');
+      const chips = [...document.querySelectorAll('.stage-vote-chip')];
+      assert.equal(chips.length, 3);
+      assert.equal(strip.hidden, true, 'the strip starts hidden before a vote opens');
+      assert.equal(motion.parentElement.parentElement, stage, 'the live effect status belongs to the stage HUD');
+
+      document.getElementById('start-button').click();
+      assert.equal(strip.hidden, true, 'the strip stays hidden between votes');
+      page.advanceAnimation(8200);
+      assert.equal(strip.hidden, false, 'an open phone vote is shown on the stage');
+      assert.ok(chips.every(button => !button.disabled), 'solo vote choices are tappable');
+
+      const fullVoteButtons = [...document.querySelectorAll('.vote-option')];
+      for (let index = 0; index < chips.length; index += 1) {
+        const chip = chips[index];
+        const fullOption = fullVoteButtons[index];
+        const sabotageName = fullOption.querySelector('.vote-name').textContent;
+        assert.ok(chip.querySelector('.stage-vote-name').textContent, 'each chip has a compact name');
+        assert.equal(chip.title, sabotageName, 'the full sabotage name remains available on the chip');
+        assert.equal(chip.querySelector('.stage-vote-icon-use').getAttribute('href'), fullOption.querySelector('.vote-icon-use').getAttribute('href'));
+        assert.equal(chip.querySelector('.stage-vote-count').textContent, fullOption.querySelector('.vote-count').textContent);
+        assert.equal(chip.getAttribute('aria-label'), fullOption.getAttribute('aria-label'));
+      }
+
+      const pickedName = chips[1].querySelector('.stage-vote-name').textContent;
+      const before = chips.map(button => Number(button.querySelector('.stage-vote-count').textContent));
+      chips[1].click();
+      const after = chips.map(button => Number(button.querySelector('.stage-vote-count').textContent));
+      assert.equal(after[1], before[1] + 4, 'a tap casts the same weighted solo vote as the full vote card');
+      assert.equal(after[0], before[0]);
+      assert.equal(after[2], before[2]);
+      assert.deepEqual(after, fullVoteButtons.map(button => Number(button.querySelector('.vote-count').textContent)));
+
+      page.advanceAnimation(5200);
+      assert.equal(strip.hidden, true, 'the strip disappears when voting closes');
+      assert.equal(document.getElementById('canvas-hint').hidden, false, 'the normal stage hint returns after the vote');
+      assert.ok(motion.textContent.startsWith(pickedName), `the active effect is shown on the stage: ${motion.textContent}`);
+      assert.match(motion.textContent, /\u00b7 \d+s left$/, 'the stage status includes the active effect timer');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('vertical scrolling is allowed on surrounding game UI, not on the canvas or Drop action', () => {
+    const html = fs.readFileSync(HTML, 'utf8');
+    const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+    const panYRules = [
+      /button,\s*\[role="button"\]\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.play-card\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.game-stage\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.control-row\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.control-help\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.side-stack\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.side-card\s*\{[^}]*touch-action:\s*pan-y/i,
+      /\.stage-vote-strip\s*\{[^}]*touch-action:\s*pan-y/i
+    ];
+    for (const rule of panYRules) assert.match(style, rule, `missing vertical page pan rule ${rule}`);
+    assert.match(style, /#game-canvas\s*\{[^}]*touch-action:\s*none/i);
+    assert.match(style, /\.drop-button\s*\{[^}]*touch-action:\s*none/i);
+    assert.match(style, /\.stage-vote-name\s*\{[^}]*font-size:\s*11px/i, 'compact vote names remain readable on the phone strip');
+    assert.equal([...style.matchAll(/touch-action:\s*none/gi)].length, 2, 'only canvas taps and the Drop action keep browser gestures disabled');
+
+    const mobileStart = style.indexOf('@media (max-width: 700px)');
+    const mobileEnd = style.indexOf('@media (max-width: 380px)', mobileStart);
+    assert.ok(mobileStart >= 0 && mobileEnd > mobileStart, 'the phone layout media query should be present');
+    assert.match(style.slice(mobileStart, mobileEnd), /\.stage-vote-strip\s*\{\s*display:\s*grid;\s*\}/, 'the compact vote strip is enabled at phone widths');
+  });
+});

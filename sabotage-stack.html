@@ -54,7 +54,7 @@ body::after {
 }
 button { color: inherit; font: inherit; }
 button, [role="button"] {
-  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-y;
 }
 button:focus-visible, [tabindex="0"]:focus-visible, summary:focus-visible {
   outline: 3px solid var(--vermilion); outline-offset: 3px;
@@ -180,14 +180,14 @@ h1 span { display: block; color: var(--vermilion); }
 }
 .play-card {
   min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: clamp(12px, 2vw, 20px); border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep);
+  padding: clamp(12px, 2vw, 20px); border: 1.5px solid var(--ink); border-radius: var(--radius); background: var(--paper-deep); touch-action: pan-y;
 }
 .game-stage {
   /* Board = largest 360:520 box that leaves room for the chrome above it and the Drop row below it.
      240px wide (≈347px tall) is the floor: below that the page scrolls instead of shrinking further. */
   position: relative; width: min(100%, 420px, max(calc(100dvh - 264px), 240px) * .6923077); aspect-ratio: 360 / 520;
   overflow: hidden; border: 1.5px solid var(--ink); border-radius: 12px; background: var(--paper);
-  box-shadow: 3px 3px 0 var(--paper-deep); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  box-shadow: 3px 3px 0 var(--paper-deep); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 canvas { display: block; width: 100%; height: 100%; }
 #game-canvas { touch-action: none; cursor: crosshair; }
@@ -218,7 +218,22 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 .chat-flavor-pop.is-visible { opacity: 1; }
 .canvas-hint { position: absolute; bottom: 11px; left: 50%; transform: translateX(-50%); color: var(--soft-ink); font-size: 11px; font-weight: 600; white-space: nowrap; }
-.control-row { width: 100%; max-width: 420px; display: flex; align-items: center; gap: 12px; padding-top: 13px; }
+.stage-vote-strip {
+  position: absolute; inset: auto 4px 4px; z-index: 5; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px;
+  padding: 3px; border: 1.5px solid var(--ink); border-radius: 8px; color: var(--ink); background: var(--paper); box-shadow: 2px 2px 0 var(--paper-deep);
+  pointer-events: auto; touch-action: pan-y;
+}
+.stage-vote-chip {
+  min-width: 0; min-height: 46px; display: grid; grid-template-rows: 14px minmax(0, 1fr) 11px; justify-items: center; align-content: center; gap: 1px;
+  padding: 2px; border: 1px solid var(--line); border-radius: 5px; color: var(--ink); background: var(--paper-deep);
+  font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; touch-action: pan-y;
+}
+.stage-vote-chip:hover:not(:disabled) { border-color: var(--ink); background: var(--paper); }
+.stage-vote-chip:disabled { cursor: default; opacity: .78; }
+.stage-vote-icon { width: 14px; height: 14px; display: block; }
+.stage-vote-name { display: block; width: 100%; overflow: hidden; color: var(--ink); font-size: 11px; line-height: 1; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.stage-vote-count { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1; }
+.control-row { width: 100%; max-width: 420px; display: flex; align-items: center; gap: 12px; padding-top: 13px; touch-action: pan-y; }
 .drop-button {
   min-width: 160px; min-height: 54px; border: 1.5px solid var(--ink); border-radius: 11px;
   display: flex; align-items: center; justify-content: center; gap: 13px; color: var(--paper); background: var(--ink);
@@ -229,9 +244,9 @@ canvas { display: block; width: 100%; height: 100%; }
 .drop-button:active:not(:disabled) { transform: translateY(0); }
 .drop-button:disabled { cursor: not-allowed; opacity: .56; }
 .drop-button kbd { padding: 3px 6px; border: 1px solid rgba(244,237,223,.6); border-radius: 5px; color: var(--paper); background: transparent; font: 600 11px var(--font-ui); letter-spacing: .03em; }
-.control-help { color: var(--ink); font-size: 12px; line-height: 1.4; }
-.side-stack { width: 100%; display: flex; flex-direction: column; gap: 12px; }
-.side-card { min-width: 0; padding: 15px; border: 1.5px solid var(--ink); border-radius: 13px; background: var(--paper); }
+.control-help { color: var(--ink); font-size: 12px; line-height: 1.4; touch-action: pan-y; }
+.side-stack { width: 100%; display: flex; flex-direction: column; gap: 12px; touch-action: pan-y; }
+.side-card { min-width: 0; padding: 15px; border: 1.5px solid var(--ink); border-radius: 13px; background: var(--paper); touch-action: pan-y; }
 .side-card h3 { margin: 0; color: var(--ink); font: 600 18px/1.15 var(--font-head); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .timer-label { color: var(--ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -348,6 +363,7 @@ canvas { display: block; width: 100%; height: 100%; }
   .game-layout { min-height: 0; display: flex; flex-direction: column; align-items: stretch; gap: 9px; }
   .play-card { padding: 8px; border-radius: 13px; }
   .game-stage { width: min(100%, max(calc(100dvh - 276px), 240px) * .6923077); border-radius: 10px; }
+  .stage-vote-strip { display: grid; }
   .control-row { width: 100%; max-width: 420px; padding-top: 8px; gap: 8px; }
   .drop-button { min-width: 145px; min-height: 48px; }
   .control-help { font-size: 11px; }
@@ -401,6 +417,7 @@ canvas { display: block; width: 100%; height: 100%; }
   .topbar { min-height: 40px; margin-bottom: 8px; }
   .game-layout, .result-layout { min-height: calc(100dvh - 105px); }
   .game-stage { width: min(100%, max(calc(100dvh - 240px), 240px) * .6923077); }
+  .stage-vote-strip { display: grid; }
   .results-frame { width: min(100%, calc((100dvh - 150px) * .6923077)); }
   .side-card { padding: 10px; }
 }
@@ -536,6 +553,7 @@ html[data-theme="sunset"] .mini-caption { font-size: 25px; }
 html[data-theme="sunset"] .screen-heading h2 { font-size: clamp(15px, 2.3vw, 22px); line-height: 1.55; }
 html[data-theme="sunset"] .play-card { border: 3px solid var(--ink); background: #24104A; box-shadow: 8px 8px 0 var(--vermilion); }
 html[data-theme="sunset"] .game-stage { border: 3px solid var(--amber); background: #170B33; box-shadow: 0 0 0 3px #170B33, 0 0 18px rgba(255,107,53,.55); }
+html[data-theme="sunset"] .stage-vote-strip, html[data-theme="sunset"] .stage-vote-chip { border-radius: 0; }
 html[data-theme="sunset"] .height-chip, html[data-theme="sunset"] .motion-chip, html[data-theme="sunset"] .canvas-message, html[data-theme="sunset"] .chat-flavor-pop { border-width: 2px; background: #170B33; }
 html[data-theme="sunset"] .height-chip strong { font-size: 17px; }
 html[data-theme="sunset"] .height-chip span, html[data-theme="sunset"] .canvas-hint { font-size: 16px; }
@@ -660,6 +678,9 @@ html[data-theme="primetime"] .mini-block:nth-child(3n+2) { background: #35D0E8; 
 html[data-theme="primetime"] .mini-block:nth-child(3n) { background: #F2F5FF; }
 html[data-theme="primetime"] .mini-mover { border: 2px solid #061238; }
 html[data-theme="primetime"] .vote-option { border: 3px solid rgba(255,255,255,.7); border-radius: 12px; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-strip { border: 2px solid var(--amber); border-radius: 10px; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-chip { border: 2px solid rgba(255,255,255,.7); border-radius: 7px; color: #fff; background: #0A1A55; }
+html[data-theme="primetime"] .stage-vote-name, html[data-theme="primetime"] .stage-vote-count { color: #fff; }
 html[data-theme="primetime"] .vote-option:hover:not(:disabled) { border-color: var(--amber); background: #0E2574; }
 html[data-theme="primetime"] .vote-key { border: 0; border-radius: 50%; background: var(--amber); color: #1A1200; font: 400 16px/1 var(--font-head); }
 html[data-theme="primetime"] .vote-track { height: 6px; background: rgba(255,255,255,.15); }
@@ -995,6 +1016,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
                 <div id="perfect-banner" class="canvas-message" aria-hidden="true">PERFECT!</div>
                 <div id="chat-flavor-pop" class="chat-flavor-pop" aria-hidden="true"></div>
                 <div id="canvas-hint" class="canvas-hint">Tap anywhere to drop</div>
+                <div id="stage-vote-strip" class="stage-vote-strip" role="group" aria-label="Chat vote options" hidden>
+                  <button class="stage-vote-chip" data-option-index="0" type="button" disabled aria-label="Option 1">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                  <button class="stage-vote-chip" data-option-index="1" type="button" disabled aria-label="Option 2">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                  <button class="stage-vote-chip" data-option-index="2" type="button" disabled aria-label="Option 3">
+                    <svg class="stage-vote-icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><use class="stage-vote-icon-use" href="#sabotage-symbol-empty"></use></svg><span class="stage-vote-name">Waiting</span><span class="stage-vote-count">0</span>
+                  </button>
+                </div>
               </div>
             </div>
             <div id="control-row" class="control-row">
@@ -1275,6 +1307,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'calipers', name: 'Drafting Calipers', category: 'geometry', caption: 'The drafting arms have closed in.', effect: 'For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges.' }
     ]);
     const SABOTAGE_BY_ID = new Map(SABOTAGES.map(item => [item.id, item]));
+    const STAGE_VOTE_SHORT_NAMES = Object.freeze({
+      turbo: 'Turbo', drunk: 'Drunk', slowmo: 'Slow', magnet: 'Gravity', portal: 'Portal', rollercoaster: 'Roller',
+      earthquake: 'Quake', pisa: 'Pisa', spotlight: 'Spotlight', peekaboo: 'Peekaboo', zoom: 'Zoom', double: 'Shell',
+      accordion: 'Accordion', crumble: 'Crumble', superglue: 'Glue', calipers: 'Calipers'
+    });
     const AUDIO_CUES = (() => {
       try {
         const rows = JSON.parse(document.getElementById('audio-cue-sheet').textContent || '[]');
@@ -1656,6 +1693,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
       voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
+      stageVoteStrip: document.getElementById('stage-vote-strip'), stageVoteButtons: Array.from(document.querySelectorAll('.stage-vote-chip')),
       effectIconUse: document.getElementById('effect-icon-use'), effectName: document.getElementById('effect-name'), effectCaption: document.getElementById('effect-caption'), effectTime: document.getElementById('effect-time'), effectMeter: document.getElementById('effect-meter-fill'),
       toast: document.getElementById('canvas-toast'), perfect: document.getElementById('perfect-banner'), chatFlavor: document.getElementById('chat-flavor-pop'),
       resultTitle: document.getElementById('result-title'), resultSubtitle: document.getElementById('result-subtitle'), resultScore: document.getElementById('result-score'), resultBest: document.getElementById('result-best'), resultPerfects: document.getElementById('result-perfects'), resultFallen: document.getElementById('result-fallen'), resultScale: document.getElementById('result-scale'),
@@ -2334,6 +2372,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (game && game.devMode) return 'Sandbox preview';
       const seconds = `${Math.max(0, Math.ceil(Number(effect.remaining) || 0))}s`;
       return Number.isInteger(effect.dropsRemaining) ? `${effect.dropsRemaining} drops · ${seconds} max` : `${seconds} left`;
+    }
+    function compactSabotageName(sabotage) {
+      return sabotage ? STAGE_VOTE_SHORT_NAMES[sabotage.id] || sabotage.name : 'Waiting';
+    }
+    function stageEffectStatus(effect) {
+      const sabotage = effectById(effect && effect.id);
+      return `${compactSabotageName(sabotage)} · ${Math.max(0, Math.ceil(Number(effect && effect.remaining) || 0))}s left`;
     }
     function randomBetween(min, max) { return min + Math.random() * (max - min); }
 
@@ -3839,21 +3884,23 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (Object.prototype.hasOwnProperty.call(counts, choice)) counts[choice] += 3;
         total += 3;
       }
-      for (const button of elements.voteButtons) {
+      elements.stageVoteStrip.hidden = !voting;
+      for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
         const index = Number(button.dataset.optionIndex);
         const id = voting ? game.vote.options[index] : null;
         const sabotage = effectById(id);
-        const icon = button.querySelector('.vote-icon-use');
+        const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
         if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
-        const name = button.querySelector('.vote-name');
-        const count = button.querySelector('.vote-count');
+        const name = button.querySelector('.vote-name, .stage-vote-name');
+        const count = button.querySelector('.vote-count, .stage-vote-count');
         const fill = button.querySelector('.vote-fill');
-        name.textContent = sabotage ? sabotage.name : 'Waiting for vote';
+        name.textContent = sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote';
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
-        fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
+        if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
         button.disabled = !voting || (remoteVote && multiplayer.role !== 'host');
         button.setAttribute('aria-label', sabotage ? `${remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for'} ${sabotage.name}, ${votes} votes` : `Option ${index + 1}, voting closed`);
+        if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? sabotage.name : '';
       }
       if (voting) {
         const seconds = Math.max(0, Math.ceil(game.vote.remaining));
@@ -3877,6 +3924,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function syncHud(force = false) {
       if (!game) return;
       if (game.devMode) {
+        elements.stageVoteStrip.hidden = true;
         const normal = devSelectedId === 'normal';
         const sabotage = effectById(devSelectedId);
         const previewName = normal ? 'Normal' : sabotage ? sabotage.name : 'a sabotage';
@@ -4025,6 +4073,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.effectTime.textContent = 'Ready';
           elements.effectMeter.style.width = '0%';
         }
+        if (game.activeEffect && game.phase === 'playing' && !game.paused && multiplayer.connected) elements.motion.textContent = stageEffectStatus(game.activeEffect);
         syncVotePanel();
         return;
       }
@@ -4055,6 +4104,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.effectTime.textContent = 'Ready';
         elements.effectMeter.style.width = '0%';
       }
+      if (game.activeEffect && game.phase === 'playing') elements.motion.textContent = stageEffectStatus(game.activeEffect);
       syncVotePanel();
     }
 
@@ -4442,7 +4492,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     });
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
     document.querySelectorAll('button').forEach(button => button.addEventListener('contextmenu', event => event.preventDefault()));
-    elements.voteButtons.forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
+    [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
     window.addEventListener('contextmenu', event => {
       if (event.target === elements.gameCanvas || event.target === elements.drop) event.preventDefault();
     });
