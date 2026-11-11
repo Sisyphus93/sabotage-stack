@@ -309,3 +309,73 @@ describe('Game status announcements (F-011)', skipReason ? { skip: skipReason } 
     } finally { page.close(); }
   });
 });
+
+describe('Space key respects focused controls (F-012)', skipReason ? { skip: skipReason } : {}, () => {
+  function key(page, target, type, repeat = false) {
+    const event = new page.window.KeyboardEvent(type, { code: 'Space', key: ' ', bubbles: true, cancelable: true, repeat });
+    target.dispatchEvent(event);
+    return event;
+  }
+  async function openGame() {
+    const page = await boot(HTML, { storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, manualAnimationFrame: true });
+    page.document.getElementById('start-button').click();
+    return page;
+  }
+  test('Space on vote and Menu is not intercepted or used to drop', async () => {
+    const page = await openGame();
+    try {
+      page.advanceAnimation(8200);
+      const vote = page.document.querySelector('.vote-option');
+      const beforeHeight = page.document.getElementById('height-display').textContent;
+      const beforeCount = Number(vote.querySelector('.vote-count').textContent);
+      vote.focus();
+      assert.equal(key(page, vote, 'keydown').defaultPrevented, false);
+      assert.equal(key(page, vote, 'keyup').defaultPrevented, false);
+      assert.equal(page.document.getElementById('height-display').textContent, beforeHeight);
+      // jsdom does not synthesize the browser's keyboard click; model the native activation.
+      vote.click();
+      assert.equal(Number(vote.querySelector('.vote-count').textContent), beforeCount + 4);
+      const menu = page.document.getElementById('menu-button');
+      menu.focus();
+      assert.equal(key(page, menu, 'keydown').defaultPrevented, false);
+      assert.equal(key(page, menu, 'keyup').defaultPrevented, false);
+      assert.equal(page.document.getElementById('height-display').textContent, beforeHeight);
+      menu.click();
+      assert.equal(page.document.body.dataset.screen, 'title');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  for (const targetId of ['body', 'game-canvas', 'drop-button']) {
+    test(`Space drops once from ${targetId}, including held-key repeat`, async () => {
+      const page = await openGame();
+      try {
+        page.advanceAnimation(3800);
+        const target = targetId === 'body' ? page.document.body : page.document.getElementById(targetId);
+        if (targetId !== 'body') target.focus();
+        const down = key(page, target, 'keydown');
+        const height = page.document.getElementById('height-display').textContent;
+        assert.equal(down.defaultPrevented, true);
+        assert.equal(height, '1');
+        assert.equal(key(page, target, 'keydown', true).defaultPrevented, true);
+        assert.equal(page.document.getElementById('height-display').textContent, height);
+        assert.equal(key(page, target, 'keyup').defaultPrevented, true);
+        assert.deepEqual(page.errors, []);
+      } finally { page.close(); }
+    });
+  }
+  test('focus changes and dialogs do not turn Space into an unintended drop', async () => {
+    const page = await openGame();
+    try {
+      const canvas = page.document.getElementById('game-canvas');
+      const menu = page.document.getElementById('menu-button');
+      page.advanceAnimation(3800);
+      key(page, canvas, 'keydown');
+      assert.equal(key(page, menu, 'keyup').defaultPrevented, false, 'release on a different control keeps its native behavior');
+      const height = page.document.getElementById('height-display').textContent;
+      page.document.getElementById('how-dialog').showModal();
+      assert.equal(key(page, page.document.body, 'keydown').defaultPrevented, false);
+      assert.equal(page.document.getElementById('height-display').textContent, height);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
