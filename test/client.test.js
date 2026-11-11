@@ -86,3 +86,73 @@ describe('Layout: the playfield keeps a minimum size (F-001)', skipReason ? { sk
     } finally { page.close(); }
   });
 });
+
+// F-002: make solo's auto-drop adjustable without changing the one-click default run.
+describe('Solo auto-drop assist choices (F-002)', skipReason ? { skip: skipReason } : {}, () => {
+  const AUTO_DROP_STORAGE_KEY = 'sabotage-stack-solo-auto-drop-v1';
+
+  test('the default stays at 3.5 seconds and a chosen setting persists across reloads', async () => {
+    const page = await boot(HTML);
+    let restored = null;
+    try {
+      const select = page.document.getElementById('solo-auto-drop-select');
+      assert.equal(select.value, '3.5');
+      assert.match(page.document.getElementById('solo-auto-drop-help').textContent, /Standard timing/);
+      select.value = 'off';
+      select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+      const saved = page.window.localStorage.getItem(AUTO_DROP_STORAGE_KEY);
+      assert.equal(saved, 'off');
+      assert.match(page.document.getElementById('solo-auto-drop-help').textContent, /labelled Assisted/);
+
+      restored = await boot(HTML, { storage: { [AUTO_DROP_STORAGE_KEY]: saved } });
+      assert.equal(restored.document.getElementById('solo-auto-drop-select').value, 'off');
+      assert.match(restored.document.getElementById('solo-auto-drop-help').textContent, /labelled Assisted/);
+      assert.deepEqual(page.errors, []);
+      assert.deepEqual(restored.errors, []);
+    } finally { page.close(); if (restored) restored.close(); }
+  });
+
+  test('the unchanged default still auto-drops at 3.5 seconds without marking the run assisted', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true });
+    try {
+      page.document.getElementById('start-button').click();
+      page.advanceAnimation(3800);
+      assert.equal(page.document.getElementById('height-display').textContent, '1', 'the default timer should place the first block');
+      assert.doesNotMatch(page.document.getElementById('game-mode-kicker').textContent, /Assisted/);
+      assert.equal(page.document.getElementById('result-assist-label').hidden, true);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('10 seconds is assisted and the auto-drop clock pauses for the first 2 seconds of a vote', async () => {
+    const page = await boot(HTML, { storage: { [AUTO_DROP_STORAGE_KEY]: '10' }, manualAnimationFrame: true });
+    try {
+      assert.equal(page.document.getElementById('solo-auto-drop-select').value, '10');
+      page.document.getElementById('start-button').click();
+      assert.match(page.document.getElementById('game-mode-kicker').textContent, /Assisted/);
+      page.advanceAnimation(11800);
+      assert.equal(page.document.getElementById('height-display').textContent, '0', '10 seconds of active auto-drop time have not elapsed yet');
+      page.advanceAnimation(600);
+      assert.equal(page.document.getElementById('height-display').textContent, '1', 'the first block drops after 10 active seconds, excluding the vote pause');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('Off never auto-drops, and an assisted result is labelled', async () => {
+    const page = await boot(HTML, { storage: { [AUTO_DROP_STORAGE_KEY]: 'off' }, manualAnimationFrame: true });
+    try {
+      page.document.getElementById('start-button').click();
+      assert.match(page.document.getElementById('game-mode-kicker').textContent, /Assisted/);
+      page.advanceAnimation(12500);
+      assert.equal(page.document.getElementById('height-display').textContent, '0', 'a waiting block is not forced to drop');
+      page.document.getElementById('drop-button').click();
+      page.document.getElementById('drop-button').click();
+      page.document.getElementById('drop-button').click();
+      page.advanceAnimation(1300);
+      assert.equal(page.document.body.dataset.screen, 'results');
+      assert.equal(page.document.getElementById('result-assist-label').hidden, false);
+      assert.equal(page.document.getElementById('result-assist-label').textContent, 'Assisted');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

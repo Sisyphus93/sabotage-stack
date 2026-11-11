@@ -121,9 +121,15 @@ h1 span { display: block; color: var(--vermilion); }
 .theme-picker { display: flex; align-items: center; gap: 7px; }
 .theme-picker-label { color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .theme-select { min-height: 44px; max-width: 190px; padding: 0 9px; border: 1.5px solid var(--ink); border-radius: 11px; color: var(--ink); background: var(--paper-deep); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
+.solo-assist-setting { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin: -7px 0 5px; }
+.solo-assist-setting label { color: var(--ink); font-size: 13px; font-weight: 700; }
+.solo-assist-select { min-height: 44px; max-width: min(100%, 260px); padding: 0 10px; border: 1.5px solid var(--ink); border-radius: 11px; color: var(--ink); background: var(--paper-deep); font-family: var(--font-ui); font-size: 13px; font-weight: 700; cursor: pointer; }
+.solo-assist-help { margin: 0 0 17px; color: var(--soft-ink); font-size: 12px; line-height: 1.45; }
 @media (max-width: 700px) {
   .theme-picker-label { display: none; }
   .theme-select { max-width: 128px; padding: 0 6px; font-size: 12px; }
+  .solo-assist-setting { gap: 7px; }
+  .solo-assist-select { width: auto; max-width: 100%; padding-inline: 8px; font-size: 12px; }
   .top-tools { min-width: 0; }
 }
 .mode-row { display: flex; flex-wrap: wrap; gap: 9px; }
@@ -508,7 +514,7 @@ html[data-theme="sunset"] .dev-effect-button, html[data-theme="sunset"] .dev-fee
 html[data-theme="sunset"] .topbar { border-bottom: 3px solid var(--amber); }
 html[data-theme="sunset"] .brand-mark { border: 2px solid var(--ink); background: var(--paper-deep); color: var(--amber); box-shadow: 4px 4px 0 var(--vermilion); }
 html[data-theme="sunset"] .brand-word { font-size: 13px; line-height: 1.5; letter-spacing: 0; text-shadow: 2px 2px 0 var(--vermilion); }
-html[data-theme="sunset"] .theme-select { border: 2px solid var(--ink); background: #170B33; box-shadow: 3px 3px 0 var(--vermilion); font-size: 17px; }
+html[data-theme="sunset"] .theme-select, html[data-theme="sunset"] .solo-assist-select { border: 2px solid var(--ink); background: #170B33; box-shadow: 3px 3px 0 var(--vermilion); font-size: 17px; }
 html[data-theme="sunset"] .live-dot { border-color: #170B33; box-shadow: 0 0 7px var(--teal); }
 html[data-theme="sunset"] h1 { font-size: clamp(25px, 4.4vw, 50px); line-height: 1.45; letter-spacing: 0; text-shadow: 3px 3px 0 #6D28C4, 6px 6px 0 rgba(255,107,53,.65); }
 html[data-theme="sunset"] h1 span { color: var(--vermilion); text-shadow: 3px 3px 0 rgba(23,11,51,.85); }
@@ -623,7 +629,7 @@ html[data-theme="primetime"] .topbar::after {
 }
 html[data-theme="primetime"] .brand-word { color: var(--amber); font-size: 22px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 2px 2px 0 #061238; }
 html[data-theme="primetime"] .brand-mark { border: 2px solid var(--amber); border-radius: 10px; color: var(--amber); background: #0A1A55; box-shadow: 0 0 12px rgba(255,200,61,.55); }
-html[data-theme="primetime"] .theme-select { min-height: 44px; border: 2px solid var(--amber); border-radius: 12px; background: #0A1A55; color: #fff; font-size: 17px; }
+html[data-theme="primetime"] .theme-select, html[data-theme="primetime"] .solo-assist-select { min-height: 44px; border: 2px solid var(--amber); border-radius: 12px; background: #0A1A55; color: #fff; font-size: 17px; }
 html[data-theme="primetime"] h1 { font: 400 clamp(28px, 4.4vw, 56px)/1.08 var(--font-head); letter-spacing: .01em; text-shadow: 0 4px 0 #061238; }
 html[data-theme="primetime"] h1 span { color: var(--amber); }
 html[data-theme="primetime"] .eyebrow { color: var(--amber); font-size: 16px; letter-spacing: .16em; }
@@ -906,6 +912,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <button id="how-button" class="button button-secondary" type="button">How to play</button>
               <button id="dev-mode-button" class="button" type="button" aria-label="Open the offline developer sandbox to test all 16 active sabotages">DEV lab <span class="soon">Test all 16</span></button>
             </div>
+            <div class="solo-assist-setting">
+              <label for="solo-auto-drop-select">Solo auto-drop</label>
+              <select id="solo-auto-drop-select" class="solo-assist-select" aria-describedby="solo-auto-drop-help">
+                <option value="3.5">3.5 s · Standard</option>
+                <option value="10">10 s · Assisted</option>
+                <option value="off">Off · Assisted</option>
+              </select>
+            </div>
+            <p id="solo-auto-drop-help" class="solo-assist-help" aria-live="polite">Standard timing. The timer pauses for the first 2 seconds of each vote.</p>
             <div class="mode-row" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
               <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game">Teamwork <span class="soon">Host a room</span></button>
@@ -1068,7 +1083,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <div class="score-tile"><span>Blocks stacked</span><strong id="result-score">0</strong></div>
               <div class="score-tile"><span>Session best</span><strong id="result-best">0</strong></div>
             </div>
-            <div class="result-detail"><span id="result-perfects" class="detail-pill">0 perfect drops</span><span id="result-fallen" class="detail-pill">0 fallen pieces</span></div>
+            <div class="result-detail"><span id="result-perfects" class="detail-pill">0 perfect drops</span><span id="result-fallen" class="detail-pill">0 fallen pieces</span><span id="result-assist-label" class="detail-pill" hidden>Assisted</span></div>
             <p id="result-scale" class="result-scale">Full-size block geometry.</p>
             <div class="result-actions">
               <button id="again-button" class="button button-primary" type="button">Play again</button>
@@ -1085,7 +1100,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     <div class="dialog-inner">
       <div class="dialog-header"><div><div class="eyebrow">The very short version</div><h2 id="how-title">How to play</h2></div><button id="close-how" class="icon-button" type="button" aria-label="Close how to play">×</button></div>
       <ol class="how-steps">
-        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. In solo, a block that waits longer than 3.5 seconds drops itself.</span></li>
+        <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
         <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during each 5-second vote. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
@@ -1132,10 +1147,19 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const BASELINE = 480;
     const MIN_WIDTH = 30;
     const PERFECT_WINDOW = 3;
-    // Solo only: each block auto-drops after this long, so a 5-second sabotage cannot be waited out.
-    // Keep it at 3 s or more or Slow-to-Dart's creep stops paying off.
-    const SOLO_AUTO_DROP_SECONDS = 3.5;
+    // Solo auto-drop is configurable; the default retains the audited 3.5 s cadence.
+    const SOLO_AUTO_DROP_DEFAULT = '3.5';
+    const SOLO_AUTO_DROP_SETTINGS = Object.freeze(['3.5', '10', 'off']);
+    const SOLO_AUTO_DROP_STORAGE_KEY = 'sabotage-stack-solo-auto-drop-v1';
+    const SOLO_AUTO_DROP_VOTE_PAUSE_SECONDS = 2;
     const SOLO_AUTO_DROP_RING_AFTER = 1;
+    function loadSoloAutoDropSetting() {
+      try {
+        const saved = window.localStorage && window.localStorage.getItem(SOLO_AUTO_DROP_STORAGE_KEY);
+        return SOLO_AUTO_DROP_SETTINGS.includes(saved) ? saved : SOLO_AUTO_DROP_DEFAULT;
+      } catch (_) { return SOLO_AUTO_DROP_DEFAULT; }
+    }
+    let soloAutoDropSetting = loadSoloAutoDropSetting();
     const PALETTE = ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F'];
     // Themes are presentation only: game logic always works in the canonical Paper colours above, and the canvas
     // maps them to the active theme at draw time (SUNSET_COLOR_MAP), so switching theme mid-run recolours the tower.
@@ -1618,7 +1642,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     const Core = window.SabotageStackCore;
 
     const elements = {
-      themeSelect: document.getElementById('theme-select'),
+      themeSelect: document.getElementById('theme-select'), soloAutoDropSelect: document.getElementById('solo-auto-drop-select'), soloAutoDropHelp: document.getElementById('solo-auto-drop-help'),
       soundToggle: document.getElementById('sound-toggle'), soundLabel: document.getElementById('sound-label'), soundStatus: document.getElementById('sound-status'),
       title: document.getElementById('title-screen'), lobby: document.getElementById('room-screen'), game: document.getElementById('game-screen'), results: document.getElementById('results-screen'),
       start: document.getElementById('start-button'), devStart: document.getElementById('dev-mode-button'), devQuick: document.getElementById('dev-quick-button'), devPanel: document.getElementById('dev-panel'), devPanelTitle: document.getElementById('dev-panel-title'), devPanelDescription: document.getElementById('dev-panel-description'), devEffectDescription: document.getElementById('dev-effect-description'), devEffects: document.getElementById('dev-effects'), devReset: document.getElementById('dev-reset-button'), devDrop: document.getElementById('dev-drop-button'), devFeedback: document.getElementById('dev-feedback'), how: document.getElementById('how-button'), closeHow: document.getElementById('close-how'), dialog: document.getElementById('how-dialog'),
@@ -1637,6 +1661,22 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       resultTitle: document.getElementById('result-title'), resultSubtitle: document.getElementById('result-subtitle'), resultScore: document.getElementById('result-score'), resultBest: document.getElementById('result-best'), resultPerfects: document.getElementById('result-perfects'), resultFallen: document.getElementById('result-fallen'), resultScale: document.getElementById('result-scale'),
       titleBest: document.getElementById('title-best'), titleBestMobile: document.getElementById('title-best-mobile'), sabotageList: document.getElementById('sabotage-list')
     };
+    function updateSoloAutoDropHelp() {
+      if (!elements.soloAutoDropHelp) return;
+      elements.soloAutoDropHelp.textContent = soloAutoDropSetting === '3.5'
+        ? 'Standard timing. The timer pauses for the first 2 seconds of each vote.'
+        : soloAutoDropSetting === '10'
+          ? '10-second timer. This solo run will be labelled Assisted; the first 2 seconds of each vote pause the timer.'
+          : 'Auto-drop is off. This solo run will be labelled Assisted.';
+    }
+    function setSoloAutoDropSetting(value) {
+      soloAutoDropSetting = SOLO_AUTO_DROP_SETTINGS.includes(value) ? value : SOLO_AUTO_DROP_DEFAULT;
+      elements.soloAutoDropSelect.value = soloAutoDropSetting;
+      updateSoloAutoDropHelp();
+      try { if (window.localStorage) window.localStorage.setItem(SOLO_AUTO_DROP_STORAGE_KEY, soloAutoDropSetting); } catch (_) { /* storage unavailable: keep the choice for this page view */ }
+    }
+    elements.soloAutoDropSelect.value = soloAutoDropSetting;
+    updateSoloAutoDropHelp();
     // Keep alpha enabled: Spotlight masks a hole in its dark overlay to reveal the world below.
     const gameContext = elements.gameCanvas.getContext('2d');
     const resultsContext = elements.resultsCanvas.getContext('2d');
@@ -2460,8 +2500,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function newGame() {
       resultData = null;
       camera = 0; zoomScale = 1;
+      const autoDropSeconds = soloAutoDropSetting === 'off' ? 0 : Number(soloAutoDropSetting);
       game = {
         phase: 'playing', elapsed: 0, nextVoteAt: 8, vote: null, activeEffect: null,
+        autoDropSeconds, autoDropPauseRemaining: 0, assisted: soloAutoDropSetting !== SOLO_AUTO_DROP_DEFAULT,
         stack: [Core.makeBase()], fallenPieces: [], fallingActors: [], moving: null,
         perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1,
@@ -2535,6 +2577,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const ids = Core.pickOptions(availableVoteOptions(), Math.random, game.lastSabotageWinner, reducedMotion);
       const simulatedVotes = multiplayer.active ? [] : makeSimulatedChatVotes(ids);
       game.vote = { options: ids, votes: new Map(), remaining: 5, duration: 5, botVotes: simulatedVotes, botVoteIndex: 0 };
+      if (!game.multiplayer && game.autoDropSeconds > 0) game.autoDropPauseRemaining = SOLO_AUTO_DROP_VOTE_PAUSE_SECONDS;
       game.nextVoteAt = game.elapsed + Core.voteIntervalForHeight(heightOf(game));
       game.statusMessage = 'Voting is open. The block keeps moving; chat votes are arriving live.';
       playCue('vote.open');
@@ -2874,7 +2917,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         fallen: game.fallenPieces.map(piece => ({ left: piece.left, right: piece.right, level: piece.level, color: piece.color, kind: piece.kind })),
         collapsedBlocks, collapsed: true,
         collapseLevel: game.collapseLevel == null ? Math.max(0, game.stack.length - 1) : game.collapseLevel,
-        height: heightOf(game), perfects: game.perfects, best: sessionBest, newBest: heightOf(game) > game.bestAtStart
+        height: heightOf(game), perfects: game.perfects, best: sessionBest, newBest: heightOf(game) > game.bestAtStart,
+        assisted: Boolean(game.assisted)
       };
     }
     function finishGame() {
@@ -3041,9 +3085,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           if (decoyNext) { game.moving.decoy.left = decoyNext.left; game.moving.decoy.direction = decoyNext.direction; }
         } else if (game.moving.decoy) delete game.moving.decoy;
         game.moving.vx = speed;
-        if (!game.devMode && !game.multiplayer) {
-          game.blockClock = (Number(game.blockClock) || 0) + dt;
-          if (game.blockClock >= SOLO_AUTO_DROP_SECONDS) completeDrop();
+        if (!game.devMode && !game.multiplayer && game.autoDropSeconds > 0) {
+          const pause = Math.min(dt, Math.max(0, Number(game.autoDropPauseRemaining) || 0));
+          game.autoDropPauseRemaining = Math.max(0, (Number(game.autoDropPauseRemaining) || 0) - pause);
+          game.blockClock = (Number(game.blockClock) || 0) + dt - pause;
+          if (game.blockClock >= game.autoDropSeconds) completeDrop();
         }
       }
       updateFallingActors(dt);
@@ -3105,11 +3151,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ctx.restore();
     }
     function drawAutoDropRing(ctx) {
-      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving) return;
+      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving || game.autoDropSeconds <= 0) return;
       const elapsed = Number(game.blockClock) || 0;
       if (elapsed < SOLO_AUTO_DROP_RING_AFTER) return;
-      const left = Math.max(0, SOLO_AUTO_DROP_SECONDS - elapsed);
-      const fraction = Math.min(1, left / SOLO_AUTO_DROP_SECONDS);
+      const left = Math.max(0, game.autoDropSeconds - elapsed);
+      const fraction = Math.min(1, left / game.autoDropSeconds);
       const x = WIDTH - 24; const y = 82; const radius = 11;
       ctx.save();
       ctx.lineWidth = 3.5; ctx.lineCap = 'round';
@@ -3715,6 +3761,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.resultBest.textContent = String(data.best);
       elements.resultPerfects.textContent = `${data.perfects} perfect ${data.perfects === 1 ? 'drop' : 'drops'}`;
       elements.resultFallen.textContent = `${data.fallen.length} fallen ${data.fallen.length === 1 ? 'piece' : 'pieces'}`;
+      document.getElementById('result-assist-label').hidden = !data.assisted;
       elements.resultTitle.textContent = data.newBest ? 'New session best!' : score === 0 ? 'Chat got you.' : 'Nice little tower.';
       elements.resultSubtitle.textContent = score === 0 ? 'The first block missed. The floor is feeling rather smug.' : `You stacked ${score} ${score === 1 ? 'block' : 'blocks'} before chat's interference became structural.`;
       const totalHeight = Math.max(BLOCK_H, data.blocks.length * BLOCK_H);
@@ -3887,7 +3934,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         elements.gameCanvas.setAttribute('aria-label', 'Stacking game. Press Space to drop the moving block.');
         elements.dropKey.hidden = false;
         elements.gameHeading.textContent = 'Make it stack.';
-        elements.gameModeKicker.textContent = 'Single player · build 01';
+        elements.gameModeKicker.textContent = game.assisted ? 'Single player · build 01 · Assisted' : 'Single player · build 01';
         elements.menu.textContent = 'Menu';
         elements.menu.setAttribute('aria-label', 'Return to menu');
         elements.modeLabel.textContent = 'Offline solo';
@@ -4352,6 +4399,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
 
     elements.themeSelect.addEventListener('change', event => applyTheme(event.target.value));
+    elements.soloAutoDropSelect.addEventListener('change', event => setSoloAutoDropSetting(event.target.value));
     elements.soundToggle.addEventListener('click', toggleSound);
     elements.start.addEventListener('click', newGame);
     elements.devStart.addEventListener('click', () => startDevMode('turbo'));
