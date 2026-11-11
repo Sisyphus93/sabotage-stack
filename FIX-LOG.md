@@ -49,7 +49,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 
 | ID | Sev | Effort | Decision first? | Title | Status | Commit | You verified |
 |---|---|---|---|---|---|---|---|
-| A-01 | P3 | | | Clients keep sending player.position after a round ends or their stack ends, drawing 29 error replies per round (ROUND_NOT_LIVE, PLAYER_INACTIVE). | todo | | |
+| A-01 | P3 | | | Clients keep sending player.position after a round ends or their stack ends, drawing 29 error replies per round (ROUND_NOT_LIVE, PLAYER_INACTIVE). | fixed, awaiting your check | fix(A-01), single commit on this branch | |
 | A-02 | P3 | | | Multiplayer results leave focus on <body>; solo moves it to Play again. | todo | | |
 | A-03 | P3 | | | Room codes are four letters from 24 (331,776); join attempts are limited only by the per-socket rate limit and there is no kick, so a stranger could reach an open lobby. Note-only; not tested. | todo | | |
 | A-04 | P3 | | | No non-visual way to play: sound is off by default and no cue encodes the mover's position. Idea: an optional pitch sweep for position. | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-01, position updates:** entering multiplayer results now changes the local game phase immediately, stopping position traffic. The existing ended-stack check was verified. Node 22.22.3: `npm test` passed 120/120; real WebSocket tests verify both modes after results and Competitive after a stack ends.
 
 - **F-030, Node:** package engines now match jsdom’s supported Node ranges, `.nvmrc` selects 22.22.2, and the test runner gives an explicit version diagnostic before loading suites. Harness failure messages include the actual error rather than asserting dependencies are missing. Node 22.22.3: `npm ci` succeeded and `npm test` passed 118/118; the server itself previously worked on Node 20, but the package now declares the test-compatible minimum.
 

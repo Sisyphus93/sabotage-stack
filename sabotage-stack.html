@@ -4075,6 +4075,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function showMultiplayerResults(result) {
       if (!result) return;
+      if (game && game.multiplayer) game.phase = 'results';
       multiplayer.resultPayload = result;
       resultData = null;
       elements.soloResultLayout.hidden = true;

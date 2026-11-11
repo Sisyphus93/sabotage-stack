@@ -474,3 +474,39 @@ describe('Mode-specific HUD copy (F-026)', skipReason ? { skip: skipReason } : {
     } finally { await r.close(); }
   });
 });
+
+describe('Position updates stop for inactive players (A-01)', skipReason ? { skip: skipReason } : {}, () => {
+  test('Competitive stops after a stack ends and remains stopped after results', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const manager = r.app.roomManager; const original = manager.receive.bind(manager); let positions = 0;
+      const targetSocket = r.room.players[0].socket;
+      manager.receive = (socket, raw, ...args) => {
+        if (socket === targetSocket) { try { if (JSON.parse(String(raw)).type === 'player.position') positions++; } catch (_) {} }
+        return original(socket, raw, ...args);
+      };
+      await sleep(300); assert.ok(positions > 0, 'active player sends position updates');
+      const competitor = r.room.engine.game.competitors.find(c => c.playerId === r.room.players[0].id);
+      competitor.ended = true; competitor.collapsed = true; r.room.engine.changed('game.state');
+      await sleep(250); const stopped = positions; await sleep(400);
+      assert.equal(positions, stopped, 'ended stack stops sending positions');
+      r.room.engine.finishCompetitiveRound(Date.now()); await sleep(250); const results = positions; await sleep(400);
+      assert.equal(positions, results, 'results screen does not send positions');
+      assert.deepEqual(r.players[0].errors, []);
+    } finally { await r.close(); }
+  });
+  test('Teamwork stops positions after the round ends', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const manager = r.app.roomManager; const original = manager.receive.bind(manager); let positions = 0;
+      manager.receive = (socket, raw, ...args) => {
+        try { if (JSON.parse(String(raw)).type === 'player.position') positions++; } catch (_) {}
+        return original(socket, raw, ...args);
+      };
+      await sleep(300); assert.ok(positions > 0);
+      r.room.engine.finishTeamRound(Date.now()); await sleep(250); const stopped = positions; await sleep(400);
+      assert.equal(positions, stopped);
+      for (const page of r.players) assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});
