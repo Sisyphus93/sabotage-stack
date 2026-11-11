@@ -373,3 +373,64 @@ describe('shared core invariants', () => {
     }
   });
 });
+
+describe('Teamwork drop-based sabotage (F-009)', () => {
+  test('regular effects survive time and forfeits, then end on the affected landing', () => {
+    const { engine, clock } = makeEngine('teamwork', 101);
+    const team = engine.game.team;
+    const target = team.currentPlayerId;
+    engine.addEffect('turbo', target, clock.t);
+    clock.t += 11000;
+    engine.tick(clock.t);
+    assert.ok(engine.hasEffect('turbo', target, clock.t));
+    assert.equal(engine.snapshot().activeEffects[0].untilDrop, true);
+    clock.t += 2000; engine.tick(clock.t);
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.notEqual(team.currentPlayerId, target);
+    assert.ok(engine.hasEffect('turbo', target, clock.t), 'forfeit did not consume it');
+    engine.consumeDropEffects(team.currentPlayerId, clock.t);
+    assert.ok(engine.hasEffect('turbo', target, clock.t), 'another player cannot consume it');
+    engine.forfeitTeamTurn(clock.t);
+    if (engine.game.vote) engine.resolveVote(clock.t);
+    assert.equal(team.currentPlayerId, target);
+    const result = engine.drop(target, { turnId: team.turnId, x: team.moving.left });
+    assert.equal(result.ok, true);
+    assert.equal(engine.hasEffect('turbo', target, clock.t), false);
+  });
+
+  for (const id of ['crumble', 'superglue', 'portal', 'calipers']) {
+    test(`${id} lasts three affected drops without a time cap`, () => {
+      const { engine, clock } = makeEngine('teamwork', 102);
+      const target = id === 'crumble' ? null : 'a';
+      engine.addEffect(id, target, clock.t);
+      clock.t += 30000;
+      assert.ok(engine.hasEffect(id, 'a', clock.t));
+      for (let n = 2; n >= 0; n--) {
+        engine.consumeDropEffects('a', clock.t);
+        assert.equal(engine.game.activeEffects[0]?.dropsRemaining || 0, n);
+      }
+    });
+  }
+
+  test('new votes queue instead of replacing an unconsumed effect', () => {
+    const { engine, clock } = makeEngine('teamwork', 103);
+    const team = engine.game.team;
+    engine.addEffect('portal', team.currentPlayerId, clock.t);
+    engine.forfeitTeamTurn(clock.t);
+    engine.game.pendingSabotage = 'turbo';
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(engine.game.activeEffects[0].id, 'portal');
+    assert.deepEqual(engine.game.teamSabotageQueue, ['turbo']);
+    for (let i = 0; i < 3; i++) engine.consumeDropEffects(team.currentPlayerId, clock.t);
+    engine.forfeitTeamTurn(clock.t);
+    assert.equal(engine.game.activeEffects[0].id, 'turbo');
+  });
+
+  test('Competitive effects retain their normal time caps', () => {
+    const { engine, clock } = makeEngine('competitive', 104);
+    engine.addEffect('turbo', 'a', clock.t);
+    assert.equal(engine.hasEffect('turbo', 'a', clock.t + 5000), false);
+    engine.addEffect('portal', 'a', clock.t);
+    assert.equal(engine.hasEffect('portal', 'a', clock.t + 8000), false);
+  });
+});

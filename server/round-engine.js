@@ -59,7 +59,7 @@ class RoundEngine {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
       lastSabotage: null, sabotageSequence: 0,
-      activeEffects: [], pendingSabotage: null, paused: false, pausedAt: null,
+      activeEffects: [], pendingSabotage: null, teamSabotageQueue: [], paused: false, pausedAt: null,
       team: this.mode === 'teamwork' ? {
         stack: [Core.makeBase()], fallen: [], perfects: 0, score: 0,
         turnOrder: this.players.map(player => player.id), turnIndex: -1,
@@ -128,7 +128,7 @@ class RoundEngine {
   effectApplies(effect, playerId = null) { return effect.targetPlayerId == null || effect.targetPlayerId === playerId; }
   effectFor(id, playerId = null, now = this.now()) {
     if (!this.game) return null;
-    return this.game.activeEffects.find(effect => effect.id === id && (effect.startedAt || 0) <= now && effect.expiresAt > now && this.effectApplies(effect, playerId)) || null;
+    return this.game.activeEffects.find(effect => effect.id === id && (effect.startedAt || 0) <= now && (effect.untilDrop || effect.expiresAt > now) && this.effectApplies(effect, playerId)) || null;
   }
   hasEffect(id, playerId = null, now = this.now()) { return Boolean(this.effectFor(id, playerId, now)); }
   effectElapsed(effect, now = this.now()) { return effect ? Math.max(0, (now - effect.startedAt) / 1000) : 0; }
@@ -258,11 +258,15 @@ class RoundEngine {
     team.autoDropDeadlineAt = null;
 
     if (game.pendingSabotage) {
-      const id = game.pendingSabotage;
-      const targetPlayerId = TEAM_GLOBAL_EFFECTS.has(id) ? null : player.id;
-      this.addEffect(id, targetPlayerId, now);
-      player.sabotageCount += 1;
+      game.teamSabotageQueue.push(game.pendingSabotage);
       game.pendingSabotage = null;
+    }
+    // Do not replace a sabotage that has not consumed all its landings. Votes queue
+    // until the stage is free, then target the player starting that turn.
+    if (!game.activeEffects.length && game.teamSabotageQueue.length) {
+      const id = game.teamSabotageQueue.shift();
+      this.addEffect(id, TEAM_GLOBAL_EFFECTS.has(id) ? null : player.id, now);
+      player.sabotageCount += 1;
     }
     if (!reuseMoving || !team.moving) {
       const fromLeft = team.nextSpawnFromLeft;
@@ -271,6 +275,9 @@ class RoundEngine {
       team.moving.portalWrap = this.hasEffect('portal', player.id, now);
       if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
     }
+    team.moving.portalWrap = this.hasEffect('portal', player.id, now);
+    if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
+    else delete team.moving.decoy;
     this.onEvent('turn.started', { playerId: player.id, turnId: team.turnId, deadline: team.turnExpiresAt });
     this.changed('game.state');
     return true;
@@ -280,12 +287,16 @@ class RoundEngine {
     if (!SABOTAGE_IDS.includes(id)) return null;
     const dropCounted = DROP_COUNTED_EFFECTS.has(id);
     const duration = dropCounted ? DROP_EFFECT_SECONDS : EFFECT_SECONDS;
+    const untilDrop = this.mode === 'teamwork';
     // One sabotage at a time per target (per stage in Teamwork). The client renders and predicts exactly one effect, and
     // solo play replaces the running effect when a new vote resolves. Letting the server stack effects made a queued
     // sabotage (for example Spotlight) mechanically active but invisible, and let movement speed diverge from the client.
     this.game.activeEffects = this.game.activeEffects.filter(item => !(
       this.mode === 'teamwork' || item.targetPlayerId == null || targetPlayerId == null || item.targetPlayerId === targetPlayerId));
-    const effect = { id, targetPlayerId, startedAt: now, expiresAt: now + duration * 1000, duration };
+    const effect = {
+      id, targetPlayerId, startedAt: now, duration,
+      ...(untilDrop ? { untilDrop: true } : { expiresAt: now + duration * 1000 })
+    };
     if (dropCounted) effect.dropsRemaining = 3;
     if (id === 'pisa') effect.tiltDirection = this.random() < 0.5 ? -1 : 1;
     if (id === 'spotlight') effect.spotlightSide = this.random() < 0.5 ? -1 : 1;
@@ -313,7 +324,11 @@ class RoundEngine {
     }
     this.game.activeEffects = this.game.activeEffects.filter(item => !(item.id === id && item.targetPlayerId === targetPlayerId));
     this.game.activeEffects.push(effect);
-    this.onEvent('sabotage.active', { id, targetPlayerId, expiresAt: effect.expiresAt, ...(dropCounted ? { dropsRemaining: effect.dropsRemaining } : {}) });
+    this.onEvent('sabotage.active', {
+      id, targetPlayerId,
+      ...(untilDrop ? { untilDrop: true } : { expiresAt: effect.expiresAt }),
+      ...(dropCounted ? { dropsRemaining: effect.dropsRemaining } : {})
+    });
     return effect;
   }
 
@@ -564,7 +579,6 @@ class RoundEngine {
     team.turnExpiresAt = null;
     team.awaitingAutoDrop = false;
     team.autoDropDeadlineAt = null;
-    this.clearTurnEffect(playerId);
     team.turnIndex = team.turnOrder.indexOf(playerId);
     team.currentPlayerId = null;
     team.moving = null;
@@ -623,21 +637,35 @@ class RoundEngine {
     return moving;
   }
 
-  clearTurnEffect(playerId) {
-    this.game.activeEffects = this.game.activeEffects.filter(effect =>
-      effect.targetPlayerId !== playerId || DROP_COUNTED_EFFECTS.has(effect.id));
-  }
-
   consumeDropEffects(playerId, now = this.now()) {
     if (!this.game) return false;
     let changed = false;
+    const retained = [];
     for (const effect of this.game.activeEffects) {
-      if (!DROP_COUNTED_EFFECTS.has(effect.id) || !this.effectApplies(effect, playerId) || effect.expiresAt <= now) continue;
-      effect.dropsRemaining = Math.max(0, (Number(effect.dropsRemaining) || 1) - 1);
-      changed = true;
+      if (!this.effectApplies(effect, playerId)) {
+        retained.push(effect);
+        continue;
+      }
+      if (this.mode === 'teamwork' && effect.untilDrop) {
+        changed = true;
+        if (DROP_COUNTED_EFFECTS.has(effect.id)) {
+          const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
+          effect.dropsRemaining = Math.max(0, remaining - 1);
+          if (effect.dropsRemaining > 0) retained.push(effect);
+        }
+        // Regular Teamwork effects are consumed by this affected landing; no wall-clock expiry applies.
+        continue;
+      }
+      if (DROP_COUNTED_EFFECTS.has(effect.id) && effect.expiresAt > now) {
+        const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
+        effect.dropsRemaining = Math.max(0, remaining - 1);
+        changed = true;
+        if (effect.dropsRemaining > 0) retained.push(effect);
+        continue;
+      }
+      retained.push(effect);
     }
-    if (changed) this.game.activeEffects = this.game.activeEffects.filter(effect =>
-      !DROP_COUNTED_EFFECTS.has(effect.id) || Number(effect.dropsRemaining) > 0);
+    if (changed) this.game.activeEffects = retained;
     return changed;
   }
 
@@ -735,7 +763,7 @@ class RoundEngine {
     game.lastTickAt = now;
     const moved = this.advanceMovers(previousTickAt, now);
     const oldEffects = game.activeEffects.length;
-    game.activeEffects = game.activeEffects.filter(effect => effect.expiresAt > now);
+    game.activeEffects = game.activeEffects.filter(effect => effect.untilDrop || effect.expiresAt > now);
     let changed = game.activeEffects.length !== oldEffects;
 
     if (this.mode === 'competitive') {
@@ -795,7 +823,7 @@ class RoundEngine {
   forfeitTeamTurn(now = this.now()) {
     const team = this.game.team;
     const playerId = team.currentPlayerId;
-    this.clearTurnEffect(playerId);
+    // A forfeited turn has no landing, so its drop-based sabotage remains pending for the next affected block.
     team.turnActive = false;
     team.awaitingAutoDrop = false;
     team.turnExpiresAt = null;
@@ -840,7 +868,7 @@ class RoundEngine {
       if (team.turnExpiresAt != null) team.turnExpiresAt += shift;
       if (team.autoDropDeadlineAt != null) team.autoDropDeadlineAt += shift;
       if (game.vote) game.vote.closesAt += shift;
-      for (const effect of game.activeEffects) effect.expiresAt += shift;
+      for (const effect of game.activeEffects) if (!effect.untilDrop) effect.expiresAt += shift;
       game.paused = false;
       game.pausedAt = null;
       game.lastTickAt = now;
@@ -894,7 +922,9 @@ class RoundEngine {
       activeEffects: game.activeEffects.map(effect => ({
         id: effect.id, targetPlayerId: effect.targetPlayerId, duration: effect.duration,
         elapsed: Math.max(0, (now - effect.startedAt) / 1000),
-        remaining: Math.max(0, (effect.expiresAt - now) / 1000),
+        // Teamwork uses this positive value only to keep visual envelopes open; `untilDrop` marks it as non-countdown.
+        remaining: effect.untilDrop ? Math.max(0, effect.duration) : Math.max(0, (effect.expiresAt - now) / 1000),
+        ...(effect.untilDrop ? { untilDrop: true } : {}),
         ...(Number.isInteger(effect.dropsRemaining) ? { dropsRemaining: effect.dropsRemaining } : {}),
         ...(Number.isFinite(effect.tiltDirection) ? { tiltDirection: effect.tiltDirection } : {}),
         ...(Number.isFinite(effect.spotlightSide) ? { spotlightSide: effect.spotlightSide } : {})

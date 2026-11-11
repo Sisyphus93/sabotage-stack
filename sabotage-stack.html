@@ -1138,7 +1138,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <ol class="how-steps">
         <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
         <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
-        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. Most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds.</span></li>
+        <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
       <details class="sabotage-guide">
@@ -2297,14 +2297,24 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       const self = roster.find(player => player.id === multiplayer.playerId) || {};
       const effects = remote.activeEffects || [];
       const motion = team ? team.motion : competitor ? competitor.motion : null;
-      let active = effects.find(effect => effect.targetPlayerId == null || effect.targetPlayerId === multiplayer.playerId) || null;
-      if (!active && multiplayer.role === 'host' && effects.length) active = effects[0];
-      const effectKey = active ? `${active.id}:${active.targetPlayerId || 'all'}` : '';
+      const activeTargetId = team ? team.currentPlayerId : multiplayer.playerId;
+      let active = effects.find(effect => effect.targetPlayerId == null || effect.targetPlayerId === activeTargetId) || null;
+      if (!active && remote.mode === 'competitive' && multiplayer.role === 'host' && effects.length) active = effects[0];
+      let pending = null;
+      if (team) {
+        const pendingEffects = effects.filter(effect => effect.targetPlayerId != null && effect.targetPlayerId !== team.currentPlayerId);
+        pending = multiplayer.role === 'host'
+          ? pendingEffects[0] || null
+          : pendingEffects.find(effect => effect.targetPlayerId === multiplayer.playerId) || null;
+      }
+      const observed = team && multiplayer.role !== 'host' ? pending || active : active || pending;
+      const effectKey = observed ? `${observed.id}:${observed.targetPlayerId || 'all'}` : '';
       const view = {
         multiplayer: true, mode: remote.mode, phase: remote.phase, roundNumber: remote.roundNumber, elapsed: remote.elapsed || 0,
         nextVoteAt: (remote.elapsed || 0) + (remote.nextVoteIn || 0),
         vote: remote.vote ? { ...remote.vote, votes: new Map() } : null,
         activeEffect: active ? { ...active } : null,
+        pendingEffect: pending ? { ...pending } : null,
         lastVote: remote.lastVote || null, statusMessage: remote.paused ? 'The round is paused.' : '',
         stack: team ? team.stack : competitor ? competitor.blocks : [],
         fallenPieces: team ? team.fallen : competitor ? competitor.fallen : [],
@@ -2360,7 +2370,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       elements.menu.setAttribute('aria-label', 'Return to room details');
       elements.modeLabel.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.connected ? 'connected' : 'reconnecting'}`;
       if (effectKey && effectKey !== multiplayer.lastEffectKey) {
-        const sabotage = effectById(active.id);
+        const sabotage = effectById(observed.id);
         if (sabotage) {
           playCue('sabotage.pick');
           game.toastText = sabotage.name;
@@ -2397,6 +2407,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function effectCountdownText(effect) {
       if (!effect) return 'Ready';
       if (game && game.devMode) return 'Sandbox preview';
+      if (effect.untilDrop) return Number.isInteger(effect.dropsRemaining) ? `${effect.dropsRemaining} ${effect.dropsRemaining === 1 ? 'drop' : 'drops'} left` : 'Until landing';
       const seconds = `${Math.max(0, Math.ceil(Number(effect.remaining) || 0))}s`;
       return Number.isInteger(effect.dropsRemaining) ? `${effect.dropsRemaining} drops · ${seconds} max` : `${seconds} left`;
     }
@@ -2405,7 +2416,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     }
     function stageEffectStatus(effect) {
       const sabotage = effectById(effect && effect.id);
-      return `${compactSabotageName(sabotage)} · ${Math.max(0, Math.ceil(Number(effect && effect.remaining) || 0))}s left`;
+      return `${compactSabotageName(sabotage)} · ${effect && effect.untilDrop ? effectCountdownText(effect) : `${Math.max(0, Math.ceil(Number(effect && effect.remaining) || 0))}s left`}`;
     }
     function randomBetween(min, max) { return min + Math.random() * (max - min); }
 
@@ -3063,17 +3074,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (Array.isArray(game.remoteEffects)) {
         for (const effect of game.remoteEffects) {
           effect.elapsed = Math.max(0, Number(effect.elapsed) || 0) + dt;
-          effect.remaining = Math.max(0, (Number(effect.remaining) || 0) - dt);
+          if (!effect.untilDrop) effect.remaining = Math.max(0, (Number(effect.remaining) || 0) - dt);
         }
-        game.remoteEffects = game.remoteEffects.filter(effect => effect.remaining > 0);
+        game.remoteEffects = game.remoteEffects.filter(effect => effect.untilDrop || effect.remaining > 0);
       }
       if (game.mode === 'teamwork') {
         if (game.awaitingAutoDrop) game.autoDropRemaining = Math.max(0, game.autoDropRemaining - dt);
         else game.turnRemaining = Math.max(0, game.turnRemaining - dt);
       }
       if (game.activeEffect) {
-        game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
-        game.activeEffect.elapsed = Math.max(Number(game.activeEffect.elapsed) || 0, (game.activeEffect.duration || 5) - game.activeEffect.remaining);
+        if (!game.activeEffect.untilDrop) game.activeEffect.remaining = Math.max(0, game.activeEffect.remaining - dt);
+        game.activeEffect.elapsed = game.activeEffect.untilDrop ? (Number(game.activeEffect.elapsed) || 0) + dt : Math.max(Number(game.activeEffect.elapsed) || 0, (game.activeEffect.duration || 5) - game.activeEffect.remaining);
         if (game.activeEffect.remaining <= 0) {
           finishMoverEffect(game.activeEffect);
           game.activeEffect = null;
@@ -4134,13 +4145,14 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.dropLabel.textContent = game.mode === 'teamwork' ? 'WAIT YOUR TURN' : 'STACK FINISHED';
           elements.motion.textContent = game.mode === 'teamwork' ? `NEXT · ${turnName.toUpperCase()}` : 'SPECTATING';
         }
-        if (game.activeEffect) {
-          const sabotage = effectById(game.activeEffect.id);
+        const displayedEffect = game.activeEffect || game.pendingEffect;
+        if (displayedEffect) {
+          const sabotage = effectById(displayedEffect.id);
           elements.effectIconUse.setAttribute('href', `#sabotage-symbol-${sabotage.id}`);
           elements.effectName.textContent = sabotage.name;
           elements.effectCaption.textContent = sabotage.caption;
-          elements.effectTime.textContent = effectCountdownText(game.activeEffect);
-          elements.effectMeter.style.width = `${Math.max(0, Math.min(100, game.activeEffect.remaining / game.activeEffect.duration * 100))}%`;
+          elements.effectTime.textContent = (displayedEffect === game.pendingEffect ? 'Pending · ' : '') + effectCountdownText(displayedEffect);
+          elements.effectMeter.style.width = displayedEffect.untilDrop ? (Number.isInteger(displayedEffect.dropsRemaining) ? `${displayedEffect.dropsRemaining / 3 * 100}%` : '100%') : `${Math.max(0, Math.min(100, displayedEffect.remaining / displayedEffect.duration * 100))}%`;
         } else {
           elements.effectIconUse.setAttribute('href', '#sabotage-symbol-empty');
           elements.effectName.textContent = game.lastVote ? 'Sabotage over' : 'No sabotage active';
@@ -4218,7 +4230,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         const name = document.createElement('strong');
         name.textContent = sabotage.name;
         const description = document.createElement('span');
-        description.textContent = sabotage.effect;
+        description.textContent = sabotage.effect + ' Teamwork: ' + (['crumble', 'portal', 'superglue', 'calipers'].includes(sabotage.id) ? 'lasts for 3 affected landings without a time limit.' : 'lasts until the affected player lands a block.');
         copy.append(name, description);
         li.append(icon, copy);
         elements.sabotageList.append(li);
