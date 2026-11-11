@@ -510,3 +510,22 @@ describe('Position updates stop for inactive players (A-01)', skipReason ? { ski
     } finally { await r.close(); }
   });
 });
+
+describe('Multiplayer results focus (A-02)', skipReason ? { skip: skipReason } : {}, () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: focus enters an available result action without stealing later focus`, async () => {
+    const r = await startRoom(mode);
+    try {
+      if (mode === 'teamwork') r.room.engine.finishTeamRound(Date.now()); else r.room.engine.finishCompetitiveRound(Date.now());
+      await sleep(300);
+      assert.equal(r.host.document.activeElement.textContent, 'Rematch');
+      for (const page of r.players) assert.equal(page.document.activeElement.textContent, 'Return to room');
+      const page = r.players[0]; const theme = page.document.getElementById('theme-select');
+      theme.focus(); r.app.roomManager.broadcastState(r.room); await sleep(200);
+      assert.equal(page.document.activeElement, theme, 'state refresh must not steal focus');
+      const action = page.document.querySelector('.multiplayer-result-actions button:not(:disabled)'); action.focus();
+      r.app.roomManager.broadcastState(r.room); await sleep(200);
+      assert.equal(page.document.activeElement.textContent, 'Return to room', 'rebuilding actions preserves focus');
+      for (const client of [r.host, ...r.players]) assert.deepEqual(client.errors, []);
+    } finally { await r.close(); }
+  });
+});

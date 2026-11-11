@@ -2339,8 +2339,16 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         applyMultiplayerGame(state.game);
         if (!keepLobby) setScreen('game');
       } else if (state.phase === 'results') {
+        const enteringResults = !keepLobby && document.body.dataset.screen !== 'results';
         if (!keepLobby && state.game) showMultiplayerResults(state.game.results);
-        if (!keepLobby) setScreen('results');
+        if (!keepLobby) {
+          setScreen('results');
+          if (enteringResults) {
+            const actions = elements.mpResults.querySelector('.multiplayer-result-actions');
+            const target = actions && (actions.querySelector('button:not(:disabled)'));
+            if (target) target.focus({ preventScroll: true });
+          }
+        }
       }
       mpSessionSave();
     }
@@ -4080,6 +4088,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       resultData = null;
       elements.soloResultLayout.hidden = true;
       elements.mpResults.hidden = false;
+      const previousActions = elements.mpResults.querySelector('.multiplayer-result-actions');
+      const focusedActionIndex = previousActions ? Array.from(previousActions.querySelectorAll('button')).indexOf(document.activeElement) : -1;
       elements.mpResults.replaceChildren();
       const canRematch = multiplayer.connected && (multiplayer.role === 'host' || (multiplayer.role === 'player' && multiplayer.room && multiplayer.room.canRematchWithoutHost));
       elements.again.textContent = canRematch ? 'Rematch' : 'Waiting for rematch';
@@ -4140,7 +4150,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       roomButton.addEventListener('click', returnToRoom);
       actions.append(rematch, roomButton);
       elements.mpResults.append(actions);
-      if (multiplayer.role === 'host' && multiplayer.connected) rematch.focus({ preventScroll: true });
+      if (focusedActionIndex >= 0) {
+        const target = [rematch, roomButton][focusedActionIndex];
+        (target && !target.disabled ? target : roomButton).focus({ preventScroll: true });
+      }
     }
     function populateResults(data) {
       const score = data.height;

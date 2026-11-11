@@ -50,7 +50,7 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 | ID | Sev | Effort | Decision first? | Title | Status | Commit | You verified |
 |---|---|---|---|---|---|---|---|
 | A-01 | P3 | | | Clients keep sending player.position after a round ends or their stack ends, drawing 29 error replies per round (ROUND_NOT_LIVE, PLAYER_INACTIVE). | fixed, awaiting your check | fix(A-01), single commit on this branch | |
-| A-02 | P3 | | | Multiplayer results leave focus on <body>; solo moves it to Play again. | todo | | |
+| A-02 | P3 | | | Multiplayer results leave focus on <body>; solo moves it to Play again. | fixed, awaiting your check | fix(A-02), single commit on this branch | |
 | A-03 | P3 | | | Room codes are four letters from 24 (331,776); join attempts are limited only by the per-socket rate limit and there is no kick, so a stranger could reach an open lobby. Note-only; not tested. | todo | | |
 | A-04 | P3 | | | No non-visual way to play: sound is off by default and no cue encodes the mover's position. Idea: an optional pitch sweep for position. | todo | | |
 | A-05 | P3 | | | Player colours 2 and 4 (teal #2F8478, vermilion #D5472F) have nearly equal luminance; a likely red-green confusion pair where no name is adjacent. | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **A-02, results focus:** multiplayer results focus the first enabled action on entry, including Return to room for non-hosts, and preserve action focus on result refresh without stealing focus elsewhere. Node 22.22.3: `npm test` passed 122/122 with both modes covered end-to-end.
 
 - **A-01, position updates:** entering multiplayer results now changes the local game phase immediately, stopping position traffic. The existing ended-stack check was verified. Node 22.22.3: `npm test` passed 120/120; real WebSocket tests verify both modes after results and Competitive after a stack ends.
 
