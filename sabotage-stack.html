@@ -260,6 +260,13 @@ canvas { display: block; width: 100%; height: 100%; }
 }
 .vote-option:hover:not(:disabled) { border-color: var(--ink); background: var(--paper-deep); }
 .vote-option:disabled { cursor: default; }
+.vote-description { display: block; margin: 4px 0 3px 32px; color: var(--ink); font-size: 12px; line-height: 1.3; }
+.vote-pick { display: inline-block; margin: 2px 0 3px 32px; color: var(--ink); font-size: 12px; font-weight: 800; }
+.vote-pick[hidden] { display: none; }
+.vote-option.is-your-pick, .stage-vote-chip.is-your-pick { outline: 3px solid var(--amber); outline-offset: -3px; }
+.stage-vote-chip.is-your-pick { position: relative; }
+.stage-vote-chip.is-your-pick::after { content: '✓'; position: absolute; top: 2px; right: 3px; color: var(--ink); background: var(--amber); font-size: 12px; line-height: 1; }
+html[data-theme="primetime"] .vote-description, html[data-theme="primetime"] .vote-pick { color: #fff; font-size: 16px; }
 .vote-line { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .vote-icon { position: relative; width: 30px; height: 30px; flex: 0 0 30px; display: grid; place-items: center; border: 1px solid var(--line-light); border-radius: 8px; color: var(--ink); background: var(--paper-deep); }
 .vote-icon::after { content: ""; position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border: 1px solid var(--paper); border-radius: 50%; background: var(--sabotage-accent, var(--amber)); }
@@ -1067,13 +1074,13 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <p id="vote-subtitle" class="vote-title">Pick a sabotage when voting opens.</p>
               <div class="vote-options" id="vote-options">
                 <button class="vote-option" data-option-index="0" type="button" disabled aria-label="Option 1">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">1</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">1</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
                 <button class="vote-option" data-option-index="1" type="button" disabled aria-label="Option 2">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">2</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">2</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
                 <button class="vote-option" data-option-index="2" type="button" disabled aria-label="Option 3">
-                  <span class="vote-line"><span class="vote-key" aria-hidden="true">3</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
+                  <span class="vote-line"><span class="vote-key" aria-hidden="true">3</span><span class="vote-icon" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><use class="vote-icon-use" href="#sabotage-symbol-empty"></use></svg></span><span class="vote-name">Waiting for vote</span><span class="vote-count">0</span></span><span class="vote-description"></span><span class="vote-pick" hidden>Your pick ×4</span><span class="vote-track" aria-hidden="true"><span class="vote-fill"></span></span>
                 </button>
               </div>
               <div class="vote-footer"><span id="vote-state-label">Vote opens in 8 seconds</span><span class="vote-progress" aria-hidden="true"><span id="vote-progress-fill"></span></span></div>
@@ -1314,6 +1321,17 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       { id: 'calipers', name: 'Drafting Calipers', category: 'geometry', caption: 'The drafting arms have closed in.', effect: 'For the next 3 drops (up to 8 seconds), rebounds are limited to 38 px beyond the tower edges.' }
     ]);
     const SABOTAGE_BY_ID = new Map(SABOTAGES.map(item => [item.id, item]));
+    // Short, mode-neutral mechanics fit the vote card; exact durations remain in the guide.
+    const VOTE_EFFECT_HINTS = Object.freeze({
+      turbo: 'The mover speeds up.', drunk: 'The mover alternates between stumbles and lurches.',
+      slowmo: 'The mover creeps, then darts.', magnet: 'The mover accelerates over the tower centre.',
+      portal: 'The mover wraps through the side walls.', rollercoaster: 'The mover bobs above the landing line.',
+      earthquake: 'The view shakes; block physics stay the same.', pisa: 'The view tilts and sways.',
+      spotlight: 'Most of the field is hidden outside a narrow beam.', peekaboo: 'The mover repeatedly disappears.',
+      zoom: 'The view zooms in on the tower.', double: 'A decoy moves opposite the real block.',
+      accordion: 'The mover repeatedly changes width.', crumble: 'Imperfect landings lose extra width.',
+      superglue: 'The perfect landing window becomes wider.', calipers: 'Rebounds stay closer to the tower.'
+    });
     const STAGE_VOTE_SHORT_NAMES = Object.freeze({
       turbo: 'Turbo', drunk: 'Drunk', slowmo: 'Slow', magnet: 'Gravity', portal: 'Portal', rollercoaster: 'Roller',
       earthquake: 'Quake', pisa: 'Pisa', spotlight: 'Spotlight', peekaboo: 'Peekaboo', zoom: 'Zoom', double: 'Shell',
@@ -4002,6 +4020,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         if (Object.prototype.hasOwnProperty.call(counts, choice)) counts[choice] += 3;
         total += 3;
       }
+      const soloChoice = voting && !remoteVote ? game.vote.votes.get('you') : null;
       elements.stageVoteStrip.hidden = !voting;
       elements.stageVoteStrip.setAttribute('aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
       for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
@@ -4015,21 +4034,29 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           && game.currentPlayerId !== multiplayer.playerId;
         const canChoose = !remoteVote || hostCanVote || teammateCanVote;
         const isHostTieBreak = hostCanChooseTieBreak && game.vote.hostTiebreak === id;
+        const isSoloPick = Boolean(id && soloChoice === id);
         const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
         if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
         const name = button.querySelector('.vote-name, .stage-vote-name');
         const count = button.querySelector('.vote-count, .stage-vote-count');
         const fill = button.querySelector('.vote-fill');
+        const description = button.querySelector('.vote-description');
+        const pickTag = button.querySelector('.vote-pick');
+        if (description) { description.textContent = sabotage ? VOTE_EFFECT_HINTS[sabotage.id] || '' : ''; description.hidden = !sabotage; }
+        if (pickTag) pickTag.hidden = !isSoloPick;
         name.textContent = sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote';
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
         count.textContent = String(votes);
         if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
         button.disabled = !voting || !canChoose;
         button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
+        button.classList.toggle('is-your-pick', isSoloPick);
+        if (voting && !remoteVote) button.setAttribute('aria-pressed', String(isSoloPick));
+        else button.removeAttribute('aria-pressed');
         const choiceLabel = teamworkVote
           ? hostCanChooseTieBreak ? 'Set the tie-break to' : multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId ? 'Unavailable while you are on turn:' : 'Vote for'
           : remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for';
-        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}, ${votes} votes${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
+        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${VOTE_EFFECT_HINTS[sabotage.id] || ''} ${votes} votes${isSoloPick ? ', your pick worth four votes' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
         if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
       }
       if (voting) {
@@ -4054,9 +4081,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
         } else {
           elements.voteHelp.textContent = 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
-          elements.voteSubtitle.textContent = multiplayer.active && multiplayer.role !== 'host'
-            ? 'The block keeps moving. The host is choosing the room vote.'
-            : 'The block keeps moving. Pick one to cast a vote.';
+          elements.voteSubtitle.textContent = !remoteVote && soloChoice
+            ? `Vote counted: ${effectById(soloChoice)?.name || 'your pick'} ×4. You can change it.`
+            : multiplayer.active && multiplayer.role !== 'host'
+              ? 'The block keeps moving. The host is choosing the room vote.'
+              : 'The block keeps moving. Pick one to cast a vote.';
           elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
         }
         elements.voteProgress.style.width = `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`;

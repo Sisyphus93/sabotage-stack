@@ -379,3 +379,40 @@ describe('Space key respects focused controls (F-012)', skipReason ? { skip: ski
     } finally { page.close(); }
   });
 });
+
+describe('Solo vote choices explain and confirm the pick (F-013)', skipReason ? { skip: skipReason } : {}, () => {
+  test('descriptions, selected state and weighted confirmation stay in sync across both vote controls', async () => {
+    const page = await boot(HTML, { storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, manualAnimationFrame: true, seed: 2 });
+    try {
+      page.document.getElementById('start-button').click();
+      page.advanceAnimation(8200);
+      const full = [...page.document.querySelectorAll('.vote-option')];
+      const chips = [...page.document.querySelectorAll('.stage-vote-chip')];
+      for (let i = 0; i < 3; i++) {
+        const description = full[i].querySelector('.vote-description');
+        assert.ok(description.textContent.length > 10 && !description.hidden);
+        assert.ok(full[i].getAttribute('aria-label').includes(description.textContent));
+        assert.equal(chips[i].getAttribute('aria-label'), full[i].getAttribute('aria-label'));
+        assert.equal(full[i].getAttribute('aria-pressed'), 'false');
+      }
+      full[0].click();
+      assert.equal(full[0].getAttribute('aria-pressed'), 'true');
+      assert.equal(chips[0].getAttribute('aria-pressed'), 'true');
+      assert.equal(full[0].querySelector('.vote-pick').hidden, false);
+      assert.match(full[0].querySelector('.vote-pick').textContent, /Your pick ×4/);
+      assert.match(page.document.getElementById('vote-subtitle').textContent, /Vote counted:.*×4/);
+      chips[1].click();
+      assert.equal(full[0].getAttribute('aria-pressed'), 'false');
+      assert.equal(full[0].querySelector('.vote-pick').hidden, true);
+      assert.equal(full[1].getAttribute('aria-pressed'), 'true');
+      assert.ok(chips[1].classList.contains('is-your-pick'));
+      assert.equal(full[1].querySelector('.vote-pick').hidden, false);
+      assert.match(page.document.getElementById('vote-subtitle').textContent, new RegExp(full[1].querySelector('.vote-name').textContent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      page.advanceAnimation(1000);
+      assert.match(page.document.getElementById('vote-subtitle').textContent, /Vote counted:.*×4/, 'bot votes and HUD refreshes must not erase confirmation');
+      page.advanceAnimation(4200);
+      assert.ok(full.every(button => !button.hasAttribute('aria-pressed') && button.querySelector('.vote-pick').hidden));
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
