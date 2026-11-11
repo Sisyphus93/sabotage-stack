@@ -564,3 +564,31 @@ describe('Peekaboo opacity (F-025)', () => {
     }
   });
 });
+
+describe('Chat adapter bounds and namespaces (F-029)', () => {
+  test('platform and host identities cannot collide, and chat voters can change their vote', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.equal(engine.castManualVote(first).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'Twitch', voterId: 'competitive-host', option: second }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'youtube', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'competitive-host', option: first }).ok, true);
+    assert.equal(engine.game.vote.votes.size, 3);
+    assert.equal(engine.snapshot().vote.hostChoice, first);
+    assert.equal(engine.game.vote.votes.get('chat:twitch:competitive-host'), first);
+  });
+  test('rejects invalid identities and limits distinct voters and repeated updates per ballot', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const option = engine.game.vote.options[0];
+    for (const voterId of ['', 'x'.repeat(129), 123]) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId, option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'bad:platform', voterId: 'a', option }).code, 'INVALID_VOTER');
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: 'bad' }).code, 'INVALID_OPTION');
+    for (let i = 0; i < 20; i++) assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).ok, true);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option }).code, 'CHAT_VOTE_LIMIT');
+    for (let i = 1; i < 1000; i++) engine.game.vote.chatVoteUpdates.set(`chat:twitch:v${i}`, 1);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'new', option }).code, 'CHAT_VOTER_LIMIT');
+    assert.equal(engine.castManualVote(option).ok, true, 'chat limits do not block the host');
+    engine.game.vote = null; engine.openVote(clock.t);
+    assert.equal(engine.receiveChatVote({ platform: 'twitch', voterId: 'a', option: engine.game.vote.options[0] }).ok, true);
+  });
+});

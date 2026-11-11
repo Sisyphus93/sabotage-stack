@@ -19,6 +19,10 @@ const COMPETITIVE_DISCONNECT_GRACE_MS = 10_000;
 const SABOTAGE_IDS = Core.SABOTAGE_IDS;
 const DROP_COUNTED_EFFECTS = new Set(Core.DROP_COUNTED_IDS);
 const TEAM_GLOBAL_EFFECTS = new Set(['crumble']);
+// Per-ballot bounds for future authenticated chat adapters.
+const MAX_CHAT_VOTER_ID_LENGTH = 128;
+const MAX_CHAT_VOTERS = 1000;
+const MAX_CHAT_VOTES_PER_VOTER = 20;
 const ROOM_GLOBAL_EFFECTS = new Set();
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
@@ -347,7 +351,7 @@ class RoundEngine {
     }
     game.vote = {
       options: Core.pickOptions(this.votePool(), this.random, game.lastSabotageWinner, this.motionReductionEnabled()),
-      votes: new Map(), ...(this.mode === 'teamwork' ? { hostTiebreak: null } : {}),
+      votes: new Map(), chatVoteUpdates: new Map(), ...(this.mode === 'teamwork' ? { hostTiebreak: null } : {}),
       openedAt: game.elapsed, closesAt: now + VOTE_SECONDS * 1000,
       duration: VOTE_SECONDS
     };
@@ -430,8 +434,19 @@ class RoundEngine {
   receiveChatVote(event) {
     const game = this.game;
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
-    const next = Core.recordVote(game.vote.votes, event, game.vote.options);
-    if (next === game.vote.votes) return { ok: false, code: 'INVALID_OPTION' };
+    // The adapter must supply an authenticated platform identity; this seam does not authenticate it.
+    // Legacy callers without a platform remain isolated under their own namespace.
+    if (!event || typeof event.voterId !== 'string') return { ok: false, code: 'INVALID_VOTER' };
+    const voter = event.voterId.trim();
+    const platform = event.platform == null ? 'legacy' : typeof event.platform === 'string' ? event.platform.trim().toLowerCase() : '';
+    if (!voter || voter.length > MAX_CHAT_VOTER_ID_LENGTH || !/^[a-z0-9_-]{1,32}$/.test(platform)) return { ok: false, code: 'INVALID_VOTER' };
+    if (!game.vote.options.includes(event.option)) return { ok: false, code: 'INVALID_OPTION' };
+    const voterId = `chat:${platform}:${voter}`;
+    const updates = game.vote.chatVoteUpdates;
+    if (!updates.has(voterId) && updates.size >= MAX_CHAT_VOTERS) return { ok: false, code: 'CHAT_VOTER_LIMIT' };
+    if ((updates.get(voterId) || 0) >= MAX_CHAT_VOTES_PER_VOTER) return { ok: false, code: 'CHAT_VOTE_LIMIT' };
+    const next = Core.recordVote(game.vote.votes, { voterId, option: event.option }, game.vote.options);
+    updates.set(voterId, (updates.get(voterId) || 0) + 1);
     game.vote.votes = next;
     this.onEvent('vote.updated', { counts: Core.countVotes(game.vote.votes, game.vote.options), totalVotes: game.vote.votes.size });
     this.changed('game.state');

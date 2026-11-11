@@ -40,7 +40,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-026 | P3 | quick |  | Copy and HUD drift: repeated speed in the chip, '+1 TEAM BONUS' in Competitive, 'Turn timer' on the round clock, and more | fixed, awaiting your check | fix(F-026), single commit on this branch | |
 | F-027 | P3 | quick |  | The sound setting is forgotten on reload | fixed, awaiting your check | fix(F-027), single commit on this branch | |
 | F-028 | P3 | quick |  | axe: one contrast miss, no h1 outside the title screen, labels on role-less elements | fixed, awaiting your check | fix(F-028), single commit on this branch | |
-| F-029 | P3 | larger |  | Vote adapter seam (not wired to a live source): no voter namespacing or caps, and it shares ids with the host's clicks | todo | | |
+| F-029 | P3 | larger |  | Vote adapter seam (not wired to a live source): no voter namespacing or caps, and it shares ids with the host's clicks | fixed, awaiting your check | fix(F-029), single commit on this branch | |
 | F-030 | P3 | quick |  | package.json allows Node 20, but the tests need Node 22.22.2 or newer and fail misleadingly on 20 | todo | | |
 
 ## Appendix items
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-029, chat seam:** with owner approval for the note-only finding, chat identities are namespaced by platform, IDs are limited to 128 characters, and each ballot allows at most 1,000 distinct chat voters and 20 submissions per voter. Host and Teamwork ballots stay separate. Legacy calls use a dedicated namespace; any future integration must supply trusted platform IDs and authenticate its payload before calling the adapter. Node 22.22.3: `npm test` passed 117/117.
 
 - **F-028, accessibility semantics:** Paper effect label contrast is approximately 5.70:1; lobby/game/results headings have level-one semantics and labelled containers have group roles. Node 22.22.3: `npm test` passed 115/115, including semantic and calculated contrast checks; axe and a screen reader were not run.
 
