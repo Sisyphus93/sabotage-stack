@@ -655,3 +655,38 @@ describe('Screen headings and labels (F-028)', skipReason ? { skip: skipReason }
     assert.ok((luminance('E7DCC5') + .05) / (luminance('5B5145') + .05) >= 4.5);
   });
 });
+
+describe('Optional position tone (A-04)', skipReason ? { skip: skipReason } : {}, () => {
+  test('requires sound, follows mover position, persists, and stops when disabled or leaving play', async () => {
+    const oscillators = [];
+    const param = () => ({ value: 0, values: [], setValueAtTime(v){ this.values.push(v); }, setTargetAtTime(v){ this.values.push(v); }, cancelScheduledValues(){}, linearRampToValueAtTime(){}, exponentialRampToValueAtTime(){} });
+    class FakeAudio {
+      constructor() { this.state = 'suspended'; this.currentTime = 0; this.destination = {}; }
+      createGain() { return { gain: param(), connect(){} }; }
+      createOscillator() { const osc = { frequency: param(), stopped: false, connect(){}, start(){}, stop(){ this.stopped = true; } }; oscillators.push(osc); return osc; }
+      async resume() { this.state = 'running'; }
+    }
+    const page = await boot(HTML, { AudioContextImpl: FakeAudio, manualAnimationFrame: true }); let restored;
+    try {
+      const d = page.document; const buttons = [...d.querySelectorAll('.position-audio-toggle')];
+      buttons[0].click();
+      assert.ok(buttons.every(button => button.getAttribute('aria-pressed') === 'true'));
+      assert.equal(page.window.localStorage.getItem('sabotage-stack-position-tone-v1'), 'on');
+      d.getElementById('start-button').click(); page.advanceAnimation(100);
+      assert.equal(oscillators.length, 0, 'sound off must remain silent');
+      d.getElementById('sound-toggle').click(); await page.sleep(0); page.advanceAnimation(100);
+      const tone = oscillators.at(-1);
+      assert.ok(tone.frequency.values.length >= 1);
+      page.advanceAnimation(500);
+      assert.ok(new Set(tone.frequency.values).size > 1, 'pitch tracks the moving block');
+      buttons[1].click(); assert.equal(tone.stopped, true);
+      buttons[1].click(); page.advanceAnimation(100);
+      const next = oscillators.at(-1); assert.notEqual(next, tone);
+      d.getElementById('menu-button').click(); page.advanceAnimation(100);
+      assert.equal(next.stopped, true);
+      restored = await boot(HTML, { AudioContextImpl: FakeAudio, storage: { 'sabotage-stack-position-tone-v1': 'on' } });
+      assert.equal(restored.document.querySelector('.position-audio-toggle').getAttribute('aria-pressed'), 'true');
+      assert.deepEqual(page.errors, []); assert.deepEqual(restored.errors, []);
+    } finally { page.close(); if (restored) restored.close(); }
+  });
+});

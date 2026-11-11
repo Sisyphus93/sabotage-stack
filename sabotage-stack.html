@@ -978,6 +978,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               </select>
             </div>
             <p id="solo-auto-drop-help" class="solo-assist-help" aria-live="polite">Standard timing. The timer pauses for the first 2 seconds of each vote.</p>
+            <button class="button position-audio-toggle" type="button" aria-pressed="false" aria-describedby="position-audio-help">Position tone off</button>
+            <p id="position-audio-help" class="room-hint">Optional position tone requires Sound on. Lower pitch means left of the tower centre; higher pitch means right. A 440 Hz pitch indicates alignment. The tone may reveal hidden movers.</p>
             <div class="mode-row" role="group" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
               <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game" aria-describedby="multiplayer-setup-help">Teamwork <span class="soon">Host a room</span></button>
@@ -1072,6 +1074,8 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
               <button id="drop-button" class="drop-button" type="button"><span id="drop-label">DROP</span><kbd id="drop-key">SPACE</kbd></button>
               <div id="control-help" class="control-help">One press, one drop.<br>Keep stacking during votes.</div>
             </div>
+            <button class="button position-audio-toggle" type="button" aria-pressed="false" aria-describedby="position-audio-game-help">Position tone off</button>
+            <span id="position-audio-game-help" class="sr-only">Requires Sound on. Lower pitch is left of the tower centre; higher pitch is right. A 440 Hz pitch indicates alignment and may reveal hidden movers.</span>
           </section>
 
           <aside class="side-stack" aria-label="Live game information">
@@ -1832,6 +1836,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     let audioStarting = false;
     let audioUnavailable = !AudioContextConstructor;
     let ambientBed = null;
+    const POSITION_AUDIO_KEY = 'sabotage-stack-position-tone-v1';
+    let positionAudioEnabled = false;
+    try { positionAudioEnabled = window.localStorage && window.localStorage.getItem(POSITION_AUDIO_KEY) === 'on'; } catch (_) {}
+    let positionTone = null;
     const AMBIENT_CHORDS = Object.freeze([
       [261.63, 329.63, 392.00], [220.00, 261.63, 329.63],
       [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]
@@ -2746,6 +2754,43 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       ambientBed.nextChange = now + 8;
     }
 
+    function syncPositionAudioButtons() {
+      document.querySelectorAll('.position-audio-toggle').forEach(button => {
+        button.setAttribute('aria-pressed', String(positionAudioEnabled));
+        button.textContent = `Position tone ${positionAudioEnabled ? 'on' : 'off'}`;
+      });
+    }
+    function stopPositionTone() {
+      if (!positionTone || !audioContext) return;
+      const tone = positionTone; positionTone = null;
+      try { tone.gain.gain.setTargetAtTime(0, audioContext.currentTime, .015); tone.oscillator.stop(audioContext.currentTime + .1); } catch (_) {}
+    }
+    function updatePositionTone() {
+      const active = positionAudioEnabled && soundEnabled && audioContext && audioContext.state === 'running' && masterGain &&
+        game && game.phase === 'playing' && game.moving && game.stack && game.stack.length &&
+        document.body.dataset.screen === 'game' && !document.hidden && !document.querySelector('dialog[open]') &&
+        (!game.multiplayer || canDropMultiplayer());
+      if (!active) { stopPositionTone(); return; }
+      const below = game.stack[game.stack.length - 1];
+      const offset = game.moving.left + game.moving.width / 2 - (below.left + below.right) / 2;
+      const frequency = 440 * Math.pow(2, Math.max(-1, Math.min(1, offset / 180)));
+      try {
+        if (!positionTone) {
+          const oscillator = audioContext.createOscillator(); const gain = audioContext.createGain();
+          oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+          gain.gain.setValueAtTime(0, audioContext.currentTime); oscillator.connect(gain); gain.connect(masterGain);
+          oscillator.start(); gain.gain.setTargetAtTime(.08, audioContext.currentTime, .03);
+          positionTone = { oscillator, gain };
+        } else positionTone.oscillator.frequency.setTargetAtTime(frequency, audioContext.currentTime, .035);
+      } catch (_) { stopPositionTone(); }
+    }
+    document.querySelectorAll('.position-audio-toggle').forEach(button => button.addEventListener('click', () => {
+      positionAudioEnabled = !positionAudioEnabled;
+      try { if (window.localStorage) window.localStorage.setItem(POSITION_AUDIO_KEY, positionAudioEnabled ? 'on' : 'off'); } catch (_) {}
+      syncPositionAudioButtons();
+      if (!positionAudioEnabled) stopPositionTone();
+    }));
+    syncPositionAudioButtons();
     function saveSoundPreference() {
       try { if (window.localStorage) window.localStorage.setItem(SOUND_STORAGE_KEY, soundEnabled ? 'on' : 'off'); } catch (_) {}
     }
@@ -2775,6 +2820,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       saveSoundPreference();
       if (!soundEnabled) {
         stopAmbientBed(.08);
+        stopPositionTone();
         try { if (audioContext && masterGain) masterGain.gain.setTargetAtTime(0, audioContext.currentTime, .025); }
         catch (_) { audioUnavailable = true; }
       } else if (audioContext && audioContext.state === 'running') {
@@ -4537,6 +4583,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
       else updateGame(dt);
       updateAmbientBed();
+      updatePositionTone();
       if (game && (document.body.dataset.screen === 'game' || game.phase === 'collapse')) drawGame();
       if (resultData && document.body.dataset.screen === 'results') {
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
@@ -4968,7 +5015,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         spaceDropTarget = null;
       }
     });
-    document.addEventListener('visibilitychange', () => { lastFrame = 0; });
+    document.addEventListener('visibilitychange', () => { lastFrame = 0; if (document.hidden) stopPositionTone(); });
     populateSabotageGuide();
     populateDevEffects();
     syncSoundButton();
