@@ -461,3 +461,24 @@ describe('Motion preference (F-017)', skipReason ? { skip: skipReason } : {}, ()
     } finally { page.close(); if (restored) restored.close(); }
   });
 });
+
+describe('Top-block centre reference (F-018)', skipReason ? { skip: skipReason } : {}, () => {
+  test('shows a contrasting tick at the base centre in every theme without changing the perfect window', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true });
+    try {
+      page.document.getElementById('start-button').click(); page.advanceAnimation(100);
+      const canvas = page.document.getElementById('game-canvas');
+      for (const theme of ['paper', 'sunset', 'primetime']) {
+        const select = page.document.getElementById('theme-select');
+        select.value = theme; select.dispatchEvent(new page.window.Event('change', { bubbles: true }));
+        page.advanceAnimation(50);
+        assert.notDeepEqual(page.pixel(canvas, 180, 460), page.pixel(canvas, 185, 460), `${theme} centre tick should contrast with the base`);
+      }
+      const core = page.window.SabotageStack.Core;
+      assert.equal(core.perfectWindowForSpeed(140), 3);
+      assert.equal(core.perfectWindowForSpeed(300), 3);
+      assert.match(page.document.body.textContent, /tick marks the centre of the top block/);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

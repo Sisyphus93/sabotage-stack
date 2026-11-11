@@ -29,7 +29,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-015 | P2 | larger |  | When the host leaves, players are not told; votes resolve at random and nobody can rematch | fixed, awaiting your check | fix(F-015), single commit on this branch | |
 | F-016 | P2 | quick |  | Multiplayer needs a host plus two players on separate devices, and nothing says so before you host | fixed, awaiting your check | fix(F-016), single commit on this branch | |
 | F-017 | P2 | quick |  | Reduced motion is honoured in the rules but never explained, and there is no in-game motion setting | fixed, awaiting your check | fix(F-017), single commit on this branch | |
-| F-018 | P2 | quick |  | The perfect window is a flat ±3 px that players cannot see; difficulty rises through speed alone | todo | | |
+| F-018 | P2 | quick |  | The perfect window is a flat ±3 px that players cannot see; difficulty rises through speed alone | fixed, awaiting your check | fix(F-018), single commit on this branch | |
 | F-019 | P2 | larger | yes | Effect set: four speed effects look like normal play, one helper is classed as harsh, two are near-neutral, and Spotlight hides almost everything | todo | | |
 | F-020 | P2 | quick |  | Developer tooling is in the player's path: DEV lab on the title and in the live game header, 'BUILD 01' in the heading | todo | | |
 | F-021 | P2 | quick |  | If the socket hangs, 'Connecting to the game server…' stays forever with no timeout, progress or way out | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-018, centre reference:** the active top block has a small contrasting centre tick in solo, Teamwork and Competitive, including the host view; the guide explains it. The perfect-window formula and late-game difficulty remain unchanged pending experiment E1. Node 22.22.3: `npm test` passed 99/99, including a real-canvas pixel check in each theme; a visual play check at mobile size is still advisable.
 
 - **F-017, motion:** a persisted System/Full/Reduced control defaults to the device setting, is available during play, and explains reduced vote eligibility. The server broadcasts room-wide reduction whenever a connected player or the host requests it; every client displays the room status and uses the room setting for motion. System reduced-motion CSS remains honoured even if Full game motion is selected. Existing effects already active when a preference changes are not cancelled. Node 22.22.3: `npm test` passed 98/98; targeted preference and multi-player propagation checks also passed. Mobile top-bar readability and motion-sensitive play need a human check.
 

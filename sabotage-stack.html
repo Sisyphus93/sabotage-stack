@@ -1158,7 +1158,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       <div class="dialog-header"><div><div class="eyebrow">The very short version</div><h2 id="how-title">How to play</h2></div><button id="close-how" class="icon-button" type="button" aria-label="Close how to play">×</button></div>
       <ol class="how-steps">
         <li><span class="step-num">1</span><span><strong>Watch the block.</strong> It slides across the top of your tower. Drop with Space, a tap on the canvas, or the Drop button. Solo auto-drop is 3.5 seconds by default; choose 10 seconds or turn it off in the title settings. The timer pauses for the first 2 seconds of each vote. 10-second and off runs are labelled Assisted.</span></li>
-        <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
+        <li><span class="step-num">2</span><span><strong>Keep the overlap.</strong> The part that hangs over falls away. A small tick marks the centre of the top block. Line up the centres within 3 pixels for a perfect drop and keep your full width.</span></li>
         <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
@@ -3389,6 +3389,20 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    // A visual centre reference only: perfect-window calculations remain in the shared core.
+    function drawCenterTick(ctx, block, baseline, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
+      if (!block) return;
+      const x = origin + (block.left + block.right) / 2 * scaleX;
+      const y = baseline - (block.level + 1) * BLOCK_H * scaleY + cameraOffset;
+      const height = Math.max(2, 7 * scaleY);
+      ctx.save();
+      ctx.globalAlpha = .8;
+      ctx.fillStyle = '#101010';
+      ctx.fillRect(x - Math.max(1, 1.5 * scaleX), y + scaleY, Math.max(2, 3 * scaleX), height);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - Math.max(.5, .5 * scaleX), y + scaleY, Math.max(1, scaleX), height);
+      ctx.restore();
+    }
     function drawAutoDropRing(ctx) {
       if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving || game.autoDropSeconds <= 0) return;
       const elapsed = Number(game.blockClock) || 0;
@@ -3695,6 +3709,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
           const y = baseline - ((block.level || 0) + 1) * BLOCK_H * verticalScale;
           drawRoundedBlock(ctx, x, y, Math.max(1, width * horizontalScale), Math.max(1.5, BLOCK_H * verticalScale - .5), block.color || player.color, 1, Boolean(block.perfect));
         }
+        if (!player.ended && !player.collapsed && player.moving) drawCenterTick(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'superglue') drawGlueCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'crumble') drawCrumbleCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
         if (effect && effect.id === 'calipers' && player.moving) drawCaliperGuides(ctx, topBlock, player.moving, baseline, 0, columnLeft, horizontalScale, verticalScale);
@@ -3821,6 +3836,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         }
       }
       const below = game.stack[game.stack.length - 1] || Core.makeBase();
+      if (moving && game.phase === 'playing' && !collapsingLevels.has(below.level)) drawCenterTick(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'superglue') drawGlueCue(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'crumble') drawCrumbleCue(ctx, below, BASELINE, cameraOffset);
       if (effectId === 'calipers' && moving) drawCaliperGuides(ctx, below, moving, BASELINE, cameraOffset);
