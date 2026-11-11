@@ -284,3 +284,79 @@ describe('Teamwork idle controls (F-010)', skipReason ? { skip: skipReason } : {
     } finally { await r.close(); }
   });
 });
+
+describe('Multiplayer game announcements (F-011)', skipReason ? { skip: skipReason } : {}, () => {
+  test('turns, votes, effect end, and repeated perfects are announced without live roster spam', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const page = r.host, engine = r.room.engine, team = engine.game.team;
+      for (const p of [r.host, ...r.players]) {
+        const timer = p.window.setTimeout.bind(p.window);
+        p.window.setTimeout = (fn, ms, ...args) => timer(fn, Math.min(ms, 20), ...args);
+      }
+      await sleep(1600); // Let any initial turn announcement finish before observing transitions.
+      const region = page.document.getElementById('game-announcement');
+      const messages = [];
+      const observer = new page.window.MutationObserver(() => { if (region.textContent) messages.push(region.textContent); });
+      observer.observe(region, { childList: true, subtree: true, characterData: true });
+      const timer = page.window.setTimeout.bind(page.window);
+      page.window.setTimeout = (fn, ms, ...args) => timer(fn, Math.min(ms, 20), ...args);
+      assert.equal(page.document.getElementById('multiplayer-player-list').hasAttribute('aria-live'), false);
+      assert.equal(page.document.getElementById('room-player-list').hasAttribute('aria-live'), false);
+      engine.game.nextVoteAt = 100000;
+      engine.hostSkipTeamTurn(team.turnId, Date.now()); await sleep(150);
+      assert.ok(messages.some(text => text.includes('turn.')));
+      const turnCount = messages.filter(text => text.includes('turn.')).length;
+      engine.changed('game.state'); engine.changed('game.state'); await sleep(150);
+      assert.equal(messages.filter(text => text.includes('turn.')).length, turnCount, 'unchanged snapshots do not repeat turns');
+      team.turnActive = false; team.currentPlayerId = null;
+      engine.openVote(Date.now()); await sleep(120);
+      const options = engine.game.vote.options.map(id => page.window.SabotageStack.sabotages.find(item => item.id === id).name);
+      assert.ok(messages.some(text => text.startsWith('Vote open.') && options.every(name => text.includes(name))));
+      engine.resolveVote(Date.now()); await sleep(200);
+      assert.ok(messages.some(text => text.startsWith('Vote winner:') && text.includes('In Teamwork')));
+      const id = engine.game.activeEffects[0].id;
+      engine.game.activeEffects = []; engine.changed('game.state'); await sleep(150);
+      const name = page.window.SabotageStack.sabotages.find(item => item.id === id).name;
+      assert.ok(messages.includes(`${name} ended.`));
+      const playerPage = r.players[0];
+      const playerRegion = playerPage.document.getElementById('game-announcement');
+      const repeated = [];
+      const playerObserver = new playerPage.window.MutationObserver(() => { if (playerRegion.textContent) repeated.push(playerRegion.textContent); });
+      playerObserver.observe(playerRegion, { childList: true, subtree: true });
+      const playerTimer = playerPage.window.setTimeout.bind(playerPage.window);
+      playerPage.window.setTimeout = (fn, ms, ...args) => playerTimer(fn, Math.min(ms, 20), ...args);
+      const playerId = r.room.players[0].id;
+      r.app.roomManager.broadcast(r.room, { type: 'block.perfect', playerId, height: 4 });
+      r.app.roomManager.broadcast(r.room, { type: 'block.perfect', playerId, height: 4 });
+      await sleep(400);
+      assert.equal(repeated.filter(text => text === 'Perfect drop. Height 4.').length, 2);
+      observer.disconnect(); playerObserver.disconnect();
+      for (const p of [r.host, ...r.players]) assert.deepEqual(p.errors, []);
+    } finally { await r.close(); }
+  });
+});
+
+describe('Teamwork turn warning (F-011)', skipReason ? { skip: skipReason } : {}, () => {
+  test('announces three seconds once for the active player despite repeated snapshots', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const engine = r.room.engine, team = engine.game.team;
+      const playerName = r.room.players.find(player => player.id === team.currentPlayerId).name;
+      const page = r.players[playerName === 'Ann' ? 0 : 1];
+      await sleep(1500);
+      const timer = page.window.setTimeout.bind(page.window);
+      page.window.setTimeout = (fn, ms, ...args) => timer(fn, Math.min(ms, 20), ...args);
+      const region = page.document.getElementById('game-announcement');
+      const messages = [];
+      const observer = new page.window.MutationObserver(() => { if (region.textContent) messages.push(region.textContent); });
+      observer.observe(region, { childList: true, subtree: true });
+      team.turnExpiresAt = Date.now() + 2800;
+      engine.changed('game.state'); await sleep(350);
+      engine.changed('game.state'); await sleep(350);
+      assert.equal(messages.filter(text => text === 'Three seconds left in your turn.').length, 1);
+      assert.deepEqual(page.errors, []);
+      observer.disconnect();
+    } finally { await r.close(); }
+  });
+});

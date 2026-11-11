@@ -280,3 +280,32 @@ describe('Mobile vote and touch access (F-004)', skipReason ? { skip: skipReason
     assert.match(style.slice(mobileStart, mobileEnd), /\.stage-vote-strip\s*\{\s*display:\s*grid;\s*\}/, 'the compact vote strip is enabled at phone widths');
   });
 });
+
+describe('Game status announcements (F-011)', skipReason ? { skip: skipReason } : {}, () => {
+  test('solo announces vote options, winner description and effect end through a polite region', async () => {
+    const page = await boot(HTML, { storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, manualAnimationFrame: true });
+    try {
+      const region = page.document.getElementById('game-announcement');
+      assert.equal(region.getAttribute('aria-live'), 'polite');
+      assert.equal(region.getAttribute('aria-atomic'), 'true');
+      const messages = [];
+      const observer = new page.window.MutationObserver(() => { if (region.textContent) messages.push(region.textContent); });
+      observer.observe(region, { childList: true, subtree: true, characterData: true });
+      const original = page.window.setTimeout.bind(page.window);
+      page.window.setTimeout = (fn, ms, ...args) => original(fn, Math.min(ms, 20), ...args);
+      page.document.getElementById('start-button').click();
+      page.advanceAnimation(8200); await page.sleep(100);
+      const names = [...page.document.querySelectorAll('.vote-option .vote-name')].map(node => node.textContent);
+      const opened = messages.find(text => text.startsWith('Vote open.'));
+      assert.ok(opened); for (const name of names) assert.ok(opened.includes(name), `${name} should be announced`);
+      page.advanceAnimation(5100); await page.sleep(100);
+      const winner = messages.find(text => text.startsWith('Vote winner:'));
+      assert.ok(winner && winner.length > 30, 'winner includes an effect description');
+      page.advanceAnimation(8100); await page.sleep(150);
+      assert.ok(messages.some(text => text.endsWith(' ended.')), 'effect end should be announced');
+      assert.equal(page.document.getElementById('canvas-toast').getAttribute('aria-hidden'), 'true');
+      assert.deepEqual(page.errors, []);
+      observer.disconnect();
+    } finally { page.close(); }
+  });
+});
