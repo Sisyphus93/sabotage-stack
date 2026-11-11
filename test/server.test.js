@@ -369,3 +369,23 @@ describe('Host absence (F-015)', () => {
     assert.equal(room.roundNumber, 3);
   });
 });
+
+describe('Multiplayer minimum player count (F-016)', () => {
+  for (const mode of ['teamwork', 'competitive']) {
+    test(`${mode} requires two connected players in addition to the host`, () => {
+      const manager = new RoomManager({ now: () => 10000, random: rng(82) });
+      const socket = () => ({ readyState: 1, sent: [], send(message) { this.sent.push(JSON.parse(message)); } });
+      const host = socket(), a = socket(), b = socket();
+      manager.connect(host); manager.receive(host, JSON.stringify({ type: 'room.create', mode }));
+      const code = host.sent.find(message => message.type === 'room.created').code;
+      manager.connect(a); manager.receive(a, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+      assert.equal(manager.snapshot(code).canStart, false);
+      manager.receive(host, JSON.stringify({ type: 'round.start' }));
+      assert.equal(host.sent.at(-1).code, 'NEED_TWO_PLAYERS');
+      manager.connect(b); manager.receive(b, JSON.stringify({ type: 'room.join', code, name: 'B' }));
+      assert.equal(manager.snapshot(code).canStart, true);
+      manager.receive(host, JSON.stringify({ type: 'round.start' }));
+      assert.equal(manager.snapshot(code).phase, 'playing');
+    });
+  }
+});

@@ -416,3 +416,22 @@ describe('Solo vote choices explain and confirm the pick (F-013)', skipReason ? 
     } finally { page.close(); }
   });
 });
+
+describe('Multiplayer onboarding (F-016)', skipReason ? { skip: skipReason } : {}, () => {
+  test('setup requirements are available before hosting and the guide explains both modes', async () => {
+    const page = await boot(HTML);
+    try {
+      const { document } = page;
+      const hint = document.getElementById('multiplayer-setup-help');
+      assert.match(hint.textContent, /non-playing host.*2–6 players/i);
+      assert.match(hint.textContent, /separate browser tab or device/i);
+      for (const id of ['teamwork-button', 'competitive-button']) assert.equal(document.getElementById(id).getAttribute('aria-describedby'), hint.id);
+      const section = document.getElementById('multiplayer-how-heading').parentElement;
+      assert.match(section.textContent, /At least two connected players are needed to start/);
+      assert.match(section.textContent, /Teamwork:.*height plus the number of perfect drops/);
+      assert.match(section.textContent, /Competitive:.*90 seconds.*highest tower wins/);
+      assert.match(section.textContent, /host has one changeable vote/);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});

@@ -954,10 +954,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
             <p id="solo-auto-drop-help" class="solo-assist-help" aria-live="polite">Standard timing. The timer pauses for the first 2 seconds of each vote.</p>
             <div class="mode-row" aria-label="Game modes">
               <span class="mode-pill"><span class="live-dot" aria-hidden="true"></span> Single Player</span>
-              <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game">Teamwork <span class="soon">Host a room</span></button>
-              <button id="competitive-button" class="mode-pill" type="button" data-host-mode="competitive" aria-label="Host a Competitive game">Competitive <span class="soon">Host a room</span></button>
+              <button id="teamwork-button" class="mode-pill" type="button" data-host-mode="teamwork" aria-label="Host a Teamwork game" aria-describedby="multiplayer-setup-help">Teamwork <span class="soon">Host a room</span></button>
+              <button id="competitive-button" class="mode-pill" type="button" data-host-mode="competitive" aria-label="Host a Competitive game" aria-describedby="multiplayer-setup-help">Competitive <span class="soon">Host a room</span></button>
               <button id="join-game-button" class="mode-pill" type="button" aria-label="Join a multiplayer game">Join Game <span class="soon">Room code</span></button>
               </div>
+            <p id="multiplayer-setup-help" class="room-hint">Multiplayer: one non-playing host screen plus 2–6 players, each joining from a separate browser tab or device.</p>
             <p id="multiplayer-status" class="room-status" role="status" aria-live="polite"></p>
           </div>
           <aside class="home-aside" aria-label="Game preview">
@@ -1152,6 +1153,12 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <li><span class="step-num">3</span><span><strong>Survive chat.</strong> The first vote opens after 8 seconds, then every 10 seconds (7 seconds from height 25). The block keeps moving during Solo and Competitive votes; Teamwork votes happen between turns, when teammates can vote and the host breaks ties. In Teamwork, a timed-out turn is skipped without dropping; idle players can return with I’m ready to play, and the host can skip a turn. In Solo and Competitive, most sabotages last 5 seconds; Crumble, Portal Walls, Superglue, and Calipers affect up to 3 drops or 8 seconds. In Teamwork, sabotages last until the affected landing, or 3 affected landings for those four effects, with no time cap. A forfeited turn does not count; later votes queue until the active sabotage ends.</span></li>
         <li><span class="step-num">4</span><span><strong>Try again.</strong> A miss ends the run. Your best height stays for this session only.</span></li>
       </ol>
+      <section aria-labelledby="multiplayer-how-heading">
+        <h3 id="multiplayer-how-heading">Playing together</h3>
+        <p class="room-hint">The host opens a Teamwork or Competitive room and shares its code. The host watches and controls the room rather than placing blocks; 2–6 players join from separate browser tabs or devices. At least two connected players are needed to start.</p>
+        <p class="room-hint"><strong>Teamwork:</strong> Players take turns on one shared tower. Your team score is the height plus the number of perfect drops. Players vote between turns; the host breaks tied votes.</p>
+        <p class="room-hint"><strong>Competitive:</strong> Each player builds a separate tower. After 90 seconds, the highest tower wins; equal heights tie. A player who misses finishes their own stack. The host has one changeable vote for each sabotage.</p>
+      </section>
       <details class="sabotage-guide">
         <summary>Meet all 16 active sabotages</summary>
         <ul id="sabotage-list" class="sabotage-list"></ul>

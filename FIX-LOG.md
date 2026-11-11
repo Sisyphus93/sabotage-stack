@@ -27,7 +27,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-013 | P2 | quick |  | The vote card shows three names with no explanation, never marks your pick, and applies the ×4 weight silently | fixed, awaiting your check | fix(F-013), single commit on this branch | |
 | F-014 | P2 | quick | yes | Host voting: every click adds another vote and cannot be changed, while the help text says one choice per person | fixed, awaiting your check | fix(F-014), single commit on this branch | |
 | F-015 | P2 | larger |  | When the host leaves, players are not told; votes resolve at random and nobody can rematch | fixed, awaiting your check | fix(F-015), single commit on this branch | |
-| F-016 | P2 | quick |  | Multiplayer needs a host plus two players on separate devices, and nothing says so before you host | todo | | |
+| F-016 | P2 | quick |  | Multiplayer needs a host plus two players on separate devices, and nothing says so before you host | fixed, awaiting your check | fix(F-016), single commit on this branch | |
 | F-017 | P2 | quick |  | Reduced motion is honoured in the rules but never explained, and there is no in-game motion setting | todo | | |
 | F-018 | P2 | quick |  | The perfect window is a flat ±3 px that players cannot see; difficulty rises through speed alone | todo | | |
 | F-019 | P2 | larger | yes | Effect set: four speed effects look like normal play, one helper is classed as harsh, two are near-neutral, and Spotlight hides almost everything | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-016, multiplayer onboarding:** the title now states the non-playing host plus 2–6 players requirement, and the guide explains setup, Teamwork scoring and turns, and Competitive timing and voting. This is copy only; host-as-player or two-device mode was not built because it changes the game design. Node 22.22.3: `npm test` passed 96/96.
 
 - **F-015, absent host:** the owner chose to continue without the host: notify players, cancel/skip Competitive votes while the host is disconnected, let Teamwork player votes continue with random ties, and permit any connected player to rematch after ten seconds of host absence. Returning host retains control; their previous tie-break is cleared on disconnect. The full suite passes 93/93 on Node 22.22.3.
 
