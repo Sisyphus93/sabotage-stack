@@ -21,7 +21,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-007 | P1 | larger | yes | Competitive: every sabotage hits the leader; everyone else never experiences one | fixed, awaiting your check | fix(F-007), single commit on this branch | |
 | F-008 | P1 | larger | yes | Teamwork: play stops for every 5-second vote, players cannot vote, and the UI says the block keeps moving | fixed, awaiting your check | fix(F-008), single commit on this branch | |
 | F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | fixed | F-009 commit | |
-| F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | todo | | |
+| F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | fixed, awaiting your check | fix(F-010), single commit on this branch | |
 | F-011 | P1 | quick |  | Screen-reader users hear almost nothing during play, and in multiplayer a whole list is re-announced on every drop | todo | | |
 | F-012 | P2 | quick |  | Space always drops, so it cannot activate a focused vote option or the Menu button during play | todo | | |
 | F-013 | P2 | quick |  | The vote card shows three names with no explanation, never marks your pick, and applies the ×4 weight silently | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-010, Teamwork idle turns:** the owner chose timeout forfeits without dropping, automatic skipping until the player explicitly returns, an individual host skip control, and a pause when no player is available. Host skips do not mark a player idle. F-009 effects remain pending until consumed by landings. The owner approved updating the existing F-009 test to return the idle player explicitly. Competitive and Solo timing remain unchanged. Node 22.22.3: `npm test` passed 79/79.
 
 - **F-009, Teamwork sabotage:** the owner chose landing-based durations: regular effects last through the affected player’s landing, and Crumble, Portal, Superglue and Calipers last three affected landings without a time cap. A forfeit does not consume an effect. New voted effects queue until the current effect is consumed, preserving one active sabotage on stage. Teamwork HUD and guide show landing-based durations; Solo and Competitive timing and F-010 turn handling remain unchanged. Verified with Node 22.22.3 and `npm test` (73/73).
 

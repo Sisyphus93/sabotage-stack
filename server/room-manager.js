@@ -112,6 +112,8 @@ class RoomManager {
       case 'room.close': return this.closeRoomForHost(socket);
       case 'player.position': return this.playerAction(socket, message, 'position');
       case 'player.drop': return this.playerAction(socket, message, 'drop');
+      case 'team.ready': return this.teamReady(socket);
+      case 'team.skip': return this.teamSkip(socket, message);
       case 'vote.cast': return this.voteCast(socket, message);
       case 'client.ping': return safeSend(socket, { type: 'server.pong', at: this.now() });
       default: return this.error(socket, 'UNKNOWN_MESSAGE', 'That message type is not supported.');
@@ -339,6 +341,23 @@ class RoomManager {
       authoritativeX: Number.isFinite(result.authoritativeX) ? result.authoritativeX : null
     });
     return result;
+  }
+
+  teamReady(socket) {
+    const session = this.sessions.get(socket);
+    if (!session || session.role !== 'player') return this.error(socket, 'PLAYER_ONLY', 'Only players can return to the rotation.');
+    const room = this.rooms.get(session.roomCode);
+    if (!room || !room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
+    const result = room.engine.teamReady(session.playerId, this.now());
+    if (!result.ok) return this.error(socket, result.code, 'Cannot return to the rotation right now.');
+  }
+
+  teamSkip(socket, message) {
+    const { room } = this.requireHost(socket);
+    if (!room) return;
+    if (!room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
+    const result = room.engine.hostSkipTeamTurn(message.turnId, this.now());
+    if (!result.ok) return this.error(socket, result.code, 'That turn can no longer be skipped.');
   }
 
   voteCast(socket, message) {

@@ -258,3 +258,35 @@ describe('message handler fuzz', () => {
     }
   });
 });
+
+describe('Teamwork idle controls authorization (F-010)', () => {
+  test('only the host can skip and only the idle player can mark themselves ready', async () => {
+    const { app, url } = await listen();
+    const clients = [];
+    try {
+      const host = await connect(url); clients.push(host); host.send({ type: 'room.create', mode: 'teamwork' }); await sleep(80);
+      const code = host.inbox.find(m => m.type === 'room.created').code;
+      const a = await connect(url); clients.push(a); a.send({ type: 'room.join', code, name: 'Ada' }); await sleep(80);
+      const b = await connect(url); clients.push(b); b.send({ type: 'room.join', code, name: 'Bea' }); await sleep(80);
+      host.send({ type: 'round.start' }); await sleep(100);
+      const engine = app.roomManager.rooms.get(code).engine, team = engine.game.team;
+      const turn = team.turnId, current = team.currentPlayerId;
+      a.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.equal(team.turnId, turn);
+      assert.ok(a.inbox.some(m => m.type === 'error' && m.code === 'HOST_ONLY'));
+      host.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.notEqual(team.currentPlayerId, current);
+      host.send({ type: 'team.skip', turnId: turn }); await sleep(100);
+      assert.ok(host.inbox.some(m => m.type === 'error' && m.code === 'TURN_NOT_ACTIVE'));
+      const idleId = team.currentPlayerId;
+      const idleClient = a.inbox.find(m => m.type === 'room.joined').playerId === idleId ? a : b;
+      team.turnExpiresAt = Date.now() - 1;
+      engine.tick(Date.now() + 100); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, true);
+      host.send({ type: 'team.ready' }); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, true);
+      idleClient.send({ type: 'team.ready' }); await sleep(100);
+      assert.equal(engine.player(idleId).teamIdle, false);
+    } finally { for (const client of clients) client.ws.terminate(); await app.close(); }
+  });
+});
