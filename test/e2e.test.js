@@ -231,3 +231,26 @@ describe('Room navigation during live rounds (F-005)', skipReason ? { skip: skip
     } finally { await r.close(); }
   });
 });
+
+describe('Teamwork drop-based HUD (F-009)', skipReason ? { skip: skipReason } : {}, () => {
+  test('shows landings rather than a countdown and retains a forfeited effect as pending', async () => {
+    const r = await startRoom('teamwork');
+    try {
+      const engine = r.room.engine;
+      const target = engine.game.team.currentPlayerId;
+      const targetName = r.room.players.find(p => p.id === target).name;
+      const page = r.players[targetName === 'Ann' ? 0 : 1];
+      const effect = engine.addEffect('portal', target, Date.now());
+      effect.startedAt -= 12000;
+      engine.changed('game.state'); await sleep(350);
+      assert.equal(page.document.getElementById('effect-time').textContent, '3 drops left');
+      assert.equal(page.document.getElementById('effect-meter-fill').style.width, '100%');
+      await sleep(1100);
+      assert.equal(page.document.getElementById('effect-time').textContent, '3 drops left');
+      engine.forfeitTeamTurn(Date.now()); await sleep(350);
+      assert.equal(page.document.getElementById('effect-time').textContent, 'Pending · 3 drops left');
+      assert.match(page.document.getElementById('sabotage-list').textContent, /Teamwork: lasts for 3 affected landings without a time limit/);
+      assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});

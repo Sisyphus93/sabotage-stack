@@ -20,7 +20,7 @@ Nothing starts until the owner names the finding (or says "next"). Work goes in 
 | F-006 | P1 | quick |  | Competitive: a sub-second disconnect permanently ends your stack | fixed, awaiting your check | fix(F-006), single commit on this branch | |
 | F-007 | P1 | larger | yes | Competitive: every sabotage hits the leader; everyone else never experiences one | fixed, awaiting your check | fix(F-007), single commit on this branch | |
 | F-008 | P1 | larger | yes | Teamwork: play stops for every 5-second vote, players cannot vote, and the UI says the block keeps moving | fixed, awaiting your check | fix(F-008), single commit on this branch | |
-| F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | todo | | |
+| F-009 | P1 | larger | yes | Teamwork: any sabotage can be waited out inside the 10-second turn at no cost | fixed | F-009 commit | |
 | F-010 | P1 | larger | yes | Teamwork: an idle or hidden teammate costs 12 s per rotation or drops a block at random, and nobody can skip or remove them | todo | | |
 | F-011 | P1 | quick |  | Screen-reader users hear almost nothing during play, and in multiplayer a whole list is re-announced on every drop | todo | | |
 | F-012 | P2 | quick |  | Space always drops, so it cannot activate a focused vote option or the Menu button during play | todo | | |
@@ -66,6 +66,8 @@ Start these only after the numbered findings, or when the owner asks. Items mark
 ## Notes
 
 Record deferrals, decisions made, and anything an agent noticed but did not fix (with the finding it relates to).
+
+- **F-009, Teamwork sabotage:** the owner chose landing-based durations: regular effects last through the affected player’s landing, and Crumble, Portal, Superglue and Calipers last three affected landings without a time cap. A forfeit does not consume an effect. New voted effects queue until the current effect is consumed, preserving one active sabotage on stage. Teamwork HUD and guide show landing-based durations; Solo and Competitive timing and F-010 turn handling remain unchanged. Verified with Node 22.22.3 and `npm test` (73/73).
 
 - **F-008, Teamwork voting:** connected players who are not taking the turn each get one changeable ballot during the existing five-second between-turn pause. The host can mark a tie-break choice; it applies only to tied player votes, including zero-vote ties. If the host leaves a tie undecided, the existing random fallback remains. Competitive voting remains host-only and unchanged. The Teamwork vote and controls copy now describes the pause. Turn timeout, auto-drop/forfeit, and sabotage timing remain out of scope (F-009/F-010).
 - **F-007, Competitive sabotage targeting:** the owner chose every connected, non-ended competitor, including the leader, receiving the selected effect for its normal duration. Each room member sees an accessible announcement naming the effect and all targets. Vote cadence remains unchanged.
