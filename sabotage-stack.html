@@ -80,7 +80,8 @@ button:focus-visible, select:focus-visible, [tabindex="0"]:focus-visible, summar
 .live-dot { width: 9px; height: 9px; display: inline-block; border: 1px solid var(--ink); border-radius: 50%; background: var(--teal); }
 main { flex: 1; }
 .screen { display: none; }
-.screen.is-active { display: block; }
+.screen.is-active { display: block; animation: screen-in .36s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes screen-in { from { opacity: 0; translate: 0 10px; } to { opacity: 1; translate: 0 0; } }
 .eyebrow { color: var(--soft-ink); font-size: 11px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
 .home-grid {
   min-height: min(690px, calc(100dvh - 126px)); display: grid;
@@ -776,6 +777,96 @@ html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live,
   html[data-theme="primetime"] .vote-name { font-size: 19px; }
 }
 
+/* ========================================================== 3D TITLE WORLD
+   The title screen renders a live WebGL stage behind the page. Nothing here
+   applies until a frame has actually painted (body.has-world), so a browser
+   without WebGL2 keeps exactly the paper layout it always had. */
+.world-layer {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  opacity: 0; transition: opacity 1.2s ease;
+}
+body.has-world[data-screen="title"] .world-layer { opacity: 1; }
+.world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.world-scrim {
+  position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--paper) 82%, transparent) 0%, transparent 15%),
+    radial-gradient(120% 88% at 2% 42%, color-mix(in srgb, var(--paper) 70%, transparent) 0%, color-mix(in srgb, var(--paper) 22%, transparent) 36%, transparent 62%),
+    linear-gradient(180deg, transparent 60%, color-mix(in srgb, var(--paper) 88%, transparent) 100%);
+}
+/* The hero copy becomes a sheet of frosted paper floating over the world. */
+body.has-world[data-screen="title"] .home-grid {
+  display: block; min-height: 0; padding: clamp(12px, 3vh, 30px) 0 20px;
+}
+body.has-world[data-screen="title"] .home-aside { display: none; }
+body.has-world[data-screen="title"] .home-copy {
+  --edge: color-mix(in srgb, var(--ink) 20%, var(--paper));
+  position: relative; max-width: min(620px, 52vw); padding: clamp(18px, 2.6vw, 34px);
+  border: 1.5px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  box-shadow:
+    0 52px 92px -58px rgba(20, 14, 8, .62),
+    inset 0 1px 0 color-mix(in srgb, #fff 38%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.05);
+  backdrop-filter: blur(16px) saturate(1.05);
+  animation: world-sheet-in .9s cubic-bezier(.2,.75,.25,1) both;
+}
+@keyframes world-sheet-in { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
+/* Letterpress: the headline is cut from solid ink, with a real drop shadow. */
+body.has-world[data-screen="title"] #title-heading {
+  transform: perspective(1200px) rotateX(3.2deg) rotateY(-6.5deg);
+  transform-origin: left 64%;
+  text-shadow:
+    1px 1px 0 var(--edge), 2px 2px 0 var(--edge), 3px 3px 0 var(--edge), 4px 4px 0 var(--edge),
+    5px 5px 0 var(--edge), 6px 6px 0 var(--edge), 7px 7px 0 var(--edge), 8px 8px 0 var(--edge),
+    9px 9px 0 var(--edge), 10px 10px 0 var(--edge),
+    15px 17px 32px rgba(22, 16, 10, .3);
+}
+body.has-world .brand-mark {
+  transform: perspective(320px) rotateY(calc(-15deg + var(--tilt-y, 0deg))) rotateX(calc(8deg + var(--tilt-x, 0deg)));
+  box-shadow: 4px 5px 0 color-mix(in srgb, var(--ink) 14%, transparent), 0 14px 22px -16px rgba(20, 14, 8, .55);
+}
+body.has-world .button {
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--ink) 18%, transparent), 0 16px 26px -20px rgba(20, 14, 8, .55);
+}
+body.has-world .button:hover { transform: translateY(-1px); }
+body.has-world .button:active { transform: translateY(2px); box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+/* The copy assembles itself line by line while the tower does the same.
+   `translate` (not `transform`) so the headline's letterpress tilt survives. */
+body.has-world[data-screen="title"] .home-copy > * { animation: world-line-in .72s cubic-bezier(.2,.75,.25,1) both; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(1) { animation-delay: .10s; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(2) { animation-delay: .18s; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(3) { animation-delay: .26s; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(4) { animation-delay: .34s; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(5) { animation-delay: .40s; }
+body.has-world[data-screen="title"] .home-copy > :nth-child(n+6) { animation-delay: .46s; }
+@keyframes world-line-in { from { opacity: 0; translate: 0 14px; } to { opacity: 1; translate: 0 0; } }
+body.has-world .mode-pill { box-shadow: 0 2px 0 color-mix(in srgb, var(--ink) 13%, transparent); }
+body.has-world .sabotage-guide-icon svg {
+  transform: perspective(260px) rotateY(-10deg) rotateX(4deg);
+  filter: drop-shadow(1.5px 2px 0 color-mix(in srgb, var(--ink) 26%, transparent));
+}
+@media (max-width: 899px) {
+  body.has-world[data-screen="title"] .home-grid { padding-top: min(32vh, 230px); }
+  body.has-world[data-screen="title"] .home-copy {
+    max-width: none; border-radius: 24px;
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    box-shadow: 0 -26px 60px -42px rgba(20, 14, 8, .5);
+  }
+  body.has-world[data-screen="title"] #title-heading {
+    transform: perspective(1000px) rotateX(2.2deg) rotateY(-3.5deg);
+    text-shadow:
+      1px 1px 0 var(--edge), 2px 2px 0 var(--edge), 3px 3px 0 var(--edge),
+      4px 4px 0 var(--edge), 5px 5px 0 var(--edge), 6px 6px 0 var(--edge),
+      10px 12px 24px rgba(22, 16, 10, .26);
+  }
+}
+@media (max-width: 520px) {
+  body.has-world[data-screen="title"] #title-heading { transform: none; }
+}
+
 /* THEME GEOMETRY CONTRACT. Every theme shares the same layout boxes so switching theme never moves anything:
    themes may change font, colour, borders, shadows and ornament, but not these sizes. Keep this block LAST in the stylesheet,
    and when adding a theme set only --h1-fit here (the headline font as a ratio of the shared line pitch). */
@@ -850,6 +941,10 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   </style>
 </head>
 <body>
+  <div class="world-layer" aria-hidden="true">
+    <canvas id="world-canvas" class="world-canvas"></canvas>
+    <div class="world-scrim"></div>
+  </div>
   <svg class="sabotage-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <symbol id="sabotage-symbol-empty" viewBox="0 0 32 32">
       <g fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round">
@@ -1992,6 +2087,57 @@ void main() {
   outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
 
+  // Textured panels: the cards, tiles and icon plaques of the 3D world. They
+  // are unlit by design (the artwork carries its own light) but they pick up a
+  // backlit edge, the scene fog and the ink outline pass.
+  SH.panelVS = `#version 300 es
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUv;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+out vec2 vUv;
+out vec3 vWorld;
+out vec3 vNormal;
+void main() {
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorld = world.xyz;
+  vUv = aUv;
+  vNormal = normalize(mat3(uModel) * vec3(0.0, 0.0, 1.0));
+  gl_Position = uViewProj * world;
+}`;
+
+  SH.panelFS = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+in vec2 vUv;
+in vec3 vWorld;
+in vec3 vNormal;
+uniform sampler2D uTexture;
+uniform vec3 uTint;
+uniform vec3 uGlowColor;
+uniform float uGlow;
+uniform float uOpacity;
+uniform float uEdge;
+uniform vec3 uCamPos;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+out vec4 outColor;
+out vec4 outNormal;
+void main() {
+  vec4 texel = texture(uTexture, vUv);
+  if (texel.a < 0.003) discard;
+  vec3 base = pow(max(texel.rgb, 0.0), vec3(2.2)) * uTint;
+  float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+  float rim = 1.0 - smoothstep(0.0, max(uEdge, 0.001), edge);
+  base += uGlowColor * uGlow * (0.1 + rim * 0.9);
+  float distanceToCamera = length(uCamPos - vWorld);
+  float fog = 1.0 - exp(-pow(distanceToCamera * uFogDensity, 2.0));
+  base = mix(base, uFogColor, clamp(fog, 0.0, 0.65));
+  outColor = vec4(base, texel.a * uOpacity);
+  outNormal = vec4(normalize(vNormal) * 0.5 + 0.5, clamp(distanceToCamera / 70.0, 0.0, 1.0));
+}`;
+
   /* ----------------------------------------------------------------- themes */
   // Palettes are authored in sRGB hex because that is how the rest of the game
   // and its CSS themes speak; the renderer converts to linear once.
@@ -2174,6 +2320,7 @@ void main() {
       sky: buildProgram(gl, SH.skyVS, SH.skyFS, errors),
       particle: buildProgram(gl, SH.particleVS, SH.particleFS, errors),
       portal: buildProgram(gl, SH.portalVS, SH.portalFS, errors),
+      panel: buildProgram(gl, SH.panelVS, SH.panelFS, errors),
       bright: buildProgram(gl, SH.skyVS, SH.brightFS, errors),
       blur: buildProgram(gl, SH.skyVS, SH.blurFS, errors),
       composite: buildProgram(gl, SH.skyVS, SH.compositeFS, errors)
@@ -2218,6 +2365,38 @@ void main() {
 
     const cornerData = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
     const cornerBuffer = bufferFrom(gl, gl.ARRAY_BUFFER, cornerData);
+
+    // Artwork textures (icon plaques, cards) are uploaded from 2D canvases the
+    // page paints, so the renderer never needs a network or an image decoder.
+    const ownedTextures = [];
+    const anisotropy = (() => {
+      try {
+        const extension = gl.getExtension('EXT_texture_filter_anisotropic');
+        return extension && extension.TEXTURE_MAX_ANISOTROPY_EXT ? extension : null;
+      } catch (_) { return null; }
+    })();
+    function createTexture(source) {
+      if (!source) return null;
+      const texture = gl.createTexture();
+      if (!texture) return null;
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (anisotropy) gl.texParameterf(gl.TEXTURE_2D, anisotropy.TEXTURE_MAX_ANISOTROPY_EXT, 4);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      ownedTextures.push(texture);
+      return texture;
+    }
+    function releaseTexture(texture) {
+      const index = ownedTextures.indexOf(texture);
+      if (index >= 0) ownedTextures.splice(index, 1);
+      if (texture && !state.disposed) { try { gl.deleteTexture(texture); } catch (_) { /* already freed */ } }
+    }
 
     function makeParticleVAO(instanceBuffer) {
       const vao = gl.createVertexArray();
@@ -2478,6 +2657,22 @@ void main() {
       let distance = halfSpan / Math.tan(fov / 2);
       const widthFit = (halfWidth + 1.05) / (Math.tan(fov / 2) * aspect);
       distance = Math.max(distance, widthFit);
+      // An explicit camera (the title-screen world) frames itself instead of
+      // chasing the top of a stack.
+      const explicit = scene.camera && typeof scene.camera === 'object' ? scene.camera : null;
+      if (explicit) {
+        distance = clamp(Number(explicit.distance) || 13, 3, 60);
+        centerY = Number(explicit.targetY) || 0;
+        if (Number.isFinite(Number(explicit.targetX))) state.targetXSm = Number(explicit.targetX);
+        state.yawGoal = Number.isFinite(Number(explicit.yaw)) ? Number(explicit.yaw) : state.yawGoal;
+        state.pitchGoal = Number.isFinite(Number(explicit.pitch)) ? Number(explicit.pitch) : state.pitchGoal;
+        if (!state.cameraReady) {
+          // Arrive from slightly further out: the opening breath of the title.
+          state.distanceSm = distance * (scene.reduced ? 1 : 1.18);
+          state.centerSm = centerY;
+          state.cameraReady = true;
+        }
+      }
       if (zoom > 1.001) {
         distance /= zoom;
         centerY = lerp(centerY, topY - 0.55, clamp((zoom - 1) / 0.9, 0, 1) * 0.82);
@@ -2491,9 +2686,9 @@ void main() {
         state.targetXSm = (Number(scene.focusX) || 0) * 0.14;
         state.cameraReady = true;
       }
-      state.distanceSm = ease(state.distanceSm, distance, 0.34, dt);
-      state.centerSm = ease(state.centerSm, centerY, 0.30, dt);
-      state.targetXSm = ease(state.targetXSm, (Number(scene.focusX) || 0) * 0.14, 0.4, dt);
+      state.distanceSm = ease(state.distanceSm, distance, explicit ? 0.6 : 0.34, dt);
+      state.centerSm = ease(state.centerSm, centerY, explicit ? 0.55 : 0.30, dt);
+      if (!explicit) state.targetXSm = ease(state.targetXSm, (Number(scene.focusX) || 0) * 0.14, 0.4, dt);
       state.yaw = ease(state.yaw, state.yawGoal, 0.16, dt);
       state.pitch = ease(state.pitch, state.pitchGoal, 0.16, dt);
 
@@ -2588,6 +2783,27 @@ void main() {
       for (const debris of scene.debris || []) casters.push(debris);
       for (const caster of casters) drawBox(caster, program);
       gl.colorMask(true, true, true, true);
+    }
+
+    function drawPanel(panel) {
+      const uniforms = programs.panel.uniforms;
+      composeBox(scratchModel, scratchNormal,
+        Number(panel.x) || 0, Number(panel.y) || 0, Number(panel.z) || 0,
+        Number(panel.rx) || 0, Number(panel.ry) || 0, Number(panel.rz) || 0,
+        Math.max(0.01, Number(panel.width) || 1) / 2, Math.max(0.01, Number(panel.height) || 1) / 2, 1);
+      gl.uniformMatrix4fv(uniforms.uModel, false, scratchModel);
+      const tint = panel.tint || [1, 1, 1];
+      gl.uniform3f(uniforms.uTint, tint[0], tint[1], tint[2]);
+      const glowColor = panel.glowColor || tint;
+      gl.uniform3f(uniforms.uGlowColor, glowColor[0], glowColor[1], glowColor[2]);
+      gl.uniform1f(uniforms.uGlow, Number(panel.glow) || 0);
+      gl.uniform1f(uniforms.uOpacity, panel.opacity == null ? 1 : panel.opacity);
+      gl.uniform1f(uniforms.uEdge, panel.edge == null ? 0.05 : panel.edge);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, panel.texture);
+      gl.uniform1i(uniforms.uTexture, 0);
+      gl.bindVertexArray(quadMesh.vao);
+      gl.drawElements(gl.TRIANGLES, quadMesh.count, gl.UNSIGNED_SHORT, 0);
     }
 
     function bindBlockUniforms(theme) {
@@ -2999,6 +3215,33 @@ void main() {
         gl.depthMask(true);
         gl.disable(gl.BLEND);
 
+        const panels = scene.panels || [];
+        if (panels.length) {
+          const u = programs.panel.uniforms;
+          gl.useProgram(programs.panel.program);
+          gl.uniformMatrix4fv(u.uViewProj, false, viewProjMatrix);
+          gl.uniform3f(u.uCamPos, camera.eye[0], camera.eye[1], camera.eye[2]);
+          gl.uniform3f(u.uFogColor, theme.fog[0], theme.fog[1], theme.fog[2]);
+          gl.uniform1f(u.uFogDensity, theme.fogDensity);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthMask(false);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.disable(gl.CULL_FACE);
+          const ordered = panels
+            .filter(panel => panel && panel.texture)
+            .map(panel => {
+              const dx = (Number(panel.x) || 0) - camera.eye[0];
+              const dy = (Number(panel.y) || 0) - camera.eye[1];
+              const dz = (Number(panel.z) || 0) - camera.eye[2];
+              return { panel, distance: dx * dx + dy * dy + dz * dz };
+            })
+            .sort((a, b) => b.distance - a.distance);
+          for (const entry of ordered) drawPanel(entry.panel);
+          gl.depthMask(true);
+          gl.disable(gl.BLEND);
+        }
+
         const count = fillParticleData(particles, particleInstanceData);
         if (count) {
           gl.bindBuffer(gl.ARRAY_BUFFER, particleInstanceBuffer);
@@ -3135,6 +3378,8 @@ void main() {
       version: VERSION,
       render,
       resize: measure,
+      createTexture,
+      releaseTexture,
       orbit(dx, dy) {
         state.yawGoal = clamp(state.yawGoal + (Number(dx) || 0) * 0.0045, -1.15, 1.15);
         state.pitchGoal = clamp(state.pitchGoal + (Number(dy) || 0) * 0.0035, -0.08, 0.85);
@@ -3166,6 +3411,8 @@ void main() {
           for (const program of Object.values(programs)) if (program && program.program) gl.deleteProgram(program.program);
           gl.deleteTexture(shadowTexture);
           gl.deleteFramebuffer(shadowFramebuffer);
+          for (const texture of ownedTextures) gl.deleteTexture(texture);
+          ownedTextures.length = 0;
         } catch (_) { /* a lost context has nothing left to free */ }
       }
     };
@@ -3741,6 +3988,7 @@ void main() {
       pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
       gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), gameCanvas3D: document.getElementById('game-canvas-3d'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       viewToggle: document.getElementById('view-toggle'), stageViewBadge: document.getElementById('stage-view-badge'),
+      worldCanvas: document.getElementById('world-canvas'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
@@ -3913,6 +4161,399 @@ void main() {
     function stageOrbitAvailable() {
       return threeDActive && Boolean(threeDRenderer) && Boolean(game) && document.body.dataset.screen === 'game';
     }
+
+    /* ------------------------------------------------------------ 3D world ---
+       The title screen is a live stage: a tower builds, topples and rebuilds
+       while a ring of sabotage plaques orbits it. It is decorative by
+       contract. The DOM hero above it stays the real, readable, selectable
+       title, and if WebGL2 is missing the page is exactly what it was. */
+    const WORLD_HERO_LEVELS = 9;
+    const WORLD_BACKDROP = Object.freeze([
+      Object.freeze({ x: -5.6, z: -6.4, levels: 5, width: 1.7, color: '#7FA6BD' }),
+      Object.freeze({ x: 5.9, z: -8.2, levels: 4, width: 1.4, color: '#7A6AA6' })
+    ]);
+    const WORLD_HERO_JITTER = Object.freeze([0, 5, -8, 3, -5, 10, -3, 6, -9]);
+    const WORLD_ACCENT = Object.freeze({
+      kinetic: '#E3A33B', trajectory: '#2F8478', optical: '#7FA6BD', geometry: '#D5472F'
+    });
+    const world = {
+      renderer: null, failed: false, ready: false, time: 0,
+      pointer: { x: 0, y: 0, tx: 0, ty: 0 },
+      cards: [],
+      hero: { stack: [], falling: null, debris: [], timer: 0, phase: 'build', hold: 0, serial: 0, height: 0, placed: null, clock: 0, cycle: 0 }
+    };
+    function worldHeroLeft(level) { return 80 + level * 4 + WORLD_HERO_JITTER[level % WORLD_HERO_JITTER.length]; }
+    function worldHeroWidth(level) { return Math.max(96, 200 - level * 13); }
+    function worldHeroColor(level) { return PALETTE[level % PALETTE.length]; }
+    function worldPlacedFor(block) {
+      if (!block) return null;
+      const spec = threeBlockSpec(block.left, block.left + block.width, block.level, block.color);
+      return { x: spec.x, y: spec.y + spec.hy, z: 0, color: spec.color };
+    }
+    function worldSeedHero(count) {
+      const hero = world.hero;
+      hero.stack = [];
+      for (let level = 0; level < Math.min(count, WORLD_HERO_LEVELS); level += 1) {
+        const width = worldHeroWidth(level);
+        const previous = hero.stack[hero.stack.length - 1];
+        const left = previous ? previous.left + (previous.width - width) / 2 : worldHeroLeft(0);
+        hero.stack.push({ level, left, width, color: worldHeroColor(level) });
+      }
+      hero.height = hero.stack.length;
+      hero.falling = null;
+      hero.debris = [];
+      hero.placed = worldPlacedFor(hero.stack[hero.stack.length - 1]);
+    }
+    function worldStartCollapse() {
+      const hero = world.hero;
+      hero.phase = 'collapse';
+      hero.clock = 0;
+      hero.falling = null;
+      hero.debris = hero.stack.map((block, index) => {
+        const spec = threeBlockSpec(block.left, block.left + block.width, block.level, block.color);
+        const side = index % 2 === 0 ? -1 : 1;
+        return {
+          x: spec.x, y: spec.y, z: 0, hx: spec.hx, hy: spec.hy, hz: spec.hz,
+          rx: 0, ry: 0, rz: 0,
+          vx: side * (0.3 + index * 0.13), vy: 0.35 + index * 0.04,
+          spin: side * (1.4 + index * 0.32), color: block.color, alpha: 1
+        };
+      });
+      hero.stack = [];
+      hero.height = 0;
+      hero.placed = null;
+    }
+    function worldUpdateHero(dt) {
+      const hero = world.hero;
+      if (reducedMotion) {
+        if (hero.stack.length !== 6 || hero.debris.length) worldSeedHero(6);
+        hero.phase = 'hold';
+        return;
+      }
+      if (hero.phase === 'collapse') {
+        hero.clock += dt;
+        for (const piece of hero.debris) {
+          piece.vy -= 7.2 * dt;
+          piece.x += piece.vx * dt;
+          piece.y += piece.vy * dt;
+          piece.rz += piece.spin * dt;
+          piece.ry += piece.spin * 0.35 * dt;
+          if (piece.y < 1.5) piece.alpha = Math.max(0, piece.alpha - dt * 0.9);
+        }
+        hero.debris = hero.debris.filter(piece => piece.alpha > 0.02 && piece.y > -3);
+        if (hero.clock > 1.35) {
+          hero.phase = 'build';
+          hero.clock = 0;
+          hero.cycle += 1;
+          worldSeedHero(2);
+          hero.timer = 0;
+        }
+        return;
+      }
+      if (hero.falling) {
+        const falling = hero.falling;
+        falling.t += dt / 0.4;
+        if (falling.t >= 1) {
+          hero.stack.push({ level: falling.level, left: falling.left, width: falling.width, color: falling.color });
+          hero.falling = null;
+          hero.height = hero.stack.length;
+          hero.placed = worldPlacedFor(hero.stack[hero.stack.length - 1]);
+          if (falling.level % 3 === 2) hero.serial += 1;
+          hero.timer = 0;
+          if (hero.stack.length >= WORLD_HERO_LEVELS) { hero.phase = 'hold'; hero.hold = 2.2; }
+        }
+        return;
+      }
+      hero.timer += dt;
+      if (hero.phase === 'build' && hero.timer > 0.44 && hero.stack.length < WORLD_HERO_LEVELS) {
+        hero.timer = 0;
+        const level = hero.stack.length;
+        const width = worldHeroWidth(level);
+        const previous = hero.stack[hero.stack.length - 1];
+        const left = previous ? previous.left + (previous.width - width) / 2 : worldHeroLeft(0);
+        hero.falling = { level, left, width, color: worldHeroColor(level), t: 0 };
+        return;
+      }
+      if (hero.phase === 'hold') {
+        hero.hold -= dt;
+        if (hero.hold <= 0) worldStartCollapse();
+      }
+    }
+    function worldRoundRect(ctx, x, y, width, height, radius) {
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + width, y, x + width, y + height, r);
+      ctx.arcTo(x + width, y + height, x, y + height, r);
+      ctx.arcTo(x, y + height, x, y, r);
+      ctx.arcTo(x, y, x + width, y, r);
+      ctx.closePath();
+    }
+    // A collectible-looking plaque: cream card, ink rule, category accent and
+    // the sabotage's own glyph. Painted at 256 px so the 3D tiles stay crisp.
+    function worldPaintCard(card, image) {
+      const ctx = card.ctx;
+      if (!ctx) return;
+      const sabotage = card.sabotage;
+      const accent = WORLD_ACCENT[sabotage.category] || PALETTE[card.index % PALETTE.length];
+      ctx.clearRect(0, 0, 256, 256);
+      ctx.save();
+      ctx.shadowColor = 'rgba(28,22,16,0.36)';
+      ctx.shadowBlur = 16;
+      ctx.shadowOffsetY = 9;
+      worldRoundRect(ctx, 20, 16, 216, 216, 46);
+      ctx.fillStyle = '#F6EEDD';
+      ctx.fill();
+      ctx.restore();
+      const fill = ctx.createLinearGradient(0, 16, 0, 232);
+      fill.addColorStop(0, '#FFFCF3');
+      fill.addColorStop(1, '#E8DAC0');
+      worldRoundRect(ctx, 20, 16, 216, 216, 46);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#2A2520';
+      ctx.stroke();
+      worldRoundRect(ctx, 31, 27, 194, 194, 38);
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(42,37,32,0.22)';
+      ctx.stroke();
+      worldRoundRect(ctx, 76, 205, 104, 7, 4);
+      ctx.fillStyle = accent;
+      ctx.fill();
+      ctx.fillStyle = '#6B6154';
+      ctx.font = '700 22px "DM Sans", Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(String(card.index + 1).padStart(2, '0'), 38, 62);
+      if (image) {
+        ctx.drawImage(image, 56, 50, 144, 144);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#2A2520';
+        ctx.font = '600 76px "Fraunces", Georgia, serif';
+        ctx.fillText(String(sabotage.name || '?').slice(0, 1).toUpperCase(), 128, 128);
+      }
+    }
+    function worldLoadCardIcons(cards) {
+      for (const card of cards) {
+        try {
+          const symbol = document.getElementById('sabotage-symbol-' + card.sabotage.id);
+          if (!symbol || !card.ctx) continue;
+          const markup = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="144" height="144" color="#2A2520">' + symbol.innerHTML + '</svg>';
+          const image = new Image();
+          image.onload = () => {
+            if (world.failed || !world.renderer) return;
+            try {
+              worldPaintCard(card, image);
+              const next = world.renderer.createTexture(card.canvas);
+              if (next) {
+                world.renderer.releaseTexture(card.texture);
+                card.texture = next;
+              }
+            } catch (_) { /* the monogram stays, which is fine */ }
+          };
+          image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+        } catch (_) { /* a card without its glyph still reads as a plaque */ }
+      }
+    }
+    function worldBuildCards() {
+      if (!world.renderer) return;
+      const cards = [];
+      const count = SABOTAGES.length;
+      for (let index = 0; index < count; index += 1) {
+        const sabotage = SABOTAGES[index];
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        const card = { sabotage, canvas, ctx, texture: null, index, phase: index * 0.61 };
+        worldPaintCard(card, null);
+        card.texture = world.renderer.createTexture(canvas);
+        if (!card.texture) continue;
+        cards.push(card);
+      }
+      world.cards = cards;
+      worldLoadCardIcons(cards);
+    }
+    function worldLinear(hex) {
+      try {
+        const engine = window.SabotageStack3D;
+        if (engine && engine.math && typeof engine.math.hexToLinear === 'function') return engine.math.hexToLinear(hex);
+      } catch (_) { /* fall through to a neutral tint */ }
+      return [1, 1, 1];
+    }
+    function worldPanels() {
+      // A gallery wall behind the tower: every sabotage on show, never between
+      // the camera and the stack. Sizes and spread follow the viewport, so a
+      // phone gets the same composition at a smaller scale.
+      const panels = [];
+      if (!world.cards.length) return panels;
+      const aspect = window.innerWidth / Math.max(1, window.innerHeight);
+      const wide = window.innerWidth >= 900;
+      const distance = wide ? 13.6 : 12.6;
+      const depth = wide ? 2.7 : 2.3;
+      const halfWidth = (distance + depth) * Math.tan(23 * Math.PI / 180) * aspect;
+      const spread = Math.min(5.7, Math.max(1.7, halfWidth * 0.92));
+      const step = (spread * 2) / 6;
+      const size = Math.max(0.4, Math.min(1.62, step * 0.84));
+      // On wide screens the copy owns the left half, so the gallery sits behind
+      // and around the tower instead of symmetric in the middle.
+      const shift = wide ? 1.4 : 0;
+      const t = world.time;
+      const bob = reducedMotion ? 0 : 0.07;
+      for (const card of world.cards) {
+        let row = 0;
+        let column = 0;
+        if (card.index < 6) { row = 0; column = card.index; }
+        else if (card.index < 12) { row = 1; column = card.index - 6; }
+        else { row = 2; column = card.index - 12; }
+        const count = row === 2 ? 4 : 6;
+        const x = -((count - 1) / 2) * step + column * step + (row === 1 ? step * 0.16 : 0) + shift;
+        const y = 1.15 + row * 1.74 + (bob ? Math.sin(t * 0.62 + card.phase) * bob : 0);
+        const z = -(depth + row * 1.05);
+        const wave = reducedMotion ? 0 : 0.5 + 0.5 * Math.sin(t * 1.05 - card.index * 0.55);
+        panels.push({
+          texture: card.texture,
+          x, y, z,
+          width: size, height: size,
+          rx: -0.03,
+          ry: -((x - shift) / Math.max(0.001, spread)) * 0.22,
+          rz: 0,
+          opacity: 1,
+          edge: 0.05,
+          glow: 0.03 + wave * 0.07,
+          glowColor: worldLinear(WORLD_ACCENT[card.sabotage.category] || PALETTE[card.index % PALETTE.length])
+        });
+      }
+      return panels;
+    }
+    function worldScene() {
+      const hero = world.hero;
+      const wide = window.innerWidth >= 900;
+      const pointerX = reducedMotion ? 0 : world.pointer.x;
+      const pointerY = reducedMotion ? 0 : world.pointer.y;
+      const blocks = hero.stack.map(block => threeBlockSpec(block.left, block.left + block.width, block.level, block.color, {}));
+      // Two quiet stacks far behind the hero give the stage real depth.
+      WORLD_BACKDROP.forEach((tower, towerIndex) => {
+        for (let level = 0; level < tower.levels; level += 1) {
+          const half = tower.width / 2;
+          const offset = (level % 2 === 0 ? -1 : 1) * level * 0.06;
+          blocks.push({
+            x: tower.x + offset, y: (level + 0.5) * BLOCK_H * THREE_WORLD_SCALE, z: tower.z,
+            hx: half, hy: (BLOCK_H - 1) / 2 * THREE_WORLD_SCALE, hz: half * 0.6,
+            rx: 0, ry: 0, rz: 0,
+            color: tower.color, alpha: 0.42 + towerIndex * 0.1,
+            emissive: tower.color, glow: 0, gloss: 0.12, perfect: 0, direction: 1
+          });
+        }
+      });
+      const debris = hero.debris.map(piece => ({
+        x: piece.x, y: piece.y, z: 0,
+        hx: piece.hx, hy: piece.hy, hz: piece.hz,
+        rx: piece.rx, ry: piece.ry, rz: piece.rz,
+        color: piece.color, alpha: piece.alpha, glow: 0.12, gloss: 0.3, perfect: 0, direction: 1
+      }));
+      let mover = null;
+      if (hero.falling) {
+        const falling = hero.falling;
+        const progress = Math.min(1, falling.t);
+        mover = threeBlockSpec(falling.left, falling.left + falling.width, falling.level, falling.color, {
+          lift: (1 - progress * progress) * 2.5,
+          glow: 0.16,
+          emissive: falling.color
+        });
+      }
+      return {
+        theme: currentTheme,
+        runId: 4242,
+        camera: {
+          yaw: (wide ? -0.42 : 0) + pointerX * 0.1,
+          pitch: 0.14 - pointerY * 0.05,
+          distance: wide ? 13.6 : 12.6,
+          targetY: wide ? 2.9 : 0.85,
+          targetX: wide ? -1.9 : 0
+        },
+        blocks,
+        debris,
+        panels: worldPanels(),
+        mover,
+        markers: [],
+        guides: [],
+        support: { x: 0, y: 0, color: '#E3A33B' },
+        topY: 6.6,
+        maxHalfWidth: 2.2,
+        height: hero.height,
+        perfectSerial: hero.serial,
+        lastPlaced: hero.placed,
+        phase: hero.phase === 'collapse' ? 'collapse' : 'playing',
+        collapse: 0, shake: 0, roll: 0, zoom: 1,
+        voteLive: false, paused: false,
+        reduced: reducedMotion,
+        effect: null
+      };
+    }
+    // Free the title stage's GPU memory while a game is running; it can rebuild
+    // from the painted card canvases when the player comes back.
+    function worldSuspend() {
+      if (!world.renderer) return;
+      try { world.renderer.dispose(); } catch (_) { /* a lost context may be gone */ }
+      world.renderer = null;
+      world.cards = [];
+    }
+    function worldDisable() {
+      world.failed = true;
+      if (world.renderer && typeof world.renderer.dispose === 'function') {
+        try { world.renderer.dispose(); } catch (_) { /* already gone */ }
+      }
+      world.renderer = null;
+      delete document.body.dataset.world;
+      document.body.classList.remove('has-world');
+    }
+    function drawWorld(dt) {
+      const canvas = elements.worldCanvas;
+      if (!canvas || world.failed) return;
+      if (!world.renderer) {
+        if (viewMode === '2d' || !window.SabotageStack3D || !browserHasWebGL2()) return;
+        let renderer = null;
+        try {
+          renderer = window.SabotageStack3D.create(canvas, {
+            maxDpr: 1.6,
+            onError(error) {
+              if (window.console && typeof window.console.warn === 'function') {
+                window.console.warn('Sabotage Stack 3D title world unavailable.', error && error.message ? error.message : error);
+              }
+            },
+            onFallback() { worldDisable(); }
+          });
+        } catch (_) { renderer = null; }
+        if (!renderer) { world.failed = true; return; }
+        world.renderer = renderer;
+        worldSeedHero(5);
+        worldBuildCards();
+      }
+      const step = Math.min(0.05, Math.max(0, Number(dt) || 0));
+      world.time += step;
+      const follow = Math.min(1, step * 4);
+      world.pointer.x += (world.pointer.tx - world.pointer.x) * follow;
+      world.pointer.y += (world.pointer.ty - world.pointer.y) * follow;
+      worldUpdateHero(step);
+      let painted = false;
+      try {
+        world.renderer.resize();
+        const info = typeof world.renderer.getState === 'function' ? world.renderer.getState() : null;
+        if (!info || !info.width) return;
+        painted = world.renderer.render(worldScene(), step);
+      } catch (_) { painted = false; }
+      if (!painted) { worldDisable(); return; }
+      if (!world.ready) {
+        world.ready = true;
+        document.body.dataset.world = 'on';
+        document.body.classList.add('has-world');
+      }
+    }
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
     const multiplayer = {
       active: false, role: null, mode: null, code: null, playerId: null, resumeToken: null,
@@ -3976,6 +4617,7 @@ void main() {
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
+      if (changed && name !== 'title') worldSuspend();
       if (changed && name === 'title') resetGameAnnouncements();
       // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
       if (changed && name === 'game') document.documentElement.scrollTop = 0;
@@ -6984,6 +7626,7 @@ void main() {
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
         drawResults(resultData, resultReveal);
       }
+      if (document.body.dataset.screen === 'title' && !document.hidden) drawWorld(dt);
       uiClock += dt;
       if (uiClock >= .12) { uiClock = 0; if (game) syncHud(); }
       requestAnimationFrame(frame);
@@ -7431,6 +8074,15 @@ void main() {
     }, { passive: false });
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
     if (elements.viewToggle) elements.viewToggle.addEventListener('click', toggleViewMode);
+    window.addEventListener('pointermove', event => {
+      if (document.body.dataset.screen !== 'title') return;
+      world.pointer.tx = (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2;
+      world.pointer.ty = (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2;
+      if (reducedMotion) return;
+      // A whisper of physical tilt on the paper panels, driven by the pointer.
+      document.documentElement.style.setProperty('--tilt-x', (-world.pointer.ty * 1.1).toFixed(2) + 'deg');
+      document.documentElement.style.setProperty('--tilt-y', (world.pointer.tx * 1.4).toFixed(2) + 'deg');
+    }, { passive: true });
     [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
     function isGamePlaying() {
       return Boolean(game && game.phase === 'playing' && document.body.dataset.screen === 'game');
@@ -7506,6 +8158,10 @@ void main() {
         elements.joinDialog.showModal();
       }
     }
+    // The title screen is active in the markup, but `data-screen` is the app's
+    // single source of truth for "which screen is live" (the 3D world uses it),
+    // so seed it before the first frame.
+    if (!document.body.dataset.screen) document.body.dataset.screen = 'title';
     requestAnimationFrame(frame);
   })();
   </script>

@@ -209,6 +209,55 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
     assert.equal(/<script[^>]+src=/.test(html), false);
   });
 
+  test('the title screen paints the live 3D world before a game starts', async () => {
+    const page = await boot(HTML, { setup: withFakeGpu() });
+    try {
+      const { document, window } = page;
+      await page.sleep(700);
+      assert.equal(document.body.dataset.world, 'on', 'the world reports itself painted');
+      assert.ok(document.body.classList.contains('has-world'), 'the paper hero becomes a 3D stage');
+      const canvas = document.getElementById('world-canvas');
+      assert.ok(canvas.width >= 320 && canvas.height >= 480, 'the world canvas fills the viewport');
+      const records = window.__glRecords;
+      assert.ok(records.textures > 10, 'the sabotage plaques are uploaded as textures');
+      const drawsBefore = records.draws;
+      await page.sleep(320);
+      assert.ok(records.draws > drawsBefore, 'the world keeps painting while it is on screen');
+      // The readable title stays in the document the whole time.
+      assert.match(document.getElementById('title-heading').textContent, /STACK THE BLOCKS/);
+      document.getElementById('start-button').click();
+      await page.sleep(600);
+      assert.equal(document.body.dataset.screen, 'game');
+      assert.ok(document.getElementById('game-canvas-3d').width > 0, 'the game takes over with its own 3D layer');
+      // The title stage frees its GPU memory for the game and rebuilds on return.
+      document.getElementById('menu-button').click();
+      await page.sleep(600);
+      assert.equal(document.body.dataset.screen, 'title');
+      const drawsOnReturn = page.window.__glRecords.draws;
+      await page.sleep(320);
+      assert.ok(page.window.__glRecords.draws > drawsOnReturn, 'the world comes back with the title');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('without WebGL2 the title page keeps the plain paper hero', async () => {
+    const page = await boot(HTML);
+    try {
+      const { document } = page;
+      await page.sleep(450);
+      assert.equal(document.body.dataset.world, undefined);
+      assert.equal(document.body.classList.contains('has-world'), false);
+      assert.equal(document.getElementById('world-canvas').width, 300, 'the decorative canvas is never sized');
+      assert.match(document.getElementById('title-heading').textContent, /STACK THE BLOCKS/);
+      document.getElementById('start-button').click();
+      await page.sleep(350);
+      assert.equal(document.body.dataset.screen, 'game');
+      assert.equal(document.getElementById('game-stage').classList.contains('is-3d'), false);
+      assert.equal(page.pixel(document.getElementById('game-canvas'), 10, 10).join(','), PAPER_SKY);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
   test('starting a game paints the 3D scene without disturbing the 2D layer', async () => {
     const page = await boot(HTML, { setup: withFakeGpu() });
     try {
