@@ -336,9 +336,17 @@ html:not([data-theme]) #effect-label, html[data-theme="paper"] #effect-label { c
   gap: clamp(18px, 4vw, 54px); align-items: center; max-width: 1000px; margin: 0 auto;
 }
 .results-frame {
+  position: relative;
   width: min(100%, 420px, calc((100dvh - 226px) * .6923077)); aspect-ratio: 360 / 520;
   overflow: hidden; border: 1.5px solid var(--ink); border-radius: 12px; background: var(--paper); box-shadow: 3px 3px 0 var(--paper-deep);
 }
+/* The final tower is a 3D trophy when the GPU allows it. */
+.results-3d {
+  position: absolute; inset: 0; display: none; width: 100%; height: 100%;
+  pointer-events: none; background: transparent;
+}
+.results-frame.is-3d .results-3d { display: block; }
+.results-frame.is-3d #results-canvas { opacity: 0; }
 .result-info { padding: clamp(18px, 4vw, 32px); border: 1.5px solid var(--ink); border-radius: 17px; background: var(--paper-deep); }
 .result-info .eyebrow { color: var(--ink); }
 .result-info h2 { margin: 7px 0 8px; color: var(--ink); font: 700 clamp(32px, 4vw, 52px)/.97 var(--font-head); letter-spacing: -.035em; }
@@ -785,8 +793,29 @@ html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live,
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   opacity: 0; transition: opacity 1.2s ease;
 }
-body.has-world[data-screen="title"] .world-layer { opacity: 1; }
+body.has-world[data-screen="title"] .world-layer,
+body.has-world[data-screen="lobby"] .world-layer { opacity: 1; }
 .world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Multiplayer setup sits inside the same world as the title. */
+body.has-world[data-screen="lobby"] .world-scrim {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--paper) 84%, transparent) 0%, transparent 18%),
+    radial-gradient(100% 78% at 50% 24%, color-mix(in srgb, var(--paper) 62%, transparent) 0%, transparent 66%),
+    linear-gradient(180deg, transparent 58%, color-mix(in srgb, var(--paper) 90%, transparent) 100%);
+}
+body.has-world .vote-card,
+body.has-world .stats-card,
+body.has-world .effect-card,
+body.has-world .play-card,
+body.has-world .result-info,
+body.has-world .dialog {
+  box-shadow:
+    0 6px 0 color-mix(in srgb, var(--ink) 12%, transparent),
+    0 28px 46px -34px rgba(20, 14, 8, .55);
+}
+body.has-world .dialog[open] { animation: dialog-rise .3s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes dialog-rise { from { opacity: 0; translate: 0 16px; scale: .985; } to { opacity: 1; translate: 0 0; scale: 1; } }
+body.has-world .dialog::backdrop { background: rgba(24, 18, 12, .34); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
 .world-scrim {
   position: absolute; inset: 0;
   background:
@@ -1290,6 +1319,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <div id="solo-result-layout" class="result-layout">
           <div class="results-frame">
             <canvas id="results-canvas" width="360" height="520" role="img" aria-label="Final tower results drawing"></canvas>
+            <canvas id="results-canvas-3d" class="results-3d" aria-hidden="true"></canvas>
           </div>
           <section class="result-info" aria-label="Run summary">
             <div class="eyebrow">Final height</div>
@@ -3989,6 +4019,8 @@ void main() {
       gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), gameCanvas3D: document.getElementById('game-canvas-3d'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       viewToggle: document.getElementById('view-toggle'), stageViewBadge: document.getElementById('stage-view-badge'),
       worldCanvas: document.getElementById('world-canvas'),
+      resultsCanvas3D: document.getElementById('results-canvas-3d'),
+      resultsFrame: document.querySelector('.results-frame'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
@@ -4162,6 +4194,93 @@ void main() {
       return threeDActive && Boolean(threeDRenderer) && Boolean(game) && document.body.dataset.screen === 'game';
     }
 
+    /* ---------------------------------------------------------- 3D results ---
+       The run ends on a turntable: the final tower, in the same light as the
+       game, growing block by block as the score reveals. The 2D result drawing
+       stays the accessible image and the fallback. */
+    let resultsRenderer = null;
+    let resultsSceneId = 0;
+    function resultsDispose() {
+      if (resultsRenderer && typeof resultsRenderer.dispose === 'function') {
+        try { resultsRenderer.dispose(); } catch (_) { /* already gone */ }
+      }
+      resultsRenderer = null;
+      if (elements.resultsFrame) elements.resultsFrame.classList.remove('is-3d');
+    }
+    function resultsThreeD(data, reveal) {
+      const canvas = elements.resultsCanvas3D;
+      if (!canvas || !data) return false;
+      if (viewMode === '2d' || !window.SabotageStack3D || !browserHasWebGL2()) return false;
+      if (!resultsRenderer) {
+        let renderer = null;
+        try {
+          renderer = window.SabotageStack3D.create(canvas, {
+            maxDpr: 2,
+            onError(error) {
+              if (window.console && typeof window.console.warn === 'function') {
+                window.console.warn('Sabotage Stack 3D results unavailable.', error && error.message ? error.message : error);
+              }
+            },
+            onFallback() { resultsDispose(); }
+          });
+        } catch (_) { renderer = null; }
+        if (!renderer) return false;
+        resultsRenderer = renderer;
+        resultsSceneId += 1;
+      }
+      const blocks = Array.isArray(data.blocks) ? data.blocks : [];
+      const collapsed = new Set((Array.isArray(data.collapsedBlocks) ? data.collapsedBlocks : []).map(block => block.level));
+      const visible = Math.max(0, Math.min(blocks.length, Math.ceil(blocks.length * Math.max(0, Math.min(1, reveal)))));
+      const specs = [];
+      let topY = 0.9;
+      let maxHalfWidth = 1.4;
+      let lastPlaced = null;
+      for (const block of blocks) {
+        if (block.level >= visible || collapsed.has(block.level)) continue;
+        const spec = threeBlockSpec(block.left, block.right, block.level, block.color, { perfect: block.perfect });
+        specs.push(spec);
+        topY = Math.max(topY, spec.y + spec.hy);
+        maxHalfWidth = Math.max(maxHalfWidth, spec.hx);
+        lastPlaced = { x: spec.x, y: spec.y + spec.hy, z: 0, color: spec.color };
+      }
+      const sway = reducedMotion ? 0 : Math.sin(world.time * 0.24) * 0.2;
+      const scene = {
+        theme: currentTheme,
+        runId: resultsSceneId,
+        blocks: specs,
+        markers: [], guides: [], debris: [], panels: [],
+        mover: null,
+        support: { x: 0, y: 0, color: '#E3A33B' },
+        topY,
+        maxHalfWidth,
+        height: specs.length,
+        perfectSerial: reveal >= 0.999 ? 1 : 0,
+        lastPlaced,
+        phase: 'playing',
+        collapse: 0, shake: 0, roll: 0, zoom: 1,
+        camera: {
+          yaw: -0.36 + sway,
+          pitch: 0.16,
+          distance: Math.min(60, Math.max(9, topY * 0.62 + 8.2)),
+          targetY: topY * 0.5,
+          targetX: 0
+        },
+        voteLive: false, paused: false,
+        reduced: reducedMotion,
+        effect: null
+      };
+      let painted = false;
+      try {
+        resultsRenderer.resize();
+        const info = typeof resultsRenderer.getState === 'function' ? resultsRenderer.getState() : null;
+        if (!info || !info.width) return false;
+        painted = resultsRenderer.render(scene, 0.016);
+      } catch (_) { painted = false; }
+      if (!painted) { resultsDispose(); return false; }
+      if (elements.resultsFrame) elements.resultsFrame.classList.add('is-3d');
+      return true;
+    }
+
     /* ------------------------------------------------------------ 3D world ---
        The title screen is a live stage: a tower builds, topples and rebuilds
        while a ring of sabotage plaques orbits it. It is decorative by
@@ -4185,6 +4304,8 @@ void main() {
     function worldHeroLeft(level) { return 80 + level * 4 + WORLD_HERO_JITTER[level % WORLD_HERO_JITTER.length]; }
     function worldHeroWidth(level) { return Math.max(96, 200 - level * 13); }
     function worldHeroColor(level) { return PALETTE[level % PALETTE.length]; }
+    // A hand-stacked tower never lines up perfectly in depth either.
+    function worldHeroDepth(level) { return (level % 2 === 0 ? -1 : 1) * (0.035 + (level % 3) * 0.03); }
     function worldPlacedFor(block) {
       if (!block) return null;
       const spec = threeBlockSpec(block.left, block.left + block.width, block.level, block.color);
@@ -4197,7 +4318,7 @@ void main() {
         const width = worldHeroWidth(level);
         const previous = hero.stack[hero.stack.length - 1];
         const left = previous ? previous.left + (previous.width - width) / 2 : worldHeroLeft(0);
-        hero.stack.push({ level, left, width, color: worldHeroColor(level) });
+        hero.stack.push({ level, left, width, color: worldHeroColor(level), z: worldHeroDepth(level) });
       }
       hero.height = hero.stack.length;
       hero.falling = null;
@@ -4254,7 +4375,7 @@ void main() {
         const falling = hero.falling;
         falling.t += dt / 0.4;
         if (falling.t >= 1) {
-          hero.stack.push({ level: falling.level, left: falling.left, width: falling.width, color: falling.color });
+          hero.stack.push({ level: falling.level, left: falling.left, width: falling.width, color: falling.color, z: worldHeroDepth(falling.level) });
           hero.falling = null;
           hero.height = hero.stack.length;
           hero.placed = worldPlacedFor(hero.stack[hero.stack.length - 1]);
@@ -4271,7 +4392,7 @@ void main() {
         const width = worldHeroWidth(level);
         const previous = hero.stack[hero.stack.length - 1];
         const left = previous ? previous.left + (previous.width - width) / 2 : worldHeroLeft(0);
-        hero.falling = { level, left, width, color: worldHeroColor(level), t: 0 };
+        hero.falling = { level, left, width, color: worldHeroColor(level), t: 0, yaw: 0.3 };
         return;
       }
       if (hero.phase === 'hold') {
@@ -4435,7 +4556,7 @@ void main() {
       const wide = window.innerWidth >= 900;
       const pointerX = reducedMotion ? 0 : world.pointer.x;
       const pointerY = reducedMotion ? 0 : world.pointer.y;
-      const blocks = hero.stack.map(block => threeBlockSpec(block.left, block.left + block.width, block.level, block.color, {}));
+      const blocks = hero.stack.map(block => threeBlockSpec(block.left, block.left + block.width, block.level, block.color, { z: block.z }));
       // Two quiet stacks far behind the hero give the stage real depth.
       WORLD_BACKDROP.forEach((tower, towerIndex) => {
         for (let level = 0; level < tower.levels; level += 1) {
@@ -4462,6 +4583,8 @@ void main() {
         const progress = Math.min(1, falling.t);
         mover = threeBlockSpec(falling.left, falling.left + falling.width, falling.level, falling.color, {
           lift: (1 - progress * progress) * 2.5,
+          yaw: (1 - progress) * (falling.yaw || 0),
+          z: worldHeroDepth(falling.level),
           glow: 0.16,
           emissive: falling.color
         });
@@ -4617,7 +4740,8 @@ void main() {
         node.setAttribute('aria-hidden', active ? 'false' : 'true');
       }
       document.body.dataset.screen = name;
-      if (changed && name !== 'title') worldSuspend();
+      if (changed && name !== 'title' && name !== 'lobby') worldSuspend();
+      if (changed && name !== 'results') resultsDispose();
       if (changed && name === 'title') resetGameAnnouncements();
       // A fresh game starts at the top of its screen; scrollTop (not scrollTo) keeps jsdom quiet in the tests.
       if (changed && name === 'game') document.documentElement.scrollTop = 0;
@@ -6700,7 +6824,7 @@ void main() {
       return {
         x: boardWorldX(left + width / 2),
         y: (Number(level) + 0.5) * BLOCK_H * THREE_WORLD_SCALE + (options.lift || 0),
-        z: 0,
+        z: Number(options.z) || 0,
         hx: halfWidth,
         hy: (BLOCK_H - 1) / 2 * THREE_WORLD_SCALE,
         hz: Math.max(0.14, Math.min(1.35, halfWidth * 0.62)),
@@ -7241,6 +7365,7 @@ void main() {
       drawResults(data, resultReveal);
     }
     function drawResults(data, reveal) {
+      if (resultsThreeD(data, reveal)) return;
       setCanvasResolution(elements.resultsCanvas, resultsContext);
       const ctx = resultsContext;
       paintThemeSky(ctx, WIDTH, HEIGHT);
@@ -7626,7 +7751,8 @@ void main() {
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
         drawResults(resultData, resultReveal);
       }
-      if (document.body.dataset.screen === 'title' && !document.hidden) drawWorld(dt);
+      const worldScreen = document.body.dataset.screen;
+      if ((worldScreen === 'title' || worldScreen === 'lobby') && !document.hidden) drawWorld(dt);
       uiClock += dt;
       if (uiClock >= .12) { uiClock = 0; if (game) syncHud(); }
       requestAnimationFrame(frame);
@@ -8075,7 +8201,8 @@ void main() {
     elements.gameCanvas.addEventListener('contextmenu', event => event.preventDefault());
     if (elements.viewToggle) elements.viewToggle.addEventListener('click', toggleViewMode);
     window.addEventListener('pointermove', event => {
-      if (document.body.dataset.screen !== 'title') return;
+      const screen = document.body.dataset.screen;
+      if (screen !== 'title' && screen !== 'lobby') return;
       world.pointer.tx = (event.clientX / Math.max(1, window.innerWidth) - 0.5) * 2;
       world.pointer.ty = (event.clientY / Math.max(1, window.innerHeight) - 0.5) * 2;
       if (reducedMotion) return;

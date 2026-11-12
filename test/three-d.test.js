@@ -440,6 +440,33 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
     } finally { page.close(); }
   });
 
+  test('the results screen keeps the final tower as a 3D trophy', async () => {
+    const page = await boot(HTML, {
+      setup: withFakeGpu(),
+      manualAnimationFrame: true,
+      storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }
+    });
+    try {
+      const { document, window } = page;
+      page.advanceAnimation(200);
+      document.getElementById('start-button').click();
+      page.advanceAnimation(300);
+      document.getElementById('drop-button').click();
+      document.getElementById('drop-button').click();
+      document.getElementById('drop-button').click();
+      page.advanceAnimation(1400);
+      assert.equal(document.body.dataset.screen, 'results');
+      const frame = document.querySelector('.results-frame');
+      assert.ok(frame.classList.contains('is-3d'), 'the final tower is rendered in 3D');
+      const canvas = document.getElementById('results-canvas-3d');
+      assert.ok(canvas.width > 0 && canvas.height > 0);
+      const draws = window.__glRecords.draws;
+      page.advanceAnimation(120);
+      assert.ok(window.__glRecords.draws > draws, 'the trophy turntable keeps painting');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
   test('the classic canvas keeps dropping blocks after a 3D session', async () => {
     const page = await boot(HTML, { setup: withFakeGpu() });
     try {
