@@ -240,12 +240,13 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
     } finally { page.close(); }
   });
 
-  test('without WebGL2 the title page keeps the plain paper hero', async () => {
+  test('without WebGL2 the title page keeps a paper tower in the same light', async () => {
     const page = await boot(HTML);
     try {
       const { document } = page;
       await page.sleep(450);
-      assert.equal(document.body.dataset.world, undefined);
+      assert.equal(document.body.dataset.world, 'off', 'the world reports itself unavailable');
+      assert.ok(document.querySelector('.world-fallback .wf-block'), 'a drawn paper tower stands in for the stage');
       assert.equal(document.body.classList.contains('has-world'), false);
       assert.equal(document.getElementById('world-canvas').width, 300, 'the decorative canvas is never sized');
       assert.match(document.getElementById('title-heading').textContent, /STACK THE BLOCKS/);
@@ -367,11 +368,14 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
     try {
       const { document } = page;
       assert.equal(document.getElementById('view-toggle').textContent, '2D');
+      // The opening stage is not the board: it keeps running either way.
+      const worldFrames = page.window.__glRecords.camPositions.length;
+      assert.ok(worldFrames > 0, 'the title world is still live under a classic-view preference');
       document.getElementById('start-button').click();
       await page.sleep(400);
       assert.equal(document.getElementById('game-stage').classList.contains('is-3d'), false);
       assert.equal(page.pixel(document.getElementById('game-canvas'), 10, 10).join(','), PAPER_SKY);
-      assert.equal(page.window.__glRecords.camPositions.length, 0, 'classic view never starts the renderer');
+      assert.equal(page.window.__glRecords.camPositions.length, worldFrames, 'classic view never starts the board renderer');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
@@ -436,6 +440,19 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
       assert.equal(document.getElementById('game-stage').classList.contains('is-3d'), false);
       assert.equal(page.pixel(document.getElementById('game-canvas'), 10, 10).join(','), PAPER_SKY);
       assert.ok(window.__glRecords.contexts >= 1, 'the engine was probed before falling back');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('a remembered 2D board preference never hides the opening stage', async () => {
+    const page = await boot(HTML, {
+      setup: withFakeGpu(),
+      storage: { 'sabotage-stack-view-v1': '2d' }
+    });
+    try {
+      await page.sleep(500);
+      assert.equal(page.document.body.dataset.world, 'on', 'the title world ignores the board view preference');
+      assert.ok(page.window.__glRecords.draws > 0);
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });

@@ -795,7 +795,43 @@ html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live,
   opacity: 0; transition: opacity 1.2s ease;
 }
 body.has-world[data-screen="title"] .world-layer,
-body.has-world[data-screen="lobby"] .world-layer { opacity: 1; }
+body.has-world[data-screen="lobby"] .world-layer,
+body[data-world="off"][data-screen="title"] .world-layer,
+body[data-world="off"][data-screen="lobby"] .world-layer { opacity: 1; }
+/* No WebGL2 (or the engine gave up): the opening still opens in three dimensions.
+   A paper tower drawn once, lit the same way, risen into place on load. */
+.world-fallback {
+  position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: flex-end;
+  padding: 0 clamp(12px, 5vw, 72px) clamp(10px, 5vh, 64px) 0;
+  opacity: 0; transition: opacity .9s ease .1s; pointer-events: none;
+}
+body[data-world="off"][data-screen="title"] .world-fallback,
+body[data-world="off"][data-screen="lobby"] .world-fallback { opacity: 1; }
+.wf-scene {
+  width: min(46vw, 440px); max-height: 74vh;
+  transform: translate3d(var(--wf-x, 0px), var(--wf-y, 0px), 0);
+  transition: transform .5s cubic-bezier(.2, .8, .2, 1);
+  filter: drop-shadow(0 26px 30px rgba(30, 22, 14, .18));
+}
+.wf-tower { animation: wf-breathe 7.5s ease-in-out infinite; }
+.wf-block { opacity: 0; animation: wf-rise .66s cubic-bezier(.2, .9, .25, 1) both; animation-delay: calc(.18s + var(--i) * .13s); }
+.wf-spark { animation: wf-spark 5s ease-in-out infinite; }
+.wf-mote { animation: wf-mote 9s ease-in-out infinite; }
+.wf-mote:nth-of-type(2) { animation-delay: 2.6s; }
+.wf-mote:nth-of-type(3) { animation-delay: 5.1s; }
+@keyframes wf-rise { from { opacity: 0; translate: 0 -20px; } to { opacity: 1; translate: 0 0; } }
+@keyframes wf-breathe { 0%, 100% { translate: 0 0; } 50% { translate: 0 -8px; } }
+@keyframes wf-spark { 0%, 100% { opacity: .55; scale: 1; } 50% { opacity: 1; scale: 1.12; } }
+@keyframes wf-mote { 0% { opacity: 0; translate: 0 0; } 28% { opacity: .85; } 100% { opacity: 0; translate: 14px -52px; } }
+@media (max-width: 900px) {
+  .world-fallback { justify-content: center; align-items: flex-end; padding: 0 0 2vh 0; }
+  .wf-scene { width: min(88vw, 400px); max-height: 58vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-tower, .wf-spark, .wf-mote { animation: none; }
+  .wf-block { animation: none; opacity: 1; }
+  .wf-scene { transition: none; }
+}
 .world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* Multiplayer setup sits inside the same world as the title. */
 body.has-world[data-screen="lobby"] .world-scrim {
@@ -973,6 +1009,58 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 <body>
   <div class="world-layer" aria-hidden="true">
     <canvas id="world-canvas" class="world-canvas"></canvas>
+    <div class="world-fallback">
+      <svg class="wf-scene" viewBox="0 0 360 420" preserveAspectRatio="xMidYMax meet" aria-hidden="true" focusable="false">
+        <defs>
+          <radialGradient id="wf-ground" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#2A2520" stop-opacity=".28"/>
+            <stop offset="1" stop-color="#2A2520" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="wf-sun" cx="50%" cy="50%" r="50%">
+            <stop offset="0" stop-color="#FFF6DE" stop-opacity=".92"/>
+            <stop offset="1" stop-color="#FFF6DE" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <ellipse cx="258" cy="126" rx="122" ry="100" fill="url(#wf-sun)"/>
+        <ellipse cx="188" cy="392" rx="134" ry="21" fill="url(#wf-ground)"/>
+        <g class="wf-tower">
+          <g class="wf-block" style="--i:0">
+            <path d="M82 340H278l16 -12H98Z" fill="#2F8478" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M278 340l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="82" y="340" width="196" height="44" rx="3" fill="#2F8478" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <g class="wf-block" style="--i:1">
+            <path d="M90 296H270l16 -12H106Z" fill="#E3A33B" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M270 296l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="90" y="296" width="180" height="44" rx="3" fill="#E3A33B" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <g class="wf-block" style="--i:2">
+            <path d="M87 252H273l16 -12H103Z" fill="#D5472F" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M273 252l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="87" y="252" width="186" height="44" rx="3" fill="#D5472F" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <g class="wf-block" style="--i:3">
+            <path d="M97 208H263l16 -12H113Z" fill="#7FA6BD" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M263 208l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="97" y="208" width="166" height="44" rx="3" fill="#7FA6BD" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <g class="wf-block" style="--i:4">
+            <path d="M94 164H266l16 -12H110Z" fill="#2F8478" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M266 164l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="94" y="164" width="172" height="44" rx="3" fill="#2F8478" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <g class="wf-block" style="--i:5">
+            <path d="M106 120H254l16 -12H122Z" fill="#E3A33B" fill-opacity=".74" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M254 120l16 -12v44l-16 12Z" fill="#2A2520" fill-opacity=".22" stroke="#2A2520" stroke-width="1.5" stroke-linejoin="round"/>
+            <rect x="106" y="120" width="148" height="44" rx="3" fill="#E3A33B" stroke="#2A2520" stroke-width="1.6"/>
+          </g>
+          <path class="wf-spark" d="M180 66l5.5 15.5L201 87l-15.5 5.5L180 108l-5.5-15.5L159 87l15.5-5.5z" fill="#E3A33B" stroke="#2A2520" stroke-width="1.4" stroke-linejoin="round"/>
+        </g>
+        <circle class="wf-mote" cx="64" cy="176" r="3.4" fill="#2F8478" fill-opacity=".55"/>
+        <circle class="wf-mote" cx="308" cy="224" r="2.6" fill="#D5472F" fill-opacity=".5"/>
+        <circle class="wf-mote" cx="286" cy="98" r="2.2" fill="#2A2520" fill-opacity=".28"/>
+      </svg>
+    </div>
     <div class="world-scrim"></div>
   </div>
   <svg class="sabotage-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -4020,6 +4108,7 @@ void main() {
       gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), gameCanvas3D: document.getElementById('game-canvas-3d'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       viewToggle: document.getElementById('view-toggle'), stageViewBadge: document.getElementById('stage-view-badge'),
       worldCanvas: document.getElementById('world-canvas'),
+      worldFallback: document.querySelector('.world-fallback'),
       resultsCanvas3D: document.getElementById('results-canvas-3d'),
       resultsFrame: document.querySelector('.results-frame'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
@@ -4212,7 +4301,7 @@ void main() {
       const canvas = elements.resultsCanvas3D;
       if (!canvas || !data) return false;
       if (document.body.dataset.screen !== 'results') return false;
-      if (viewMode === '2d' || !window.SabotageStack3D || !browserHasWebGL2()) return false;
+      if (!window.SabotageStack3D || !browserHasWebGL2()) return false;
       if (!resultsRenderer) {
         let renderer = null;
         try {
@@ -4634,14 +4723,14 @@ void main() {
         try { world.renderer.dispose(); } catch (_) { /* already gone */ }
       }
       world.renderer = null;
-      delete document.body.dataset.world;
+      document.body.dataset.world = 'off';
       document.body.classList.remove('has-world');
     }
     function drawWorld(dt) {
       const canvas = elements.worldCanvas;
       if (!canvas || world.failed) return;
       if (!world.renderer) {
-        if (viewMode === '2d' || !window.SabotageStack3D || !browserHasWebGL2()) return;
+        if (!window.SabotageStack3D || !browserHasWebGL2()) { world.failed = true; document.body.dataset.world = 'off'; return; }
         let renderer = null;
         try {
           renderer = window.SabotageStack3D.create(canvas, {
@@ -8211,6 +8300,10 @@ void main() {
       // A whisper of physical tilt on the paper panels, driven by the pointer.
       document.documentElement.style.setProperty('--tilt-x', (-world.pointer.ty * 1.1).toFixed(2) + 'deg');
       document.documentElement.style.setProperty('--tilt-y', (world.pointer.tx * 1.4).toFixed(2) + 'deg');
+      if (elements.worldFallback) {
+        elements.worldFallback.style.setProperty('--wf-x', (world.pointer.tx * 11).toFixed(1) + 'px');
+        elements.worldFallback.style.setProperty('--wf-y', (world.pointer.ty * 8).toFixed(1) + 'px');
+      }
     }, { passive: true });
     [...elements.voteButtons, ...elements.stageVoteButtons].forEach(button => button.addEventListener('click', () => manualVoteAdapter.submit(Number(button.dataset.optionIndex))));
     function isGamePlaying() {
