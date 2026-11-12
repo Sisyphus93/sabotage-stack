@@ -247,6 +247,7 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
       await page.sleep(450);
       assert.equal(document.body.dataset.world, 'off', 'the world reports itself unavailable');
       assert.ok(document.querySelector('.world-fallback .wf-block'), 'a drawn paper tower stands in for the stage');
+      assert.match(document.getElementById('world-note').textContent, /Paper stage — this browser has no WebGL2/);
       assert.equal(document.body.classList.contains('has-world'), false);
       assert.equal(document.getElementById('world-canvas').width, 300, 'the decorative canvas is never sized');
       assert.match(document.getElementById('title-heading').textContent, /STACK THE BLOCKS/);
@@ -441,6 +442,29 @@ describe('3D integration (simulated WebGL2, real DOM)', skipReason ? { skip: ski
       assert.equal(page.pixel(document.getElementById('game-canvas'), 10, 10).join(','), PAPER_SKY);
       assert.ok(window.__glRecords.contexts >= 1, 'the engine was probed before falling back');
       assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('?diag=1 reports the state of the stage on the page', async () => {
+    const page = await boot(HTML, { setup: withFakeGpu(), url: 'http://localhost:3000/?diag=1' });
+    try {
+      await page.sleep(500);
+      const panel = page.document.getElementById('diag-panel');
+      assert.ok(panel, 'the diagnostics panel is rendered');
+      const text = panel.textContent;
+      assert.match(text, /3D diagnostics · build stage-5/);
+      assert.match(text, /gl\s+webgl2/);
+      assert.match(text, /world\s+on/);
+      assert.match(text, /frames\s+[1-9]\d* painted \/ 1 renderer builds/);
+      assert.match(text, /errors\s+none/);
+    } finally { page.close(); }
+  });
+
+  test('without ?diag the page is untouched', async () => {
+    const page = await boot(HTML, { setup: withFakeGpu() });
+    try {
+      await page.sleep(400);
+      assert.equal(page.document.getElementById('diag-panel'), null);
     } finally { page.close(); }
   });
 

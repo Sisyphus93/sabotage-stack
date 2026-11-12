@@ -786,6 +786,13 @@ html[data-theme="primetime"] .top-meta, html[data-theme="primetime"] .game-live,
   html[data-theme="primetime"] .vote-name { font-size: 19px; }
 }
 
+#diag-panel {
+  position: fixed; left: 10px; bottom: 10px; z-index: 40; margin: 0; padding: 10px 12px;
+  max-width: min(94vw, 660px); max-height: 46vh; overflow: auto; white-space: pre-wrap;
+  color: #1B1712; background: rgba(255, 253, 247, .95); border: 1px solid #2A2520; border-radius: 9px;
+  box-shadow: 0 12px 26px -18px rgba(0, 0, 0, .6);
+  font: 500 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 /* ========================================================== 3D TITLE WORLD
    The title screen renders a live WebGL stage behind the page. Nothing here
    applies until a frame has actually painted (body.has-world), so a browser
@@ -807,6 +814,20 @@ body[data-world="off"][data-screen="lobby"] .world-layer { opacity: 1; }
 }
 body[data-world="off"][data-screen="title"] .world-fallback,
 body[data-world="off"][data-screen="lobby"] .world-fallback { opacity: 1; }
+/* A renderer that never reports anything must not leave a blank page: after
+   1.5 s without a painted frame the paper stage steps in. Pure CSS, because
+   the fallback cannot depend on the code that failed. */
+body:not(.has-world)[data-screen="title"] .world-layer,
+body:not(.has-world)[data-screen="lobby"] .world-layer { animation: wf-layer-on 0s linear 1.5s forwards; }
+body:not(.has-world)[data-screen="title"] .world-fallback,
+body:not(.has-world)[data-screen="lobby"] .world-fallback { animation: wf-fade-on .8s ease 1.5s forwards; }
+@keyframes wf-layer-on { to { opacity: 1; } }
+@keyframes wf-fade-on { to { opacity: 1; } }
+.wf-note {
+  position: absolute; left: 0; right: 0; bottom: clamp(6px, 1.6vh, 20px); margin: 0;
+  color: color-mix(in srgb, var(--ink) 46%, transparent);
+  font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-align: center;
+}
 .wf-scene {
   width: min(46vw, 440px); max-height: 74vh;
   transform: translate3d(var(--wf-x, 0px), var(--wf-y, 0px), 0);
@@ -834,13 +855,13 @@ body[data-world="off"][data-screen="lobby"] .world-fallback { opacity: 1; }
 }
 .world-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 /* Multiplayer setup sits inside the same world as the title. */
-body.has-world[data-screen="lobby"] .world-scrim {
+body:where(.has-world, [data-world="off"])[data-screen="lobby"] .world-scrim {
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--paper) 84%, transparent) 0%, transparent 18%),
     radial-gradient(100% 78% at 50% 24%, color-mix(in srgb, var(--paper) 62%, transparent) 0%, transparent 66%),
     linear-gradient(180deg, transparent 58%, color-mix(in srgb, var(--paper) 90%, transparent) 100%);
 }
-body.has-world .vote-card,
+body:where(.has-world, [data-world="off"]) .vote-card,
 body.has-world .stats-card,
 body.has-world .effect-card,
 body.has-world .play-card,
@@ -850,9 +871,9 @@ body.has-world .dialog {
     0 6px 0 color-mix(in srgb, var(--ink) 12%, transparent),
     0 28px 46px -34px rgba(20, 14, 8, .55);
 }
-body.has-world .dialog[open] { animation: dialog-rise .3s cubic-bezier(.2,.8,.2,1) both; }
+body:where(.has-world, [data-world="off"]) .dialog[open] { animation: dialog-rise .3s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes dialog-rise { from { opacity: 0; translate: 0 16px; scale: .985; } to { opacity: 1; translate: 0 0; scale: 1; } }
-body.has-world .dialog::backdrop { background: rgba(24, 18, 12, .34); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
+body:where(.has-world, [data-world="off"]) .dialog::backdrop { background: rgba(24, 18, 12, .34); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
 .world-scrim {
   position: absolute; inset: 0;
   background:
@@ -861,11 +882,11 @@ body.has-world .dialog::backdrop { background: rgba(24, 18, 12, .34); backdrop-f
     linear-gradient(180deg, transparent 60%, color-mix(in srgb, var(--paper) 88%, transparent) 100%);
 }
 /* The hero copy becomes a sheet of frosted paper floating over the world. */
-body.has-world[data-screen="title"] .home-grid {
+body[data-screen="title"] .home-grid {
   display: block; min-height: 0; padding: clamp(12px, 3vh, 30px) 0 20px;
 }
-body.has-world[data-screen="title"] .home-aside { display: none; }
-body.has-world[data-screen="title"] .home-copy {
+body[data-screen="title"] .home-aside { display: none; }
+body[data-screen="title"] .home-copy {
   --edge: color-mix(in srgb, var(--ink) 20%, var(--paper));
   position: relative; max-width: min(620px, 52vw); padding: clamp(18px, 2.6vw, 34px);
   border: 1.5px solid color-mix(in srgb, var(--ink) 18%, transparent);
@@ -880,7 +901,7 @@ body.has-world[data-screen="title"] .home-copy {
 }
 @keyframes world-sheet-in { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: translateY(0); } }
 /* Letterpress: the headline is cut from solid ink, with a real drop shadow. */
-body.has-world[data-screen="title"] #title-heading {
+body[data-screen="title"] #title-heading {
   transform: perspective(1200px) rotateX(3.2deg) rotateY(-6.5deg);
   transform-origin: left 64%;
   text-shadow:
@@ -889,39 +910,39 @@ body.has-world[data-screen="title"] #title-heading {
     9px 9px 0 var(--edge), 10px 10px 0 var(--edge),
     15px 17px 32px rgba(22, 16, 10, .3);
 }
-body.has-world .brand-mark {
+body:where(.has-world, [data-world="off"]) .brand-mark {
   transform: perspective(320px) rotateY(calc(-15deg + var(--tilt-y, 0deg))) rotateX(calc(8deg + var(--tilt-x, 0deg)));
   box-shadow: 4px 5px 0 color-mix(in srgb, var(--ink) 14%, transparent), 0 14px 22px -16px rgba(20, 14, 8, .55);
 }
-body.has-world .button {
+body:where(.has-world, [data-world="off"]) .button {
   box-shadow: 0 3px 0 color-mix(in srgb, var(--ink) 18%, transparent), 0 16px 26px -20px rgba(20, 14, 8, .55);
 }
-body.has-world .button:hover { transform: translateY(-1px); }
-body.has-world .button:active { transform: translateY(2px); box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
+body:where(.has-world, [data-world="off"]) .button:hover { transform: translateY(-1px); }
+body:where(.has-world, [data-world="off"]) .button:active { transform: translateY(2px); box-shadow: 0 1px 0 color-mix(in srgb, var(--ink) 18%, transparent); }
 /* The copy assembles itself line by line while the tower does the same.
    `translate` (not `transform`) so the headline's letterpress tilt survives. */
-body.has-world[data-screen="title"] .home-copy > * { animation: world-line-in .72s cubic-bezier(.2,.75,.25,1) both; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(1) { animation-delay: .10s; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(2) { animation-delay: .18s; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(3) { animation-delay: .26s; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(4) { animation-delay: .34s; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(5) { animation-delay: .40s; }
-body.has-world[data-screen="title"] .home-copy > :nth-child(n+6) { animation-delay: .46s; }
+body[data-screen="title"] .home-copy > * { animation: world-line-in .72s cubic-bezier(.2,.75,.25,1) both; }
+body[data-screen="title"] .home-copy > :nth-child(1) { animation-delay: .10s; }
+body[data-screen="title"] .home-copy > :nth-child(2) { animation-delay: .18s; }
+body[data-screen="title"] .home-copy > :nth-child(3) { animation-delay: .26s; }
+body[data-screen="title"] .home-copy > :nth-child(4) { animation-delay: .34s; }
+body[data-screen="title"] .home-copy > :nth-child(5) { animation-delay: .40s; }
+body[data-screen="title"] .home-copy > :nth-child(n+6) { animation-delay: .46s; }
 @keyframes world-line-in { from { opacity: 0; translate: 0 14px; } to { opacity: 1; translate: 0 0; } }
-body.has-world .mode-pill { box-shadow: 0 2px 0 color-mix(in srgb, var(--ink) 13%, transparent); }
-body.has-world .sabotage-guide-icon svg {
+body:where(.has-world, [data-world="off"]) .mode-pill { box-shadow: 0 2px 0 color-mix(in srgb, var(--ink) 13%, transparent); }
+body:where(.has-world, [data-world="off"]) .sabotage-guide-icon svg {
   transform: perspective(260px) rotateY(-10deg) rotateX(4deg);
   filter: drop-shadow(1.5px 2px 0 color-mix(in srgb, var(--ink) 26%, transparent));
 }
 @media (max-width: 899px) {
-  body.has-world[data-screen="title"] .home-grid { padding-top: min(32vh, 230px); }
-  body.has-world[data-screen="title"] .home-copy {
+  body[data-screen="title"] .home-grid { padding-top: min(32vh, 230px); }
+  body[data-screen="title"] .home-copy {
     max-width: none; border-radius: 24px;
     background: color-mix(in srgb, var(--paper) 92%, transparent);
     -webkit-backdrop-filter: none; backdrop-filter: none;
     box-shadow: 0 -26px 60px -42px rgba(20, 14, 8, .5);
   }
-  body.has-world[data-screen="title"] #title-heading {
+  body[data-screen="title"] #title-heading {
     transform: perspective(1000px) rotateX(2.2deg) rotateY(-3.5deg);
     text-shadow:
       1px 1px 0 var(--edge), 2px 2px 0 var(--edge), 3px 3px 0 var(--edge),
@@ -930,7 +951,7 @@ body.has-world .sabotage-guide-icon svg {
   }
 }
 @media (max-width: 520px) {
-  body.has-world[data-screen="title"] #title-heading { transform: none; }
+  body[data-screen="title"] #title-heading { transform: none; }
 }
 
 /* THEME GEOMETRY CONTRACT. Every theme shares the same layout boxes so switching theme never moves anything:
@@ -1060,6 +1081,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
         <circle class="wf-mote" cx="308" cy="224" r="2.6" fill="#D5472F" fill-opacity=".5"/>
         <circle class="wf-mote" cx="286" cy="98" r="2.2" fill="#2A2520" fill-opacity=".28"/>
       </svg>
+      <p class="wf-note" id="world-note">Paper stage</p>
     </div>
     <div class="world-scrim"></div>
   </div>
@@ -3574,6 +3596,8 @@ void main() {
     'use strict';
 
     const WIDTH = 360;
+    // Reported by ?diag=1: telling a stale page from a broken one needs a name.
+    const BUILD = 'stage-5';
     const HEIGHT = 520;
     const BLOCK_H = 22;
     const BASELINE = 480;
@@ -4109,6 +4133,7 @@ void main() {
       viewToggle: document.getElementById('view-toggle'), stageViewBadge: document.getElementById('stage-view-badge'),
       worldCanvas: document.getElementById('world-canvas'),
       worldFallback: document.querySelector('.world-fallback'),
+      worldNote: document.getElementById('world-note'),
       resultsCanvas3D: document.getElementById('results-canvas-3d'),
       resultsFrame: document.querySelector('.results-frame'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
@@ -4387,7 +4412,7 @@ void main() {
       kinetic: '#E3A33B', trajectory: '#2F8478', optical: '#7FA6BD', geometry: '#D5472F'
     });
     const world = {
-      renderer: null, failed: false, ready: false, time: 0,
+      renderer: null, failed: false, ready: false, reason: '', time: 0, paints: 0, attempts: 0,
       pointer: { x: 0, y: 0, tx: 0, ty: 0 },
       cards: [],
       hero: { stack: [], falling: null, debris: [], timer: 0, phase: 'build', hold: 0, serial: 0, height: 0, placed: null, clock: 0, cycle: 0 }
@@ -4717,33 +4742,56 @@ void main() {
       world.renderer = null;
       world.cards = [];
     }
+    // Every way the stage can fail ends here, with a reason the page can show.
+    // A silent flat page is the one outcome the opening screen may not have.
+    function worldNote(reason) {
+      world.reason = reason || world.reason || '';
+      document.body.dataset.world = 'off';
+      document.body.classList.remove('has-world');
+      if (elements.worldNote) elements.worldNote.textContent = world.reason ? 'Paper stage — ' + world.reason : 'Paper stage';
+      if (window.console && typeof window.console.info === 'function') {
+        window.console.info('[Sabotage Stack] 3D stage unavailable: ' + (world.reason || 'no reason reported'));
+      }
+    }
     function worldDisable() {
       world.failed = true;
       if (world.renderer && typeof world.renderer.dispose === 'function') {
         try { world.renderer.dispose(); } catch (_) { /* already gone */ }
       }
       world.renderer = null;
-      document.body.dataset.world = 'off';
-      document.body.classList.remove('has-world');
+      worldNote(world.reason || 'the 3D renderer stopped');
     }
     function drawWorld(dt) {
       const canvas = elements.worldCanvas;
       if (!canvas || world.failed) return;
       if (!world.renderer) {
-        if (!window.SabotageStack3D || !browserHasWebGL2()) { world.failed = true; document.body.dataset.world = 'off'; return; }
+        world.attempts += 1;
+        if (!window.SabotageStack3D || !browserHasWebGL2()) {
+          world.failed = true;
+          worldNote(window.SabotageStack3D ? 'this browser has no WebGL2' : 'the 3D engine did not load');
+          return;
+        }
         let renderer = null;
         try {
           renderer = window.SabotageStack3D.create(canvas, {
             maxDpr: 1.6,
             onError(error) {
+              const message = error && error.message ? error.message : String(error);
+              world.reason = /shader/i.test(message) ? 'the 3D shaders did not compile' : 'the 3D stage could not start';
               if (window.console && typeof window.console.warn === 'function') {
-                window.console.warn('Sabotage Stack 3D title world unavailable.', error && error.message ? error.message : error);
+                window.console.warn('Sabotage Stack 3D title world unavailable.', message);
               }
             },
             onFallback() { worldDisable(); }
           });
-        } catch (_) { renderer = null; }
-        if (!renderer) { world.failed = true; return; }
+        } catch (error) {
+          renderer = null;
+          world.reason = 'the 3D stage could not start';
+          if (window.console && typeof window.console.warn === 'function') {
+            window.console.warn('Sabotage Stack 3D title world unavailable.', error && error.message ? error.message : error);
+          }
+        }
+        if (!renderer) { world.failed = true; worldNote(world.reason || 'the 3D stage could not start'); return; }
         world.renderer = renderer;
         worldSeedHero(5);
         worldBuildCards();
@@ -4762,6 +4810,7 @@ void main() {
         painted = world.renderer.render(worldScene(), step);
       } catch (_) { painted = false; }
       if (!painted) { worldDisable(); return; }
+      world.paints += 1;
       if (!world.ready) {
         world.ready = true;
         document.body.dataset.world = 'on';
@@ -8384,6 +8433,46 @@ void main() {
     // single source of truth for "which screen is live" (the 3D world uses it),
     // so seed it before the first frame.
     if (!document.body.dataset.screen) document.body.dataset.screen = 'title';
+
+    // ?diag=1 puts the state of the 3D stage on the page, so a browser that
+    // refuses the GPU can say exactly why instead of just looking flat.
+    function bootDiagnostics() {
+      let query = '';
+      try { query = String(window.location && window.location.search || ''); } catch (_) { query = ''; }
+      if (!/[?&]diag(=|&|$)/i.test(query)) return;
+      const failures = [];
+      window.addEventListener('error', event => failures.push(String(event.message || (event.error && event.error.message) || 'error')));
+      window.addEventListener('unhandledrejection', event => failures.push('promise: ' + String(event.reason && event.reason.message || event.reason)));
+      let glLabel = 'none';
+      try {
+        const probe = document.createElement('canvas');
+        const context = probe.getContext('webgl2', { antialias: false, alpha: false });
+        glLabel = context ? (context.getExtension('EXT_color_buffer_float') ? 'webgl2 · float targets' : 'webgl2 · no float targets') : 'no webgl2 context';
+        if (context) { const lose = context.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); }
+      } catch (error) { glLabel = 'probe threw: ' + (error && error.message); }
+      const panel = document.createElement('pre');
+      panel.id = 'diag-panel';
+      panel.setAttribute('aria-live', 'polite');
+      document.body.appendChild(panel);
+      const render = () => {
+        const canvas = elements.worldCanvas;
+        panel.textContent = [
+          'Sabotage Stack · 3D diagnostics · build ' + BUILD,
+          'gl        ' + glLabel,
+          'engine    ' + (window.SabotageStack3D ? 'loaded' : 'missing') + ' · probe ' + browserHasWebGL2(),
+          'world     ' + (document.body.dataset.world || '(not started)') + (world.reason ? ' · ' + world.reason : ''),
+          'frames    ' + world.paints + ' painted / ' + world.attempts + ' renderer builds',
+          'canvas    ' + (canvas ? '#' + canvas.id + ' ' + canvas.width + '×' + canvas.height + ' backing · ' + canvas.clientWidth + '×' + canvas.clientHeight + ' css' : '(missing)'),
+          'view      ' + viewMode + ' · renderer unavailable ' + threeDUnavailable + ' · reduced motion ' + reducedMotion,
+          'screen    ' + (document.body.dataset.screen || '(none)') + ' · hidden ' + document.hidden + ' · dpr ' + (window.devicePixelRatio || 1),
+          'errors    ' + (failures.length ? failures.slice(-3).join(' / ') : 'none'),
+          navigator.userAgent
+        ].join('\n');
+      };
+      render();
+      window.setInterval(render, 500);
+    }
+    bootDiagnostics();
     requestAnimationFrame(frame);
   })();
   </script>
