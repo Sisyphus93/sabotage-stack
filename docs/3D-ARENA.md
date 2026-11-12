@@ -1,108 +1,144 @@
-# The 3D Arena
+# THE ATRIUM
 
-Sabotage Stack now renders the tower in a real, perspective-correct 3D world. The
-original 2D game is untouched: it is still drawn every frame, still owns all input,
-all rules, all accessibility text and all of the audited behaviour. The 3D layer is
-a separate, additive overlay that only *reads* game state.
+Sabotage Stack does not "switch on" 3D when a game starts. The page is a 3D room
+from its first painted frame: a WebGL monument behind glass panels, extruded
+headlines, physical controls, medallion icons, a pointer-driven light, parallax
+planes, and depth transitions between every screen. The board is a portal inside
+that room, not the whole experience.
 
-## What it is (and is not)
+## What exists, from the outside in
 
-It is a genuine software 3D pipeline written from scratch, with no libraries, no
-WebGL context and no network access — so the client stays a single file that works
-from `file://`, in a locked-down browser, and in the jsdom + Skia test harness.
+1. **First paint.** `<html>` carries `data-dimension="3d"`, and a tiny head
+   script restores a saved theme / Classic 2D preference before any CSS or body
+   content is parsed. The dark Atrium palette, glass chrome and world canvas are
+   therefore already in place before the main script boots.
+2. **The world canvas** (`#world-canvas`, `client/world3d.js`) is a real WebGL1
+   scene. A procedural sky pass paints a nebula, stars, key light, shafts,
+   vignette and grade; a depth-tested geometry pass paints a 16-level monument,
+   mirrored plinth, three orbital rings, five orbiting cubes, twelve shards and
+   a reflective floor. It is 4,830 vertices / 1,610 triangles — real perspective
+   geometry, not a per-pixel raymarch — with bevel highlights, fog, specular,
+   Fresnel and procedural floor reflections. The camera slowly orbits, responds
+   to the pointer, dollies in during the intro, and dims behind gameplay.
+3. **The DOM is the near field.** The `html[data-dimension="3d"]` CSS turns the
+   topbar, cards, dialogs, chips, buttons, pills, step numbers and result
+   panels into glass planes at different `translateZ` depths. Headlines are
+   extruded with layered text shadows; the brand mark is a spinning CSS cube;
+   sabotage/vote icons are tilted medallions. `--px` / `--py` drive camera
+   parallax on the large planes, while `--light-x` / `--light-y` move a screen
+   blend light over everything. Screens arrive through `screenPortal`, a short
+   perspective translate/rotate/blur animation re-triggered on every
+   `setScreen`.
+4. **The board portal** (`client/scene3d.js`) remains the game-facing 3D layer:
+   a dependency-free Canvas-2D perspective renderer with its own camera,
+   lighting, gloss, rings, shards, sabotage effects, landing guides, demo tower
+   and result tower. It sits inside the glass stage and is orbitable
+   independently. The original 2D canvases are still drawn every frame; they
+   remain the keyboard/touch input surface, the accessible description, and the
+   Classic 2D fallback.
+5. **Everything else follows the same room.** Lobby cards, join/how dialogs,
+   voting medallions, live stats, effect meters, result towers, room codes,
+   HUD badges and screen changes all share the palette, depth, parallax and
+   transitions. The three themes — `paper` / ATRIUM, `sunset` / NEON VOID,
+   `primetime` / PRIME TIME — repaint the WebGL uniforms, glass tints, HUD and
+   board portal together.
 
-```
-world vertices -> 4x4 view matrix -> perspective projection -> near-plane clipping
--> painter's-algorithm depth sort -> per-face Lambert + Blinn-Phong shading
--> distance fog -> additive light / particles -> cinematic post pass
-```
+## Source of truth and sync
 
-It is not a parallax trick or a CSS transform. Blocks are chamfered octagonal
-prisms with eight shaded side faces, a glossy top and glowing rim edges. The
-camera orbits in 3D, follows the tower as it grows, and can be moved by the player.
+The client is still one deployed HTML file. Edit the modules, then run the sync
+scripts; `--check` is enforced by tests.
 
-## Where things are
+| Source | Inlined between | Sync |
+| --- | --- | --- |
+| `shared/game-core.js` | `SHARED_CORE_START/END` | `node scripts/sync-core.js` |
+| `client/scene3d.js` | `SCENE3D_START/END` | `node scripts/sync-scene3d.js` |
+| `client/world3d.js` | `WORLD3D_START/END` | `node scripts/sync-world3d.js` |
 
-| Path | Purpose |
-|---|---|
-| `client/scene3d.js` | **Source of truth.** The whole 3D engine: maths, worlds, renderer, post FX. |
-| `sabotage-stack.html` | Inlines that module between `SCENE3D_START` / `SCENE3D_END`, plus markup, CSS and the client wiring. |
-| `scripts/sync-scene3d.js` | Copies the module into the HTML (`--check` verifies it, used by `npm test`). |
-| `scripts/preview-3d.js` | Dev tool: boots the real page in jsdom and writes 3D overlay PNGs for visual review. |
-| `test/scene3d.test.js`, `test/scene3d-sync.test.js` | Engine unit tests, in-page integration tests and the inline-sync check. |
-
-After editing `client/scene3d.js`, run:
-
-```
-node scripts/sync-scene3d.js
-```
+`scripts/sync-world3d.js` refuses to inline a source containing `</script`.
+`test/world3d-sync.test.js` and `test/scene3d-sync.test.js` keep the copies
+identical. No CDN, font request, texture, model file or network asset is used;
+the single HTML file works in the offline Arena preview.
 
 ## Controls
 
-| Control | Action |
-|---|---|
-| **View picker** (topbar) or **V** | Switch between `3D arena` (default) and `Classic 2D`. Persisted in `localStorage`. |
-| Right-drag / Shift-drag / Alt-drag on the stage | Orbit the camera. A plain tap still drops a block. |
-| **Free cam** button or **F** | Let any single-pointer drag orbit instead of dropping (use Space or the Drop button to play). |
-| Scroll wheel | Dolly in / out. |
-| **Q** / **E** | Rotate left / right. |
-| **R** / **Reset view** | Return to the default camera. |
-| **O** / **Auto orbit** | Toggle the slow ambient camera drift. |
-| Pointer movement over the stage | Subtle parallax lean. |
+| Input | Effect |
+| --- | --- |
+| Move pointer | Steers the WebGL camera, CSS plane parallax and shared light |
+| `Dimension` picker / `V` | The Atrium ↔ Classic 2D |
+| `Theme` picker | Repaints the entire world, glass, HUD and board portal |
+| Right / Shift / Alt-drag stage | Orbit the board portal camera |
+| `Free cam` / `F` | Drag the stage with any pointer |
+| Wheel | Dolly the board portal |
+| `Q` / `E` | Rotate the board portal |
+| `R` | Reset the board portal view |
+| `O` | Toggle auto-orbit |
+| Drop button / `Space` / tap | Play the game exactly as before |
 
-All motion (auto orbit, parallax, shake, twinkle, grain, speed lines) is disabled
-when the game's reduced-motion setting is active. The 3D scene itself still renders.
+The camera bar, badge and HUD report the live dimension, backend and triangle
+count. Controls are hidden on narrow phones; a glass backing keeps the
+extruded headline readable over the monument there.
 
-A glowing footprint is projected onto the top face of the stack at the moving
-block's current X position, so alignment stays readable from any camera angle.
+## Fallbacks, accessibility and motion
 
-## Three worlds
+- **No WebGL / jsdom:** `World` falls back to a Canvas-2D painter (nebula,
+  starfield, perspective grid, tower, vignette). If even that is unavailable,
+  `html.world-fallback` shows a static layered gradient Atrium.
+- **Board portal failure:** only the board portal steps aside. The full-page
+  Atrium stays in 3D; `html.arena-host-fallback` restores the original 2D
+  canvases and hides the orbit controls.
+- **Classic 2D:** the world canvas, pointer light, HUD, glass chrome and depth
+  transitions are all disabled; the audited flat design returns, including the
+  original theme-color meta.
+- **Reduced motion:** the world clock and intro dolly are held still, pointer
+  parallax is frozen, CSS arrivals / cube spin / screen portals are disabled,
+  and the board portal keeps its own reduced-motion behaviour.
+- **Focus / input:** the world layers are `aria-hidden` and `pointer-events:none`;
+  the 2D game canvas keeps `tabindex`, `role`, Space handling and the mirrored
+  focus ring. No extra `touch-action:none` rules were added.
 
-The theme picker now changes a whole 3D environment, not just a palette:
+## Performance
 
-- **Paper Studio** — warm parchment daylight, pale sun, soft dust motes, parchment
-  grid, gentle shadows.
-- **Sunset Wireframe** — purple void, banded synthwave sun, magenta perspective
-  grid, neon rim light, stars, scanlines and heavy bloom.
-- **Prime Time Studio** — deep blue stage, gold grid, glossy floor, overhead
-  spotlight rig, studio haze and confetti-bright specular highlights.
+Geometry was chosen deliberately over a full-screen raymarch: the sky is one
+cheap fragment pass and the monument is one static vertex buffer. WebGL renders
+at 0.85× the viewport (capped at 1400 px) with a 30 fps background cap; the
+Canvas-2D fallback renders at 0.6×. Theme changes are uniforms, not geometry
+rebuilds. The original 2D draw loop still runs underneath for input,
+accessibility and pixel-level test coverage.
 
-## Sabotages in 3D
+## Tests and visual QA
 
-Every sabotage gets a spatial treatment on top of the unchanged game rules:
-`spotlight` blacks out the world outside a real cone of light; `portal` opens
-glowing gates at both edges; `magnet`, `calipers`, `superglue` and `crumble` draw
-3D arcs, guides, strands and cracks; `pisa` leans the whole tower; `earthquake`
-and `drunk` shake and roll the camera; `zoom` punches the lens; `peekaboo` fades
-the mover; `double` shows a translucent decoy; `slowmo`/`turbo` leave motion
-ghosts; `rollercoaster` bobs the mover. Perfect drops fire a shockwave ring and a
-spark burst; collapse pulls the camera back, shakes it and throws debris.
-
-## Screens
-
-The title preview and the results screen use the same renderer in `showcase`
-mode: a slowly orbiting demo tower on the title card and a rotating 3D monument
-of your final stack on results. The wide Competitive host scoreboard stays flat,
-because it is a purpose-built multi-column 2D view.
-
-## Performance and fallbacks
-
-- Only the arena for the active screen renders each frame.
-- Blocks below the camera's view are culled; tall towers stay cheap.
-- Particle count is capped (220), and primitives are sorted once per frame.
-- If anything in the 3D layer throws, it disables itself, restores the 2D board
-  and records the error in `window.SabotageStack.arena.errors` (asserted empty by
-  the test suite).
-- `Classic 2D` hides every overlay canvas; the original canvas remains the input
-  surface and is still repainted every frame.
-
-## Visual review
-
-```
-node scripts/preview-3d.js .preview paper game
-node scripts/preview-3d.js .preview sunset game
-node scripts/preview-3d.js .preview primetime title
+```sh
+npm ci
+npm test
+node scripts/sync-world3d.js --check
+node scripts/sync-scene3d.js --check
+node scripts/sync-core.js --check
 ```
 
-PNGs land in `.preview/` (gitignored). `npm test` also boots the real page and
-measures pixels from both the 2D and 3D canvases.
+`test/world3d.test.js` covers the module API, software fallback, first-paint 3D,
+live world frames, pointer CSS variables, theme repaint, Classic 2D persistence,
+reduced motion and static Atrium/fallback CSS. `test/scene3d.test.js` still
+covers the board portal, camera controls and 2D pixel contract.
+
+`scripts/preview-3d.js` renders jsdom/Canvas PNGs without a browser. For real
+Chromium screenshots, install the dev-only tools and run the QA script against
+the local server:
+
+```sh
+npm i --no-save playwright-core @sparticuz/chromium
+LD_LIBRARY_PATH=/tmp/al2023/lib:/tmp node scripts/shot.js .preview
+```
+
+`scripts/shot.js` inflates the bundled Chromium libs into `/tmp/al2023`, visits
+`http://127.0.0.1:3000/`, and writes title, parallax, lobby, game, three
+themes, results, dialog, dialog-depth and phone screenshots into the ignored
+`.preview/` directory. It also prints the WebGL backend, triangle count and any
+console/page errors. It is a development tool only; the deployed app has no
+Playwright dependency.
+
+## Deployment
+
+`server.js` still serves `/`, `/sabotage-stack.html`, `/healthz` and `/ws`; the
+client remains a single inlined file, so `render.yaml` needs no static build or
+CDN. The authoritative multiplayer rules in `server/` and `shared/game-core.js`
+are unchanged.
