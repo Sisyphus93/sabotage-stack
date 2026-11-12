@@ -10,6 +10,9 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { THEMES, DEPTH, BLOCK_H, HALF_W, makeBackdrop, makeEnvironment, disposeTree } from './themes.js';
 import { Particles } from './particles.js';
 import { Tower, Kit } from './tower.js';
+import { VoxelText } from './voxel.js';
+import { Emblems, EMBLEM_IDS } from './emblems.js';
+import { Attract } from './attract.js';
 
 const FOV = 35;
 const TAN_HALF = Math.tan(FOV * Math.PI / 360);
@@ -17,6 +20,10 @@ const SINGLE_DISTANCE = 1010;
 const ELEVATION = 13.5 * Math.PI / 180;
 const BASE_YAW = -9 * Math.PI / 180;
 const TOWER_SPACING = 430;
+const STRIPES = ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F'];
+const CAROUSEL = EMBLEM_IDS.filter(id => id !== 'empty');
+const easeOut = k => 1 - Math.pow(1 - k, 3);
+const easeInOut = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
 
 // Spotlight sabotage: an opaque veil with one circular opening, applied after bloom so nothing leaks through it.
 const VeilShader = {
@@ -92,7 +99,15 @@ class View {
     this.quality = 0; this.frameSamples = []; this.lastNow = 0;
     this.rig = { y: 258, zoom: 1, kick: 0, punch: 0, collapse: 0, shake: 0, orbit: 0.55, distance: SINGLE_DISTANCE, x: 0, snap: true };
     this.cameraFloor = 0; this.railY = null;
-    this.tmp = new THREE.Vector3(); this.tmp2 = new THREE.Vector3();
+    this.tmp = new THREE.Vector3(); this.tmp2 = new THREE.Vector3(); this.tmp3 = new THREE.Vector3(); this.quat = new THREE.Quaternion();
+    // The canvas covers the whole page. `focus` is the rectangle (CSS pixels) each scene is composed for; the rest of
+    // the window simply sees more of the same world around it.
+    this.focus = { x: 0, y: 0, w: 360, h: 520 }; this.focusNow = { x: 0, y: 0, w: 360, h: 520 };
+    this.blend = null; this.pointer = { x: 0, y: 0, sx: 0, sy: 0, active: false };
+    this.monument = new VoxelText(440); this.monument.group.position.set(0, 330, -260); this.world.add(this.monument.group);
+    this.numeral = new VoxelText(200); this.world.add(this.numeral.group);
+    this.attract = new Attract(); this.sceneClock = 0; this.fxClock = 5; this.fx = null; this.emblems = null; this.portraitCache = null;
+    this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
     const target = new THREE.WebGLRenderTarget(360, 520, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(this.renderer, target);
@@ -110,6 +125,10 @@ class View {
     this.themeName = next; this.colorMapRef = colorMap; this.theme = THEMES[next];
     if (this.kit) this.kit.dispose();
     this.kit = new Kit(next, this.theme, colorMap || {});
+    if (this.emblems) { this.world.remove(this.emblems.group); this.emblems.dispose(); }
+    this.emblems = new Emblems(this.kit, this.theme); this.world.add(this.emblems.group); this.portraitCache = null;
+    this.stripes = STRIPES.map(hex => this.kit.color(hex));
+    this.monument.setStyle(this.theme.style); this.numeral.setStyle(this.theme.style);
     if (this.env) { this.world.remove(this.env.group); disposeTree(this.env.group); }
     if (this.backdrop) { this.scene.remove(this.backdrop); this.backdrop.geometry.dispose(); this.backdrop.material.dispose(); }
     this.env = makeEnvironment(next); this.world.add(this.env.group);
@@ -132,14 +151,39 @@ class View {
   }
   applySize() {
     const cap = this.quality >= 2 ? 1 : this.quality === 1 ? 1.5 : 2;
-    this.pixelRatio = Math.min(this.devicePixelRatio, cap);
+    // A full window at 2x is a lot of pixels to post-process: hold the drawing buffer to about three megapixels.
+    const budget = Math.sqrt(3.2e6 / Math.max(1, this.width * this.height));
+    this.pixelRatio = Math.max(0.75, Math.min(this.devicePixelRatio, cap, budget));
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(this.width, this.height, false);
     this.composer.setPixelRatio(this.pixelRatio);
     this.composer.setSize(this.width, this.height);
-    this.camera.aspect = this.width / this.height;
-    this.camera.updateProjectionMatrix();
-    this.particles.setPixelScale(this.height * this.pixelRatio / (2 * TAN_HALF));
+  }
+  setFocus(x, y, w, h) {
+    const f = this.focus; f.x = Number(x) || 0; f.y = Number(y) || 0; f.w = Math.max(16, Number(w) || 16); f.h = Math.max(16, Number(h) || 16);
+  }
+  get focusAspect() { return this.focus.w / this.focus.h; }
+  setPointer(nx, ny) { this.pointer.x = Math.max(-1, Math.min(1, nx)); this.pointer.y = Math.max(-1, Math.min(1, ny)); this.pointer.active = true; }
+  icons() {
+    if (!this.portraitCache) this.portraitCache = this.emblems.portraits(this.renderer, this.envTexture);
+    return this.portraitCache;
+  }
+  // Scene changes are flights, not cuts: the camera and the framing rectangle ease from wherever they were.
+  applyCamera() {
+    const camera = this.camera; const target = this.focus; const now = this.focusNow; const b = this.blend;
+    if (b && !this.reduced && b.t < 1) {
+      b.t = Math.min(1, b.t + this.dt / b.duration);
+      const e = easeInOut(b.t);
+      camera.position.lerpVectors(b.position, this.tmp2.copy(camera.position), e);
+      camera.quaternion.slerpQuaternions(b.quaternion, this.quat.copy(camera.quaternion), e);
+      now.x = b.rect.x + (target.x - b.rect.x) * e; now.y = b.rect.y + (target.y - b.rect.y) * e;
+      now.w = b.rect.w + (target.w - b.rect.w) * e; now.h = b.rect.h + (target.h - b.rect.h) * e;
+      camera.zoom = b.zoom + (camera.zoom - b.zoom) * e;
+    } else { this.blend = null; now.x = target.x; now.y = target.y; now.w = target.w; now.h = target.h; }
+    camera.aspect = now.w / now.h;
+    camera.setViewOffset(now.w, now.h, -now.x, -now.y, this.width, this.height);
+    camera.updateMatrixWorld(true);
+    this.particles.setPixelScale(now.h * this.pixelRatio / (2 * TAN_HALF));
   }
   applyQuality() {
     const theme = this.theme;
@@ -166,6 +210,10 @@ class View {
 
   setMode(mode) {
     if (this.mode === mode) return;
+    if (this.mode && this.rendered) {
+      const duration = (mode === 'game' || mode === 'board') ? 1.15 : 1.5;
+      this.blend = { t: 0, duration, position: this.camera.position.clone(), quaternion: this.camera.quaternion.clone(), rect: { ...this.focusNow }, zoom: this.camera.zoom };
+    }
     this.mode = mode;
     for (const tower of this.towers.values()) tower.dispose();
     this.towers.clear();
@@ -197,11 +245,24 @@ class View {
   }
   finish(spotTower) {
     const rig = this.rig;
+    this.applyCamera();
+    this.monument.push = null;
+    if (this.pushFrom) {
+      // Where the pointer's ray meets the plane of the sign, the blocks lean away from it.
+      this.pushFrom = false;
+      const nx = this.pointer.x; const ny = -this.pointer.y;
+      this.raycaster.setFromCamera(this.tmp3.set(nx, ny, 0), this.camera);
+      this.plane.constant = -this.monument.group.position.z;
+      const hit = this.raycaster.ray.intersectPlane(this.plane, this.tmp3);
+      if (hit) this.monument.push = { x: hit.x - this.monument.group.position.x, y: hit.y - this.monument.group.position.y, radius: 105 };
+    }
+    this.monument.update(this.dt, this.reduced); this.numeral.update(this.dt, this.reduced);
+    this.emblems.update(this.dt, this.time, this.reduced);
+    this.rendered = true;
     this.env.update({ t: this.time, targetY: rig.y, reduced: this.reduced });
     this.particles.update(this.reduced ? 0 : this.dt);
     const uniforms = this.backdrop.material.uniforms;
     uniforms.uTime.value = this.time; uniforms.uAlt.value = rig.y; uniforms.uAspect.value = this.width / this.height;
-    this.camera.updateMatrixWorld(true);
     const far = this.tmp.set(this.camera.position.x * 0.2, 0, -1750).project(this.camera);
     uniforms.uHorizon.value = 0.5 + 0.5 * far.y;
     this.sun.position.set(rig.x - 380, rig.y + 820, 560);
@@ -285,7 +346,109 @@ class View {
     const zoom = rig.zoom * (1 + rig.punch);
     if (this.camera.zoom !== zoom) { this.camera.zoom = zoom; this.camera.updateProjectionMatrix(); }
     rig.x = 0;
+    this.gameProps(model, tower, top);
     this.finish(tower);
+  }
+
+  // The scenery that reacts to a run: the height as a stack of blocks beside the lane, the three candidates hovering
+  // over the tower while chat votes, and the winning sabotage keeping watch while it is live.
+  gameProps(model, tower, top) {
+    this.monument.clear();
+    const height = Math.max(0, (model.tower.stack || []).length - 1);
+    this.numeral.set([String(height)], { cell: 24, depth: 30, colors: this.stripes, colorBy: 'letter', enter: 'morph' });
+    this.numeral.group.position.set(-HALF_W - 150 - this.numeral.width / 2, this.rig.y - 10, -170);
+    this.numeral.group.rotation.set(0, 0.3, 0);
+    const bob = this.reduced ? 0 : Math.sin(this.time * 1.7) * 5;
+    const vote = model.vote;
+    const effect = model.tower.effect;
+    const hidden = effect && (effect.id === 'spotlight');
+    if (vote && Array.isArray(vote.options) && !hidden) {
+      let total = 0; for (const id of vote.options) total += Number(vote.counts && vote.counts[id]) || 0;
+      vote.options.forEach((id, index) => {
+        const share = total ? (Number(vote.counts[id]) || 0) / total : 1 / 3;
+        this.emblems.aim(id, this.tmp.set((index - 1) * 104, top + 178 + (index === 1 ? 14 : 0) + bob * (index % 2 ? -1 : 1), -70), 22 + 26 * share);
+      });
+    }
+    if (effect && effect.id && !hidden && !(vote && vote.options && vote.options.includes(effect.id))) {
+      this.emblems.aim(effect.id, this.tmp.set(128, top + 104 + bob, -84), 30);
+    }
+  }
+
+  /* ---------------------------------------------------------------- title, lobby and other non-playing scenes */
+  renderScene(model) {
+    const kind = model.kind === 'lobby' ? 'lobby' : model.kind === 'ambient' ? 'ambient' : 'title';
+    this.setMode(kind);
+    this.begin(model.dt, model.reduced);
+    const rig = this.rig; const dt = this.dt; const reduced = this.reduced;
+    if (this.env.ground) this.env.ground.scale.x = 1;
+    this.cameraFloor = -1000; this.railY = 258;
+    this.sceneClock += reduced ? 10 : dt;
+    let lines = ['SABOTAGE', 'STACK']; let cell = 14; let colorBy = 'letter';
+    if (kind === 'title') {
+      const tower = this.ensureTower('attract'); this.pruneTowers(new Set(['attract']));
+      tower.group.position.x = 0;
+      const attract = reduced ? this.attract.model : this.attract.update(dt); attract.rails = false;
+      tower.sync(attract, dt);
+    } else if (kind === 'lobby') {
+      const tower = this.ensureTower('crew'); this.pruneTowers(new Set(['crew']));
+      tower.group.position.x = 0;
+      const players = Array.isArray(model.players) ? model.players : [];
+      const code = String(model.code || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 6);
+      const stack = [{ left: 80, right: 280, color: STRIPES[0], perfect: false, level: 0 }];
+      players.forEach((player, index) => {
+        const seed = String(player.id || player.name || index); let hash = 0;
+        for (let i = 0; i < seed.length; i += 1) hash = (hash * 31 + seed.charCodeAt(i)) % 997;
+        const left = 104 + (hash % 37) - 18;
+        stack.push({ left, right: left + 152, color: player.color || STRIPES[(index + 1) % 4], perfect: hash % 3 === 0, level: index + 1 });
+      });
+      tower.sync({ key: `crew:${code}`, stack, moving: null, playing: false, effect: null, collapsed: false, fallen: [], rails: false }, dt);
+      if (code) { lines = [code]; cell = code.length > 4 ? 22 : 30; colorBy = 'letter'; } else lines = ['ROOM'];
+    } else {
+      this.pruneTowers(new Set());
+      if (Array.isArray(model.lines) && model.lines.length) lines = model.lines.map(line => String(line).slice(0, 10));
+    }
+    const first = !this.monumentShown;
+    this.monument.set(lines, { cell, depth: cell * 2.2, colors: this.stripes, colorBy, enter: first || kind !== this.monumentKind || this.monument.active === 0 ? 'rain' : 'morph', instant: reduced });
+    this.monumentShown = true; this.monumentKind = kind;
+    this.numeral.clear();
+
+    // Every so often chat sabotages the sign itself.
+    if (!reduced) {
+      if (this.fx) { this.fx.k += dt / this.fx.duration; if (this.fx.k >= 1) this.fx = null; }
+      else { this.fxClock -= dt; if (this.fxClock <= 0) { const kinds = ['wave', 'hop', 'shiver', 'slip']; this.fx = { kind: kinds[Math.floor(Math.random() * kinds.length)], k: 0, duration: 1.7 }; this.fxClock = 6 + Math.random() * 5; } }
+    } else this.fx = null;
+    this.monument.fx = this.fx;
+    const centre = this.monument.group.position;
+    centre.set(0, 330 + (reduced ? 0 : Math.sin(this.time * 0.6) * 6), -260);
+    this.monument.group.rotation.z = this.fx && this.fx.kind === 'slip' ? 0 : (reduced ? 0 : Math.sin(this.time * 0.31) * 0.012);
+
+    const pointer = this.pointer;
+    const pk = reduced ? 1 : 1 - Math.exp(-dt * 3);
+    pointer.sx += (pointer.x - pointer.sx) * pk; pointer.sy += (pointer.y - pointer.sy) * pk;
+    const signWidth = Math.max(this.monument.width, 420);
+    const signTop = 330 + (this.monument.height || 220);
+    const fitWidth = signWidth + 150; const fitHeight = signTop + 110;
+    const aspect = this.focusAspect;
+    let distance = Math.max(fitWidth / (2 * aspect * TAN_HALF), fitHeight / (2 * TAN_HALF));
+    const intro = reduced ? 0 : 1 - easeOut(Math.min(1, this.sceneClock / 3.4));
+    let yaw = -0.1 + (reduced ? 0 : Math.sin(this.time * 0.17) * 0.1 + pointer.sx * 0.13) + intro * 1.05;
+    let elevation = 0.085 + (reduced ? 0 : -pointer.sy * 0.05) + intro * 0.42;
+    distance *= 1 + intro * 0.75;
+    const ty = fitHeight / 2 - 40 + intro * 190;
+    rig.y = 258; rig.x = 0;
+    this.camera.position.set(Math.sin(yaw) * Math.cos(elevation) * distance, ty + Math.sin(elevation) * distance, -110 + Math.cos(yaw) * Math.cos(elevation) * distance);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(0, ty, -110);
+    if (this.camera.zoom !== 1) this.camera.zoom = 1;
+
+    // Sabotages circle the sign like moons.
+    const radiusX = Math.min(470, fitWidth * 0.5); const count = CAROUSEL.length;
+    for (let i = 0; i < count; i += 1) {
+      const a = i / count * Math.PI * 2 + (reduced ? 0.3 : this.time * 0.13);
+      this.emblems.aim(CAROUSEL[i], this.tmp.set(Math.sin(a) * radiusX, 236 + Math.cos(a) * -46 + (reduced ? 0 : Math.sin(a * 3 + this.time * 0.7) * 12), -120 + Math.cos(a) * 230), 33);
+    }
+    this.pushFrom = pointer.active && !reduced;
+    this.finish(null);
   }
 
   /* ---------------------------------------------------------------- Competitive host/spectator board */
@@ -307,7 +470,8 @@ class View {
       maxTop = Math.max(maxTop, top); minTop = Math.min(minTop, top);
     });
     if (!Number.isFinite(minTop)) minTop = BLOCK_H;
-    const aspect = this.width / this.height;
+    const aspect = this.focusAspect;
+    this.monument.clear(); this.numeral.clear();
     const widthDistance = (span / 2 + 20) / (aspect * TAN_HALF);
     const rangeDistance = ((maxTop - minTop) + 420) / (2 * TAN_HALF);
     const distance = Math.max(SINGLE_DISTANCE * 0.9, widthDistance, rangeDistance);
@@ -346,13 +510,18 @@ class View {
       tower.setRubble(model.rubble || [], model.marker ? levels * BLOCK_H + 4 : null);
     }
     const total = Math.max(6, levels) * BLOCK_H;
-    const aspect = this.width / this.height;
-    const distance = Math.max((total + 150) / (2 * TAN_HALF), 255 / (aspect * TAN_HALF));
+    const aspect = this.focusAspect;
+    const distance = Math.max((total + 300) / (2 * TAN_HALF), 255 / (aspect * TAN_HALF));
+    this.monument.clear();
     this.resultSpan = Math.max(520, total * 0.7);
     const rig = this.rig;
-    rig.y = total / 2 + 34; rig.x = 0;
+    rig.y = total / 2 + 100; rig.x = 0;
     if (!this.reduced) rig.orbit += this.dt * 0.24;
-    const yaw = this.reduced ? 0.5 : rig.orbit;
+    const yaw = (this.reduced ? 0.5 : rig.orbit) + (this.reduced ? 0 : this.pointer.x * 0.2);
+    // The score stands over the tower and always faces the camera.
+    this.numeral.set([String(model.score == null ? Math.max(0, levels - 1) : model.score)], { cell: 15, depth: 30, colors: this.stripes, colorBy: 'letter', enter: 'morph' });
+    this.numeral.group.position.set(0, levels * BLOCK_H + 62, 0);
+    this.numeral.group.rotation.set(0, yaw, 0);
     const elevation = 11 * Math.PI / 180;
     this.camera.position.set(Math.sin(yaw) * Math.cos(elevation) * distance, rig.y + Math.sin(elevation) * distance, Math.cos(yaw) * Math.cos(elevation) * distance);
     this.camera.up.set(0, 1, 0);
@@ -365,13 +534,15 @@ class View {
   project(towerId, gameX, y, z = DEPTH / 2) {
     const tower = this.towers.get(towerId);
     const v = this.tmp.set(gameX - HALF_W + (tower ? tower.group.position.x : 0), y, z).project(this.camera);
-    return { x: (0.5 + 0.5 * v.x) * this.width, y: (0.5 - 0.5 * v.y) * this.height, visible: v.z > -1 && v.z < 1 };
+    return { x: (0.5 + 0.5 * v.x) * this.width - this.focusNow.x, y: (0.5 - 0.5 * v.y) * this.height - this.focusNow.y, visible: v.z > -1 && v.z < 1 };
   }
 
   dispose() {
     for (const tower of this.towers.values()) tower.dispose();
     this.towers.clear();
     if (this.env) disposeTree(this.env.group);
+    if (this.emblems) this.emblems.dispose();
+    this.monument.dispose(); this.numeral.dispose();
     if (this.kit) this.kit.dispose();
     this.particles.dispose();
     this.envTexture.dispose();

@@ -17,7 +17,7 @@ const HTML = path.join(__dirname, '..', 'sabotage-stack.html');
 
 // Stands in for the WebGL renderer: records what the page hands it.
 function fakeRenderer(window, { failOnRender = false } = {}) {
-  const calls = { create: 0, game: [], board: [], results: [], themes: [], disposed: 0 };
+  const calls = { create: 0, game: [], board: [], results: [], scenes: [], themes: [], focus: [], disposed: 0 };
   window.HTMLCanvasElement.prototype.getContext = (original => function (type) {
     if (type === 'webgl2') return { createShader() {}, createVertexArray() {}, getExtension() { return null; } };
     return original.call(this, type);
@@ -26,7 +26,8 @@ function fakeRenderer(window, { failOnRender = false } = {}) {
     create(options) {
       calls.create += 1; calls.options = options;
       return {
-        canvas: window.document.createElement('canvas'), width: 360, height: 520,
+        canvas: window.document.createElement('canvas'), width: 1024, height: 768, focus: { x: 0, y: 0, w: 360, h: 520 },
+        setFocus(x, y, w, h) { calls.focus.push({ x, y, w, h }); }, setPointer() {}, renderScene(model) { calls.scenes.push(model); },
         setTheme(name) { calls.themes.push(name); }, resize() {},
         renderGame(model) { if (failOnRender) throw new Error('GPU went away'); calls.game.push(model); },
         renderBoard(model) { calls.board.push(model); }, renderResults(model) { calls.results.push(model); },
@@ -82,10 +83,15 @@ describe('3D view integration', skipReason ? { skip: skipReason } : {}, () => {
       document.getElementById('start-button').click();
       await page.sleep(300);
       assert.equal(calls.create, 1, 'one renderer for the page');
+      assert.equal(calls.scenes[0].kind, 'title', 'the world is already running behind the title screen');
+      assert.ok(document.documentElement.classList.contains('world3d'));
+      assert.equal(document.documentElement.classList.contains('world3d-pending'), false);
       assert.equal(calls.options.core, window.SabotageStackCore, 'the renderer shares the rules module, it does not copy it');
       const stage = document.getElementById('game-stage');
-      assert.equal(stage.firstElementChild.className, 'view3d-canvas', 'WebGL canvas sits under the input canvas');
-      assert.equal(stage.firstElementChild.getAttribute('aria-hidden'), 'true');
+      assert.equal(document.body.firstElementChild.className, 'view3d-canvas', 'one WebGL canvas behind the whole page');
+      assert.equal(document.body.firstElementChild.getAttribute('aria-hidden'), 'true');
+      assert.equal(stage.querySelector('.view3d-canvas'), null);
+      assert.deepEqual(calls.focus[calls.focus.length - 1], { x: 0, y: 0, w: 360, h: 520 }, 'the scene is composed for the stage rectangle');
       assert.ok(stage.classList.contains('has-view3d'));
       const model = calls.game[calls.game.length - 1];
       assert.equal(model.tower.stack.length, 1, 'base block');
@@ -106,12 +112,17 @@ describe('3D view integration', skipReason ? { skip: skipReason } : {}, () => {
       document.getElementById('view-toggle').click();
       await page.sleep(80);
       assert.equal(document.querySelector('.view3d-canvas'), null, '2D removes the WebGL canvas');
+      assert.equal(document.documentElement.classList.contains('world3d'), false, 'and the page returns to its flat layout');
       assert.equal(calls.disposed, 1);
       assert.equal(window.localStorage.getItem('sabotage-stack-view-v1'), '2d');
       assert.equal(page.pixel(document.getElementById('game-canvas'), 10, 10)[3], 255, 'the 2D canvas paints again');
       document.getElementById('view-toggle').click();
       await page.sleep(80);
       assert.equal(calls.create, 2, 'switching back builds a fresh renderer');
+      document.getElementById('menu-button').click();
+      await page.sleep(80);
+      assert.equal(document.body.dataset.screen, 'title');
+      assert.equal(calls.scenes[calls.scenes.length - 1].kind, 'title', 'back at the menu the world keeps running');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
