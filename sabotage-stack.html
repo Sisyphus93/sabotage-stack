@@ -823,7 +823,44 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   html[data-theme="sunset"] .effect-name { font-size: 14px; }
   html[data-theme="sunset"] .sabotage-list strong { font-size: 12px; }
 }
-  </style>
+  /* ===== 3D layer (client3d -> public/stack3d.js) ===================================================================
+   The world is a fixed WebGL canvas behind the whole app; panels turn to glass and the stage frames become transparent
+   so the 3D tower lands exactly inside the same rectangles the flat canvases used. All rules live under html.has-3d. */
+#stage3d { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.view-toggle { min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+html.has-3d { --glass: rgba(244,237,223,.82); --edge: rgba(42,37,32,.3); }
+@supports (background: color-mix(in srgb, red, blue)) { html.has-3d { --glass: color-mix(in srgb, var(--paper) 80%, transparent); --edge: color-mix(in srgb, var(--ink) 32%, transparent); } }
+html.has-3d body { background: transparent; }
+html.has-3d body::after { opacity: .03; }
+html.has-3d .topbar { border-bottom-color: transparent; padding: 0 10px; border-radius: 0 0 16px 16px; background: linear-gradient(to bottom, var(--glass), transparent); }
+html.has-3d .home-copy, html.has-3d .home-bottom, html.has-3d .side-card, html.has-3d .result-info, html.has-3d .multiplayer-results,
+html.has-3d .screen-heading, html.has-3d .canvas-hint, html.has-3d .control-row, html.has-3d .control-help {
+  background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25);
+}
+html.has-3d .home-copy { padding: 22px 24px; border-radius: 22px; }
+html.has-3d .screen-heading { padding: 8px 14px; border-radius: 16px; }
+html.has-3d .canvas-hint { padding: 4px 12px; border-radius: 999px; }
+html.has-3d .play-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; border-color: var(--edge); box-shadow: none; }
+html.has-3d #title-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html.has-3d .home-aside { display: none; }
+html.has-3d .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
+html.has-3d #perfect-banner { display: none; }
+/* Multiplayer results: the 3D podium of final towers owns the open space, the cards become a glass column beside it. */
+html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
+@media (min-width: 981px) {
+  html.has-3d .multiplayer-results { width: min(560px, 44vw); max-width: none; margin: 14px 0 24px auto; }
+  html.has-3d .multiplayer-result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  html.has-3d .multiplayer-result-card canvas, html.has-3d .teamwork-result-canvas { display: none; }
+}
+@media (max-width: 980px) {
+  html.has-3d .multiplayer-results { margin-top: min(40vh, 340px); }
+}
+@media (max-width: 900px) {
+  html.has-3d #title-screen { padding-top: min(54vh, 480px); }
+  html.has-3d .home-grid { grid-template-columns: 1fr; }
+}
+</style>
 </head>
 <body>
   <svg class="sabotage-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -1860,6 +1897,25 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]
     ]);
 
+    // Bridge for the optional 3D layer (public/stack3d.js). It exposes a read-only view of the live state. While the layer is
+    // active it draws the world, so the flat canvas drawing is skipped; DOM state, announcements, audio and input stay here.
+    const stackHostView = { screen: 'title', theme: 'paper', reduced: false, game: null, mp: multiplayer, results: null, resultReveal: 0, Core };
+    const stackHost = {
+      version: 1, active: false, snapshot: null,
+      view() {
+        stackHostView.screen = document.body.dataset.screen || 'title'; stackHostView.theme = currentTheme; stackHostView.reduced = reducedMotion;
+        stackHostView.game = game; stackHostView.results = resultData; stackHostView.resultReveal = resultReveal;
+        return stackHostView;
+      },
+      setActive(flag) {
+        stackHost.active = Boolean(flag);
+        for (const [canvas, context] of [[elements.gameCanvas, gameContext], [elements.resultsCanvas, resultsContext]]) {
+          context.save(); context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height); context.restore();
+        }
+        if (!stackHost.active) { if (game) drawGame(); if (resultData) drawResults(resultData, resultReveal); }
+      }
+    };
+    window.SabotageStackHost = stackHost;
     function setCanvasResolution(canvas, context) {
       const deviceDpr = Number(window.devicePixelRatio) || 1;
       const nextDpr = Math.min(2, deviceDpr > 0 ? deviceDpr : 1);
@@ -3961,8 +4017,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    function syncGameOverlays() {
+      if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
+      else elements.toast.classList.remove('is-visible');
+      if (game.perfectTime > 0) elements.perfect.classList.add('is-visible');
+      else elements.perfect.classList.remove('is-visible');
+    }
     function drawGame() {
       if (!game) return;
+      if (stackHost.active) { syncGameOverlays(); return; }
       setCanvasResolution(elements.gameCanvas, gameContext);
       const ctx = gameContext;
       if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') {
@@ -4102,6 +4165,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function drawMultiplayerStack(canvas, blocks, fallen, maxHeight, collapseLevel, teamwork = false) {
       const w = teamwork ? 360 : 220;
       const h = teamwork ? 470 : 300;
+      if (stackHost.active && stackHost.snapshot && stackHost.snapshot(canvas, { blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h })) return;
       const ctx = resultCanvasContext(canvas, w, h);
       paintThemeSky(ctx, w, h);
       ctx.strokeStyle = canvasTheme().gridLine; ctx.lineWidth = 1;
@@ -4249,6 +4313,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       drawResults(data, resultReveal);
     }
     function drawResults(data, reveal) {
+      if (stackHost.active) return;
       setCanvasResolution(elements.resultsCanvas, resultsContext);
       const ctx = resultsContext;
       paintThemeSky(ctx, WIDTH, HEIGHT);
@@ -5095,5 +5160,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     requestAnimationFrame(frame);
   })();
   </script>
+  <script src="public/stack3d.js" defer></script>
 </body>
 </html>
