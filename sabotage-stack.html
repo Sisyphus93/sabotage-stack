@@ -823,7 +823,102 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
   html[data-theme="sunset"] .effect-name { font-size: 14px; }
   html[data-theme="sunset"] .sabotage-list strong { font-size: 12px; }
 }
-  </style>
+  /* ===== 3D layer (client3d -> public/stack3d.js) ===================================================================
+   The world is a fixed WebGL canvas behind the whole app; panels turn to glass and the stage frames become transparent
+   so the 3D tower lands exactly inside the same rectangles the flat canvases used. All rules live under html.has-3d. */
+#stage3d { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+.view-toggle { min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+html.has-3d { --glass: rgba(244,237,223,.82); --edge: rgba(42,37,32,.3); }
+@supports (background: color-mix(in srgb, red, blue)) { html.has-3d { --glass: color-mix(in srgb, var(--paper) 80%, transparent); --edge: color-mix(in srgb, var(--ink) 32%, transparent); } }
+html.has-3d body { background: transparent; }
+html.has-3d body::after { opacity: .03; }
+html.has-3d .topbar { border-bottom-color: transparent; padding: 0 10px; border-radius: 0 0 16px 16px; background: linear-gradient(to bottom, var(--glass), transparent); }
+html.has-3d .home-copy, html.has-3d .home-bottom, html.has-3d .side-card, html.has-3d .result-info, html.has-3d .multiplayer-results,
+html.has-3d .screen-heading, html.has-3d .canvas-hint, html.has-3d .control-row, html.has-3d .control-help {
+  background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25);
+}
+html.has-3d .home-copy { padding: 22px 24px; border-radius: 22px; }
+html.has-3d .screen-heading { padding: 8px 14px; border-radius: 16px; }
+html.has-3d .canvas-hint { padding: 4px 12px; border-radius: 999px; }
+html.has-3d .play-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; border-color: var(--edge); box-shadow: none; }
+html.has-3d #title-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html.has-3d .home-aside { display: none; }
+html.has-3d .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
+html.has-3d #perfect-banner { display: none; }
+/* Multiplayer results: the 3D podium of final towers owns the open space, the cards become a glass column beside it. */
+html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
+@media (min-width: 981px) {
+  html.has-3d .multiplayer-results { width: min(560px, 44vw); max-width: none; margin: 14px 0 24px auto; }
+  html.has-3d .multiplayer-result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  html.has-3d .multiplayer-result-card canvas, html.has-3d .teamwork-result-canvas { display: none; }
+}
+@media (max-width: 980px) {
+  html.has-3d .multiplayer-results { margin-top: min(40vh, 340px); }
+}
+@media (max-width: 900px) {
+  html.has-3d #title-screen { padding-top: min(54vh, 480px); }
+  html.has-3d .home-grid { grid-template-columns: 1fr; }
+}
+/* Turning the home scene: hold the left or right mouse button on it and drag (a finger swipes sideways; vertical swipes still scroll).
+   The hint and the buttons are created by the 3D layer inside #title-screen and sit in the corner of the 3D region. */
+html.has-3d #title-screen, html.has-3d #solo-result-layout .results-frame { touch-action: pan-y pinch-zoom; }
+html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-select: none !important; }
+.orbit-hud { position: fixed; z-index: 4; transform: translate(-100%, -100%); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100vw - 20px); pointer-events: none; }
+.orbit-row, .toy-dock { display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
+.orbit-hud .orbit-btn, .orbit-hud .toy-key { pointer-events: auto; }
+.toy-key { min-height: 46px; padding: 0 16px 0 13px; gap: 8px; font-size: 13.5px; white-space: nowrap; }
+.toy-key svg { width: 18px; height: 18px; flex: 0 0 auto; display: block; }
+.toy-short { display: none; }
+.orbit-hint {
+  margin: 0; padding: 8px 14px; border: 1px solid var(--edge); border-radius: 999px; background: var(--glass); color: var(--ink);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+  font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; transition: opacity .7s ease, transform .7s ease;
+}
+.orbit-hint b { font-weight: 800; }
+.orbit-hint-short { display: none; }
+.orbit-hud.is-quiet .orbit-hint { opacity: 0; transform: translateY(6px); }
+.orbit-btn {
+  min-height: 40px; min-width: 40px; padding: 0; border-color: var(--edge); border-radius: 999px; background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+}
+.orbit-btn svg { width: 18px; height: 18px; display: block; }
+.orbit-btn[data-orbit="reset"] { display: none; }
+.orbit-hud.is-rotated .orbit-btn[data-orbit="reset"] { display: inline-flex; }
+@media (max-width: 640px) { .orbit-hint-full, .toy-full { display: none; } .orbit-hint-short, .toy-short { display: inline; } .toy-key { padding: 0 13px 0 11px; } }
+
+/* Tactile 3D UI (only while the 3D layer runs): buttons, the vote keys and the Space bar are keycaps. Each has a side wall of real
+   depth (a box-shadow in a darker shade, a different one per theme), rests a little proud, lifts on hover and sinks into its wall
+   when pressed: by pointer, by touch, or by the keyboard key it is named after (the layer adds .is-pressed for Space and 1 / 2 / 3). */
+html.has-3d { --cap-depth: 5px; --cap-wall: #2A2520; --cap-strong: #0D0B09; --cap-shine: rgba(255, 255, 255, .42); }
+html.has-3d[data-theme="sunset"] { --cap-wall: #8A1F78; --cap-strong: #170B33; --cap-shine: rgba(255, 255, 255, .3); }
+html.has-3d[data-theme="primetime"] { --cap-wall: #7A5200; --cap-strong: #8A5A00; --cap-shine: rgba(255, 255, 255, .45); }
+html.has-3d .button:not(:disabled), html.has-3d .drop-button:not(:disabled), html.has-3d .vote-key {
+  --cap-now: var(--cap-wall); transform: translateY(-1px);
+  box-shadow: 0 var(--cap-depth) 0 var(--cap-now), 0 calc(var(--cap-depth) + 3px) 10px rgba(12, 6, 2, .28), inset 0 1.5px 0 var(--cap-shine);
+  transition: transform .09s cubic-bezier(.3, .7, .4, 1), box-shadow .09s cubic-bezier(.3, .7, .4, 1), background-color .18s ease, color .18s ease, opacity .16s ease;
+}
+html.has-3d .button-primary:not(:disabled), html.has-3d .drop-button:not(:disabled) { --cap-now: var(--cap-strong); --cap-depth: 6px; }
+html.has-3d .vote-key { --cap-depth: 3px; }
+html.has-3d .button:hover:not(:disabled), html.has-3d .drop-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 calc(var(--cap-depth) + 1px) 0 var(--cap-now), 0 calc(var(--cap-depth) + 5px) 14px rgba(12, 6, 2, .3), inset 0 1.5px 0 var(--cap-shine);
+}
+html.has-3d .button:active:not(:disabled), html.has-3d .drop-button:active:not(:disabled), html.has-3d .button.is-pressed, html.has-3d .drop-button.is-pressed,
+html.has-3d .vote-option:active:not(:disabled) .vote-key, html.has-3d .vote-option.is-pressed .vote-key {
+  transform: translateY(calc(var(--cap-depth) - 1px));
+  box-shadow: 0 1px 0 var(--cap-now), 0 2px 4px rgba(12, 6, 2, .25), inset 0 1.5px 0 var(--cap-shine); transition-duration: .05s;
+}
+html.has-3d .vote-option.is-pressed { transform: translateY(1px); }
+/* the sculpted glyphs (brand emblem, speaker) replace the flat drawings: the speaker shows its waves while sound is on and a cross while it is off */
+html.has-3d .sound-toggle svg { width: 26px; height: 26px; }
+html.has-3d .brand-mark svg { width: 28px; height: 28px; }
+html.has-3d .sound-toggle .speaker-off { display: none; }
+html.has-3d .sound-toggle[aria-pressed="false"] .speaker-on { display: none; }
+html.has-3d .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; }
+/* the deck tilt is applied by the layer while the pointer is over a deck, and removed again when it leaves */
+html.has-3d .is-tilting { will-change: transform; transition: none; }
+</style>
 </head>
 <body>
   <svg class="sabotage-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
@@ -1860,6 +1955,25 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       [174.61, 220.00, 261.63], [196.00, 246.94, 293.66]
     ]);
 
+    // Bridge for the optional 3D layer (public/stack3d.js). It exposes a read-only view of the live state. While the layer is
+    // active it draws the world, so the flat canvas drawing is skipped; DOM state, announcements, audio and input stay here.
+    const stackHostView = { screen: 'title', theme: 'paper', reduced: false, game: null, mp: multiplayer, results: null, resultReveal: 0, Core };
+    const stackHost = {
+      version: 1, active: false, snapshot: null,
+      view() {
+        stackHostView.screen = document.body.dataset.screen || 'title'; stackHostView.theme = currentTheme; stackHostView.reduced = reducedMotion;
+        stackHostView.game = game; stackHostView.results = resultData; stackHostView.resultReveal = resultReveal;
+        return stackHostView;
+      },
+      setActive(flag) {
+        stackHost.active = Boolean(flag);
+        for (const [canvas, context] of [[elements.gameCanvas, gameContext], [elements.resultsCanvas, resultsContext]]) {
+          context.save(); context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height); context.restore();
+        }
+        if (!stackHost.active) { if (game) drawGame(); if (resultData) drawResults(resultData, resultReveal); }
+      }
+    };
+    window.SabotageStackHost = stackHost;
     function setCanvasResolution(canvas, context) {
       const deviceDpr = Number(window.devicePixelRatio) || 1;
       const nextDpr = Math.min(2, deviceDpr > 0 ? deviceDpr : 1);
@@ -3961,8 +4075,15 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       }
       ctx.restore();
     }
+    function syncGameOverlays() {
+      if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
+      else elements.toast.classList.remove('is-visible');
+      if (game.perfectTime > 0) elements.perfect.classList.add('is-visible');
+      else elements.perfect.classList.remove('is-visible');
+    }
     function drawGame() {
       if (!game) return;
+      if (stackHost.active) { syncGameOverlays(); return; }
       setCanvasResolution(elements.gameCanvas, gameContext);
       const ctx = gameContext;
       if (game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player') {
@@ -4102,6 +4223,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     function drawMultiplayerStack(canvas, blocks, fallen, maxHeight, collapseLevel, teamwork = false) {
       const w = teamwork ? 360 : 220;
       const h = teamwork ? 470 : 300;
+      if (stackHost.active && stackHost.snapshot && stackHost.snapshot(canvas, { blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h })) return;
       const ctx = resultCanvasContext(canvas, w, h);
       paintThemeSky(ctx, w, h);
       ctx.strokeStyle = canvasTheme().gridLine; ctx.lineWidth = 1;
@@ -4249,6 +4371,7 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
       drawResults(data, resultReveal);
     }
     function drawResults(data, reveal) {
+      if (stackHost.active) return;
       setCanvasResolution(elements.resultsCanvas, resultsContext);
       const ctx = resultsContext;
       paintThemeSky(ctx, WIDTH, HEIGHT);
@@ -5095,5 +5218,6 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
     requestAnimationFrame(frame);
   })();
   </script>
+  <script src="public/stack3d.js" defer></script>
 </body>
 </html>

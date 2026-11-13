@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Browser-only ES modules for the 3D layer; bundled by scripts/build-client.js into public/stack3d.js."
+}
