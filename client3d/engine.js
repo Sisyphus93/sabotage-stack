@@ -11,10 +11,10 @@ import { clamp, damp, hexToRgb01 } from './util.js';
 import { paletteFor } from './palette.js';
 
 export const TIERS = Object.freeze([
-  Object.freeze({ name: 'low', dpr: 1, msaa: 0, shadow: 1024, shadowBias: -0.0012, bloom: false, blur: false, crowd: 0.35, particles: 0.4, reflect: false, soft: false }),
-  Object.freeze({ name: 'medium', dpr: 1.25, msaa: 0, shadow: 1024, shadowBias: -0.0010, bloom: true, blur: false, crowd: 0.65, particles: 0.7, reflect: false, soft: true }),
-  Object.freeze({ name: 'high', dpr: 1.75, msaa: 4, shadow: 2048, shadowBias: -0.0008, bloom: true, blur: true, crowd: 1, particles: 1, reflect: true, soft: true }),
-  Object.freeze({ name: 'ultra', dpr: 2, msaa: 4, shadow: 2048, shadowBias: -0.0006, bloom: true, blur: true, crowd: 1, particles: 1, reflect: true, soft: true })
+  Object.freeze({ name: 'low', dpr: 1, msaa: 0, shadow: 1024, shadowBias: -0.0012, bloom: false, blur: false, crowd: 0.35, particles: 0.4, reflect: 0, soft: false }),
+  Object.freeze({ name: 'medium', dpr: 1.25, msaa: 0, shadow: 1024, shadowBias: -0.0010, bloom: true, blur: false, crowd: 0.65, particles: 0.7, reflect: 0.38, soft: true }),
+  Object.freeze({ name: 'high', dpr: 1.75, msaa: 4, shadow: 2048, shadowBias: -0.0008, bloom: true, blur: true, crowd: 1, particles: 1, reflect: 0.6, soft: true }),
+  Object.freeze({ name: 'ultra', dpr: 2, msaa: 4, shadow: 2048, shadowBias: -0.0006, bloom: true, blur: true, crowd: 1, particles: 1, reflect: 0.85, soft: true })
 ]);
 
 // A real WebGL2 context, not merely a truthy return value: some headless/test canvases hand back a 2D context (or a stub)

@@ -214,7 +214,7 @@ export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
   const baseKey = lights.key.intensity; const baseHemi = lights.hemi.intensity; const baseRim = lights.rim.intensity; const baseFront = lights.front.intensity;
 
   return {
-    theme, root, lights, sky, plinth, ground, crowd, motes, envTexture, fog, palette,
+    theme, root, lights, sky, plinth, ground, crowd, motes, decor, envTexture, fog, palette,
     update({ time, dt, focusY, altitude, dim = 1, camera, shadowFocus = null, fogDist = 1000 }) {
       const u = sky.material.uniforms;
       u.uAltitude.value = altitude; u.uTime.value = time; u.uDim.value = dim;

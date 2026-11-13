@@ -841,11 +841,10 @@ html.has-3d .home-copy { padding: 22px 24px; border-radius: 22px; }
 html.has-3d .screen-heading { padding: 8px 14px; border-radius: 16px; }
 html.has-3d .canvas-hint { padding: 4px 12px; border-radius: 999px; }
 html.has-3d .play-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; border-color: var(--edge); box-shadow: none; }
-html.has-3d #title-heading { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; border-color: transparent; box-shadow: none; } /* no box: the tower stands in the open world (the border keeps its width, so the layout and the camera's framing do not move) */
 html.has-3d .home-aside { display: none; }
 html.has-3d .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
-html.has-3d #perfect-banner { display: none; }
+html.has-3d #perfect-banner, html.has-3d #canvas-toast { display: none; } /* PERFECT!, TIMBER! and the sabotage's name are 3D lettering in the world */
 /* Multiplayer results: the 3D podium of final towers owns the open space, the cards become a glass column beside it. */
 html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
 @media (min-width: 981px) {
@@ -918,6 +917,71 @@ html.has-3d .sound-toggle[aria-pressed="false"] .speaker-on { display: none; }
 html.has-3d .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; }
 /* the deck tilt is applied by the layer while the pointer is over a deck, and removed again when it leaves */
 html.has-3d .is-tilting { will-change: transform; transition: none; }
+
+/* ===== Panels and text (3D layer) =====================================================================================
+   The menu and every side card are frosted glass that faces slightly inward (the left ones turn their far edge away, the right ones
+   the same the other way) and tilts a little with the pointer. Headings are extruded in each theme's own colours. The menu is held
+   back while SABOTAGE STACK rains down, then (like every panel of every screen, as the camera arrives) swings in from depth. */
+html.has-3d { --face: 0deg; --sign: 1; --tx: 0; --ty: 0; --swing-base: .05s; --ext-1: #D5472F; --ext-2: #A8301E; --ext-3: #6E1F14; --ext-drop: rgba(42, 37, 32, .3); }
+html.has-3d[data-theme="sunset"] { --ext-1: #FF4FD8; --ext-2: #B22A9C; --ext-3: #5E1470; --ext-drop: rgba(8, 0, 24, .6); }
+html.has-3d[data-theme="primetime"] { --ext-1: #FFC83D; --ext-2: #C8921A; --ext-3: #7A5200; --ext-drop: rgba(2, 8, 40, .65); }
+html.has-3d body[data-screen="game"], html.has-3d body[data-screen="results"], html.has-3d body[data-screen="lobby"] { --swing-base: .5s; }
+html.has-3d :is(.home-copy, .side-card, .result-info, .multiplayer-results, .preview-card) {
+  transform: perspective(1200px) rotateX(calc(var(--tx) * 1deg)) rotateY(calc(var(--face) + var(--ty) * 1deg));
+}
+@media (min-width: 901px) {
+  html.has-3d :is(.home-copy, .room-code-card) { --face: 5.5deg; --sign: 1; transform-origin: 0 50%; }
+  html.has-3d :is(.side-stack .side-card, .room-player-card, .result-info, .multiplayer-results, .preview-card) { --face: -5.5deg; --sign: -1; transform-origin: 100% 50%; }
+}
+@keyframes panel-swing {
+  from { opacity: 0; transform: perspective(1200px) translate3d(calc(var(--sign) * -150px), 48px, -640px) rotateX(14deg) rotateY(calc(var(--face) + var(--sign) * 36deg)); }
+  to { opacity: 1; transform: perspective(1200px) translate3d(0, 0, 0) rotateX(0deg) rotateY(var(--face)); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html.has-3d:not([data-motion="reduced"]):not([data-intro="hold"]) :is(.home-copy, .home-bottom, .side-card, .result-info, .multiplayer-results, .screen-heading, .play-card, .room-lobby-layout > *) {
+    animation: panel-swing .95s cubic-bezier(.17, .84, .28, 1) calc(var(--swing-base) + var(--swing-delay, 0s)) backwards;
+  }
+}
+html.has-3d .screen-heading { --swing-delay: 0s; }
+html.has-3d .play-card, html.has-3d .home-bottom { --swing-delay: .14s; }
+html.has-3d .side-stack > :nth-child(1), html.has-3d .room-lobby-layout > :nth-child(1) { --swing-delay: .16s; }
+html.has-3d .side-stack > :nth-child(2), html.has-3d .room-lobby-layout > :nth-child(2) { --swing-delay: .25s; }
+html.has-3d .side-stack > :nth-child(3), html.has-3d .result-info { --swing-delay: .34s; }
+html.has-3d .side-stack > :nth-child(4), html.has-3d .multiplayer-results { --swing-delay: .43s; }
+html.has-3d .side-stack > :nth-child(n+5) { --swing-delay: .5s; }
+@keyframes hud-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: no-preference) { html.has-3d:not([data-motion="reduced"]):not([data-intro="hold"]) .orbit-hud { animation: hud-in .8s ease .4s backwards; } }
+html.has-3d[data-intro="hold"] :is(.home-copy, .home-bottom, .orbit-hud) { visibility: hidden; opacity: 0; }
+/* headings stand off the glass: a stack of solid layers, in the theme's colours, over a soft shadow */
+html.has-3d :is(#title-heading, .screen-heading h2, .result-info h2, .multiplayer-results h2) {
+  text-shadow: 1px 1px 0 var(--ext-1), 2px 2px 0 var(--ext-1), 3px 3px 0 var(--ext-2), 4px 4px 0 var(--ext-2), 5px 5px 0 var(--ext-3), 6px 6px 0 var(--ext-3), 7px 10px 13px var(--ext-drop);
+}
+html.has-3d :is(.side-card h3, .multiplayer-results h3, .preview-heading span:first-child) {
+  text-shadow: 1px 1px 0 var(--ext-1), 2px 2px 0 var(--ext-2), 3px 3px 0 var(--ext-3), 4px 6px 8px var(--ext-drop);
+}
+html.has-3d #title-heading { margin: 6px 6px 14px 0; font-size: clamp(23px, 2.35vw, 32px); line-height: 1.14; letter-spacing: .005em; padding-bottom: 6px; }
+html.has-3d #title-heading span { --ext-1: #9A2F1D; --ext-2: #70200F; --ext-3: #45120A; }
+html.has-3d[data-theme="sunset"] #title-heading { font-size: clamp(13px, 1.3vw, 18px); line-height: 1.55; }
+html.has-3d[data-theme="sunset"] #title-heading span { --ext-1: #FF8A3D; --ext-2: #B24A1A; --ext-3: #5A1E0A; }
+html.has-3d[data-theme="primetime"] #title-heading { font-size: clamp(25px, 2.6vw, 36px); line-height: 1.08; }
+html.has-3d[data-theme="primetime"] #title-heading span { --ext-1: #FFE28A; --ext-2: #C8921A; --ext-3: #7A5200; }
+@media (max-width: 900px) { html.has-3d #title-heading { font-size: clamp(22px, 6vw, 30px); } html.has-3d[data-theme="sunset"] #title-heading { font-size: clamp(12px, 3.4vw, 17px); } }
+/* panel icons: a thick token that turns slowly (icon-turn.js wraps each <svg> in a holder and adds the darker copies behind it) */
+html.has-3d .icon-turn { display: inline-grid; place-items: center; transform-style: preserve-3d; transform: perspective(210px) rotateY(-14deg); }
+html.has-3d .icon-turn > svg { grid-area: 1 / 1; }
+html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1.5px)); filter: brightness(calc(1 - var(--layer) * .13)) saturate(.9); pointer-events: none; }
+@keyframes icon-turn { 0%, 100% { transform: perspective(210px) rotateY(-46deg); } 50% { transform: perspective(210px) rotateY(46deg); } }
+@media (prefers-reduced-motion: no-preference) { html.has-3d:not([data-motion="reduced"]) .icon-turn { animation: icon-turn 10.5s ease-in-out infinite; animation-delay: var(--turn-delay, 0s); } }
+/* "Chat voted: Earthquake": the pill under the title while chat is sabotaging it */
+.chat-caption {
+  position: fixed; z-index: 3; left: 50%; top: 90%; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 7px 20px 7px 9px;
+  border: 1px solid var(--edge, rgba(42, 37, 32, .3)); border-radius: 999px; background: var(--glass, rgba(244, 237, 223, .82)); color: var(--ink);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2); box-shadow: 0 6px 18px rgba(12, 6, 2, .18);
+  font-size: 12px; font-weight: 800; letter-spacing: .09em; white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-50%, -100%) translateY(14px); transition: opacity .3s ease, transform .35s cubic-bezier(.2, .9, .3, 1.2);
+}
+.chat-caption.is-on { opacity: 1; transform: translate(-50%, -100%) translateY(0); }
+.chat-caption-icon { width: 32px; height: 32px; flex: 0 0 auto; display: block; }
+.chat-caption-text { overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>

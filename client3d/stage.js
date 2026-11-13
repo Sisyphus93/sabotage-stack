@@ -8,9 +8,17 @@ import { BlockKit } from './blocks.js';
 import { Tower, levelY } from './tower.js';
 import { Sparks, Confetti, Pulses } from './particles.js';
 import { Popups, Ruler } from './popups.js';
-import { TitleBoard, AttractDirector, Arsenal } from './hero.js';
+import { Arsenal } from './hero.js';
+import { TitleStack } from './title-stack.js';
+import { TitleProps } from './title-props.js';
+import { BrickText } from './brick-text.js';
+import { VoxelIcons, dwellSpin } from './icon-voxel.js';
+import { VoteCandidates } from './candidates.js';
+import { FloorMirror } from './reflection.js';
+import { flightFor, blendSpec } from './flight.js';
+import { TitleDirector, titlePose, captionFor, TITLE_EFFECT_IDS } from './title-effects.js';
 import { normalizeTheme, paletteFor, BALLOT_COLORS, themedBlockColor } from './palette.js';
-import { buildIcon } from './icons3d.js';
+import { buildIcon, ICON_IDS } from './icons3d.js';
 import { hasGlyphs } from './text3d.js';
 import { OrbitController } from './orbit.js';
 import { HoverField, offsetFromPointer } from './hover.js';
@@ -18,9 +26,12 @@ import { createOrbitHud } from './orbit-hud.js';
 import { Totems, totemSlot, totemHeight } from './totems.js';
 import { buildCrown, crownPose } from './crown.js';
 import { podiumEntries, podiumMetrics, revealCount, revealedFallen, headlineFor } from './podium.js';
-import { clamp, damp, lerp, smoothstep, easeInOutCubic, easeOutCubic, TAU, rng, Spring } from './util.js';
+import { clamp, damp, lerp, smoothstep, easeInOutCubic, easeOutCubic, easeOutBack, TAU, rng, Spring } from './util.js';
 
 const BOARD_W = 360;
+const EMBLEM_SCALE = 2.2; // (the Sunset pixel pass swallows detail: the sculpture has to be big)
+const EMBLEM_X = BOARD_W / 2 + 118; // the running sabotage's emblem floats beside the tower, outside the lane: on a phone that is off the screen
+const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits on the other side
 const DUST = [0.82, 0.74, 0.6];
 // Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
 const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]';
@@ -30,6 +41,7 @@ const HOVER_LOOK = {
   sunset: { light: '#FF6BE0', power: 76000, sparkles: ['#FF4FD8', '#2EE6D6', '#FFC53D', '#B983FF'] },
   primetime: { light: '#CFE0FF', power: 64000, sparkles: ['#FFC83D', '#FFFFFF', '#35D0E8', '#FF7FA8'] }
 };
+const tmpTitle = new THREE.Vector3();
 const closest = (target, selector) => Boolean(target && target.closest && target.closest(selector));
 const soloIds = new WeakMap(); let soloCounter = 0;
 const soloId = game => { if (!soloIds.has(game)) soloIds.set(game, ++soloCounter); return soloIds.get(game); };
@@ -52,10 +64,11 @@ export class Stage {
     this.rig = { yaw: 0, pitch: 0.1, zoom: 1, roll: 0, kick: new Spring(0, 220, 14), shakeAmp: 0, shakeT: 0, focusY: 220, intro: 0 };
     this.timeScale = 1; this.slowT = 0; this.flash = 0; this.desatPulse = 0; this.caPulse = 0;
     this.towers = {}; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
-    this.heroLayout = ''; this.introDone = false; this.heroHover = -1;
+    this.sinking = new Map(); this.flight = null; this.camSpec = null; this.plinthGoal = null; this.lastDt = 0.016;
+    this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
     // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
     this.orbit = new OrbitController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
-    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.toyRect = null; this.toySeen = 0; this.calloutSide = 1; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
+    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
     this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
     this.scene.add(this.cursorLight);
@@ -77,10 +90,13 @@ export class Stage {
     window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.canOrbit() && !closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR)) this.orbit.reset(); });
     window.addEventListener('keydown', this.onKeyDown = e => this.handleKey(e));
     this.applyTier(this.engine.tier);
+    // opening the link on the title screen: the menu is held back until SABOTAGE STACK has rained down (index.js adds has-3d in the same task)
+    if (view.screen === 'title' && !view.reduced) { this.holdMenu = true; document.documentElement.dataset.intro = 'hold'; }
   }
 
   applyTier(tier) {
     this.fx.sparks.density = tier.particles; this.fx.glints.density = tier.particles; this.fx.confetti.density = tier.particles;
+    if (this.mirror) this.mirror.setQuality(tier.reflect, this.engine.width, this.engine.height);
     if (this.world) this.world.setCrowdDensity(tier.crowd);
     this.world && (this.world.lights.key.shadow.mapSize.width !== tier.shadow) && (() => { this.world.lights.key.shadow.mapSize.set(tier.shadow, tier.shadow); if (this.world.lights.key.shadow.map) { this.world.lights.key.shadow.map.dispose(); this.world.lights.key.shadow.map = null; } })();
   }
@@ -99,18 +115,28 @@ export class Stage {
     this.glintBoost = theme === 'paper' ? 1 : 1.7;
     if (this.kit) this.kit.dispose(); this.kit = new BlockKit(theme);
     this.world = createWorld(theme, this.engine, { crowdDensity: this.engine.tier.crowd });
+    if (this.mirror) { this.mirror.dispose(); this.mirror = null; }
+    this.mirror = new FloorMirror(theme, this.palette, { hide: [this.world.sky.mesh, this.world.crowd.group, this.world.ground, this.world.motes, this.world.decor.group] }); this.world.plinth.add(this.mirror.mesh);
     this.scene.add(this.world.root); this.scene.fog = this.world.fog; this.scene.environment = this.world.envTexture;
     this.scene.environmentIntensity = theme === 'paper' ? 0.7 : 0.85; this.scene.background = null;
     if (this.popups) { this.scene.remove(this.popups.group); this.popups.clear(); }
     this.popups = new Popups(theme, this.palette); this.scene.add(this.popups.group);
     if (this.ruler) { this.scene.remove(this.ruler.group); this.ruler.dispose(); }
     this.ruler = new Ruler(theme, this.palette); this.scene.add(this.ruler.group);
+    if (this.bricks) { this.scene.remove(this.bricks.group); this.bricks.destroy(); }
+    this.bricks = new BrickText(theme, this.palette); this.scene.add(this.bricks.group); this.heightShown = -1;
+    if (this.voxel) this.voxel.dispose();
+    this.voxel = new VoxelIcons(document, theme, this.palette); this.voxel.prime([...ICON_IDS, 'empty']);
+    if (this.candidates) { this.scene.remove(this.candidates.group); this.candidates.dispose(); }
+    this.candidates = new VoteCandidates(theme, this.palette, BALLOT_COLORS[theme] || BALLOT_COLORS.paper, { makeIcon: id => this.makeEmblem(id), nameOf: id => this.sabotageName(id) }); this.scene.add(this.candidates.group);
     if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }
     this.totems = new Totems(theme, this.palette); this.scene.add(this.totems.group);
     if (this.crown) { this.scene.remove(this.crown); this.crown.userData.dispose(); }
     this.crown = buildCrown(theme); this.crown.visible = false; this.scene.add(this.crown); this.lastCrownSpark = 0;
+    if (this.titleProps) { this.scene.remove(this.titleProps.group); this.titleProps.dispose(); }
+    this.titleProps = new TitleProps(theme, this.palette); this.scene.add(this.titleProps.group);
     if (this.title) { this.scene.remove(this.title.group); this.title.dispose(); }
-    this.title = new TitleBoard(theme, this.palette, this.fx); this.scene.add(this.title.group); this.heroLayout = '';
+    this.title = new TitleStack(theme, this.palette, this.fx); this.scene.add(this.title.group);
     if (this.arsenal) { this.scene.remove(this.arsenal.group); this.arsenal.dispose(); }
     const view = this.host.view();
     this.arsenal = new Arsenal(theme, this.palette, window.SabotageStack && window.SabotageStack.sabotages); this.scene.add(this.arsenal.group);
@@ -141,7 +167,7 @@ export class Stage {
       this.fx.sparks.burst({ pos: [position.x, position.y + 6, position.z], count: 26, speed: 190, spread: 1, color: [c.r * 1.6, c.g * 1.6, c.b * 1.6], size: 6.5, life: 0.95, gravity: -220, up: 0.7, drag: 1.1 });
       this.world.crowd.cheer(0.9);
       this.waveDir = -(this.waveDir || 1); this.world.crowd.wave(this.waveDir, { gap: this.mode === 'hero' ? 9 : 3.2 });
-      if (name === 'arena' || (this.mode === 'hero' && !this.toyLive())) return;
+      if (name === 'arena') return;
       if (!this.reduced) this.flash = Math.max(this.flash, 0.09);
       this.popups.show({ text: 'PERFECT!', position: [clamp(position.x, -90, 90), position.y + 52, 96], size: 30, depth: 9, color: gold, glow: 0.9, style: 'slam', life: 1.15, tilt: (Math.random() - 0.5) * 0.18 });
       if (!this.reduced) this.fx.confetti.burst({ pos: [position.x, position.y + 8, position.z], count: 22, speed: 230, colors: this.confettiColors(), size: 6.5, life: 2.4, cone: 0.9 });
@@ -157,7 +183,7 @@ export class Stage {
       this.fx.sparks.burst({ pos: [t.x, t.y, 40], count: 60, speed: 260, spread: 1, color: [red.r * 1.4, red.g * 1.4, red.b * 1.4], size: 7, life: 1.1, gravity: -300, up: 0.5, drag: 1.2 });
       this.fx.dust([t.x, t.y, 40], 22); this.fx.dust([0, 6, 50], 16);
       this.fx.pulses.pulse({ pos: [0, 2, 0], color: this.palette.vermilion, radius: 330, life: 1.0, from: 0.3, strength: 1.2 });
-      if (name === 'play' || (name === 'hero' && this.toyLive())) this.popups.show({ text: 'TIMBER!', position: [0, t.y + 40, 100], size: 40, depth: 12, color: this.palette.vermilion, glow: 0.9, style: 'slam', life: 1.5, tilt: -0.08 });
+      if (name === 'play') this.popups.show({ text: 'TIMBER!', position: [0, t.y + 40, 100], size: 40, depth: 12, color: this.palette.vermilion, glow: 0.9, style: 'slam', life: 1.5, tilt: -0.08 });
       this.world.crowd.cheer(1.6);
     });
   }
@@ -193,8 +219,11 @@ export class Stage {
     this.orbit.move(event.clientX, event.clientY, event.timeStamp / 1000, { pitch: !d.touch });
   }
 
+  // a visitor who does not want to wait: any press or key speeds the title's build up (and so brings the menu in sooner)
+  rushIntro() { if (this.holdMenu && this.title && this.title.mesh && !this.title.complete) this.title.speed = Math.max(this.title.speed, 3.4); }
+
   handleDown(event) {
-    this.handlePointer(event); this.idleFor = 0;
+    this.rushIntro(); this.handlePointer(event); this.idleFor = 0;
     if (!this.canOrbit() || this.drag || !event.isPrimary) return;
     if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
     if (this.pointer.overUi) return;
@@ -226,13 +255,13 @@ export class Stage {
     this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
     const idx = this.arsenal.pick(this.raycaster);
     if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); if (!this.reduced) this.title.wave(this.arsenal.items[idx].holder.position.x); return; }
-    const frame = this.heroAnchor && this.pointerOnScreenPlane(this.heroAnchor, this.pointer.ndc, 0);
-    if (frame && this.title.poke(frame)) { if (!this.reduced) this.title.wave(frame.point.x, 1900); return; }
-    if (this.overTower(event.clientX, event.clientY)) this.toyDrop();
+    // anywhere on the title: the bricks under the pointer are knocked out (and fall back in)
+    if (this.title.complete && this.title.poke(this.raycaster) > 0) { this.world.crowd.cheer(0.5); if (!this.reduced) this.title.wave(this.pointerFrame ? this.pointerFrame.point.x : 0, 1900); }
   }
 
   // Arrow keys turn the scene when nothing else has the keyboard (a focused select or button keeps its own arrows).
   handleKey(event) {
+    this.rushIntro();
     if (!this.canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target; if (target && target !== document.body && target !== document.documentElement) return;
     const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
@@ -258,34 +287,14 @@ export class Stage {
     frame.right.setFromMatrixColumn(cam.matrixWorld, 0); frame.up.setFromMatrixColumn(cam.matrixWorld, 1);
     return frame;
   }
-  // ---- the title screen as a toy: drop the block yourself (click the tower or the dock), call a sabotage down on it
-  toyLive() { return Boolean(this.director && this.director.manual); }
-  overTower(x, y) { const r = this.toyRect; return Boolean(r) && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
-  toyDrop() {
-    if (this.mode !== 'hero' || !this.director) return '';
-    const result = this.director.playerDrop(); if (result) this.idleFor = 0;
-    return result;
+  // ---- the title screen: chat sabotages the title (see title-effects.js); a click on the ring, or the dock's key, picks which
+  directorForce(id) { if (this.director && this.title.complete) this.director.force(id); }
+  // a random sabotage, other than the one running
+  triggerSabotage() {
+    const d = this.director; if (this.mode !== 'hero' || !d) return '';
+    const current = d.effect ? d.effect.id : ''; const pool = TITLE_EFFECT_IDS.filter(id => id !== current && id !== d.forced && (!this.reduced || d.pool().includes(id)));
+    if (!pool.length) return ''; const id = pool[Math.floor(Math.random() * pool.length)]; this.directorForce(id); this.idleFor = 0; return id;
   }
-  toyTrigger() {
-    const d = this.director; const Core = this.view && this.view.Core; if (this.mode !== 'hero' || !d || !Core) return '';
-    const current = d.effect ? d.effect.id : ''; const pool = (Core.SABOTAGE_IDS || []).filter(id => id !== current && id !== d.forced); if (!pool.length) return '';
-    const id = pool[Math.floor(Math.random() * pool.length)]; this.directorForce(id); this.idleFor = 0; return id;
-  }
-  // Floating 3D callouts: a finished tower, and the name of every sabotage that lands, beside the tower where the headline is not
-  toyCallout(drop) {
-    if (!drop.complete) return;
-    this.calloutSide = -(this.calloutSide || 1); // beside the tower: above a tall one is the headline
-    this.popups.show({ text: 'TOWER COMPLETE!', position: [this.calloutSide * 300, clamp(drop.level * 11 + 120, 140, 260), 118], size: 25, depth: 10, color: this.theme === 'paper' ? this.palette.vermilion : this.palette.amber, glow: 1, style: 'slam', life: 2, tilt: 0.04 });
-    if (!this.reduced) this.fx.confetti.burst({ pos: [0, drop.level * 22 + 30, 60], count: 120, speed: 330, colors: this.confettiColors(), size: 7, life: 3.6, cone: 1.3 });
-    this.world.crowd.cheer(1.6); this.waveDir = -(this.waveDir || 1); this.world.crowd.wave(this.waveDir, { gap: 0 });
-  }
-  heroEffectCallout(id, blocks) {
-    const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id); if (!sab) return;
-    const name = String(sab.name).toUpperCase(); this.calloutSide = -(this.calloutSide || 1);
-    this.popups.show({ text: name, position: [this.calloutSide * 285, clamp(levelY(blocks) * 0.5 + 90, 110, 250), 120], size: clamp(250 / (name.length * 0.7), 15, 30), depth: 9, color: this.theme === 'paper' ? this.palette.ink : this.palette.cream, glow: 0.7, style: 'slam', life: 1.9, tilt: 0.05 * this.calloutSide });
-  }
-
-  directorForce(id) { if (this.director) { this.director.voted = false; this.director.force(id); } }
 
   // -------------------------------------------------------------------------------------------------------------------
   pickMode(view) {
@@ -307,7 +316,7 @@ export class Stage {
   }
 
   frame(ts, { render = true } = {}) {
-    const dt = clamp((ts - (this.last || ts)) / 1000, 0, 0.05); this.last = ts;
+    const dt = clamp((ts - (this.last || ts)) / 1000, 0, 0.05); this.last = ts; this.lastDt = dt;
     if (this.engine.contextLost) return;
     this.time += dt;
     const view = this.host.view(); this.view = view; this.reduced = Boolean(view.reduced); this.engine.reducedMotion = this.reduced;
@@ -316,6 +325,7 @@ export class Stage {
     const mode = this.pickMode(view);
     if (mode !== this.mode) this.enterMode(mode, view);
     this.modeTime += dt;
+    if (this.flight) { this.flight.t += dt; if (this.flight.t >= this.flight.dur) { this.flight = null; delete document.documentElement.dataset.flight; } }
     // global slow-motion beat (collapse): physics run slower, then ease back
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.timeScale = 1; } else this.timeScale = damp(this.timeScale, 1, 6, dt);
     for (const tower of this.activeTowers()) tower.timeScale = this.timeScale;
@@ -323,6 +333,8 @@ export class Stage {
     this.engine.resize();
     this.watch(0, this.rig.focusY || 220, 0, 0.85); // the crowd looks at the tower unless a mode finds something better
     this['update_' + this.mode](dt, view);
+    this.bricks.update(dt, this.time, { faceYaw: this.mode === 'hero' ? this.popups.faceYaw : 0 }); this.bricks.events.length = 0;
+    this.updateLeaving(dt);
     this.updateCommon(dt);
     if (render) { this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts); }
     this.pointer.speed *= 0.9;
@@ -332,25 +344,55 @@ export class Stage {
 
   enterMode(mode, view) {
     const previous = this.mode; this.mode = mode; this.modeTime = 0;
-    this.engine.fade.value = Math.max(this.engine.fade.value, previous ? 0.8 : 1); this.engine.fade.target = 0;
+    const flies = Boolean(previous) && !this.reduced && Boolean(this.camSpec);
+    // a flight through the world takes the place of the old dip to white; without one (first frame, Reduced Motion) the picture still fades
+    this.engine.fade.value = flies ? this.engine.fade.value : Math.max(this.engine.fade.value, previous ? 0.8 : 1); this.engine.fade.target = 0;
+    if (flies) this.startFlight(previous, mode); else { this.flight = null; delete document.documentElement.dataset.flight; }
     const hero = mode === 'hero'; const play = mode === 'play' || mode === 'results';
-    this.title.group.visible = hero; this.arsenal.group.visible = hero;
-    if (this.towers.hero) this.towers.hero.root.visible = hero;
-    if (this.towers.play) this.towers.play.root.visible = play;
-    if (this.towers.lobby) this.towers.lobby.root.visible = mode === 'lobby';
+    // what the old screen leaves behind: the home title blows up into rubble, towers sink into the plinth
+    if (previous === 'hero' && !hero) { if (flies && this.title.mesh && !this.title.gone) this.title.explode(1); else { this.title.group.visible = false; this.arsenal.group.visible = false; } }
+    this.title.group.visible = hero || (previous === 'hero' && flies && this.title.exploded && !this.title.gone); this.arsenal.group.visible = hero || (previous === 'hero' && flies && this.title.exploded); this.titleProps.group.visible = hero;
+    if (hero) this.title.titleBuilt = false;
+    this.leave(this.towers.play, play, flies); this.leave(this.towers.lobby, mode === 'lobby', flies);
     this.totems.group.visible = mode === 'lobby';
     this.crown.visible = false;
     for (const t of this.arena) t.root.visible = mode === 'arena' || mode === 'celebrate';
     for (const l of this.labels) l.mesh.visible = false;
     this.ruler.group.visible = play;
-    if (mode !== 'celebrate') this.world.plinth.scale.set(mode === 'arena' ? 2.3 : 1, 1, mode === 'arena' ? 0.62 : 1);
+    this.plinthGoal = mode === 'celebrate' ? null : [mode === 'arena' ? 2.3 : hero ? 2.2 : play ? 1.4 : 1, mode === 'arena' ? 0.62 : hero ? 1.5 : 1];
+    if (!flies && this.plinthGoal) this.world.plinth.scale.set(this.plinthGoal[0], 1, this.plinthGoal[1]);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
     if (hero) this.openHud(); else this.leaveHome();
     if (mode === 'results') this.openResultsHud();
-    if (mode === 'hero' && !this.director) this.director = new AttractDirector(view.Core, rng(Date.now() & 0xffff));
-    if (mode === 'results') this.resultsT = 0;
-    this.world.crowd.clearBallot();
+    if (hero && !this.director) this.director = new TitleDirector(TITLE_EFFECT_IDS, rng(Date.now() & 0xffff), { reduced: this.reduced });
+    if (mode === 'results') { this.resultsT = 0; this.scoreShown = false; }
+    this.bricks.hide('score', false); this.bricks.hide('height', false); this.heightShown = -1; this.candidates.release();
+    this.world.crowd.clearBallot(); this.world.crowd.setSpread(hero ? 230 : 0, !previous);
     if (previous === 'results' || previous === 'celebrate') this.fx.confetti.floor = -64;
+  }
+
+  // a tower that is not wanted on the new screen sinks into the plinth (or, without a flight, is simply hidden); one that is wanted comes back
+  leave(tower, wanted, flies) {
+    if (!tower) return; const root = tower.root;
+    if (wanted) { this.unsink(tower); root.visible = true; return; }
+    if (flies && root.visible) this.sinking.set(root, 0); else root.visible = false;
+  }
+  unsink(tower) { if (!tower) return; this.sinking.delete(tower.root); tower.root.position.y = 0; }
+  updateLeaving(dt) {
+    for (const [root, t] of this.sinking) {
+      const k = t + dt / 0.75;
+      if (k >= 1) { root.visible = false; root.position.y = 0; this.sinking.delete(root); } else { this.sinking.set(root, k); root.position.y = -k * k * 420; }
+    }
+    // the rubble of the title that was blown up keeps tumbling on the new screen until it has gone
+    const title = this.title;
+    if (this.mode !== 'hero' && title && title.mesh) {
+      if (title.exploded && !title.gone) {
+        title.toCamera.copy(this.camera.position).sub(tmpTitle.set(0, 150, 0)).normalize();
+        title.update(this.lastDt || 0.016, this.time, { reduced: this.reduced, floor: (x, z) => this.floorAt(x, z), toCamera: title.toCamera });
+        this.arsenal.update(this.lastDt || 0.016, this.time, this.reduced, { away: 1 });
+        for (const ev of title.events.splice(0)) void ev;
+      } else if (title.group.visible) { title.group.visible = false; this.arsenal.group.visible = false; }
+    }
   }
 
   // The home view's on-screen controls (they live inside the title screen, so the page hides them with it).
@@ -358,7 +400,7 @@ export class Stage {
     if (this.hud) return; this.hintAge = 0;
     let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset(), onToy: kind => { if (kind === 'drop') this.toyDrop(); else this.toyTrigger(); } });
+    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset(), onToy: () => this.triggerSabotage() });
   }
 
   // The solo results turn too: the same hint and buttons, in the corner of the 3D frame (no toy dock here).
@@ -373,12 +415,13 @@ export class Stage {
   leaveHome() {
     this.endDrag(true); this.orbit.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.dragBlend = 0;
     this.setCursor(''); this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
-    this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0); this.toyRect = null;
+    this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0); this.hideCaption();
     this.engine.bloomPass.strength = this.palette.bloom;
   }
 
   updateCommon(dt) {
     const time = this.time;
+    if (this.plinthGoal) { const sc = this.world.plinth.scale; sc.x = damp(sc.x, this.plinthGoal[0], 3.2, dt); sc.z = damp(sc.z, this.plinthGoal[1], 3.2, dt); }
     this.engine.fade.value = damp(this.engine.fade.value, this.engine.fade.target, this.engine.fade.speed * 3, dt);
     this.fx.sparks.update(dt * this.timeScale); this.fx.glints.update(dt); this.fx.confetti.update(dt, time); this.fx.pulses.update(dt);
     this.fx.sparks.setScale(this.engine.height * 0.95); this.fx.glints.setScale(this.engine.height * 0.95);
@@ -394,22 +437,44 @@ export class Stage {
   // units are fitted inside it, which is how the play field lands exactly on the page's stage element.
   placeCamera({ anchor, screen, rect, worldW, worldH, yaw = 0, pitch = 0.1, zoom = 1, roll = 0, shake = [0, 0, 0] }) {
     const cam = this.camera; const W = this.engine.cssWidth; const H = this.engine.cssHeight;
-    const ppu = Math.max(0.05, Math.min(rect.w / worldW, rect.h / worldH)) * zoom;
+    let ppu = Math.max(0.05, Math.min(rect.w / worldW, rect.h / worldH)) * zoom;
+    let ax = anchor.x; let ay = anchor.y; const az = anchor.z; let sx = screen.x; let sy = screen.y; let cyaw = yaw; let cpitch = pitch; let croll = roll;
+    // A flight blends from where the previous screen's camera stood to where this one wants it (flight.js): the target, the point
+    // on the screen it lands on, the zoom, the angles. The arc pulls back and rises in the middle, so it reads as travelling.
+    const f = this.flight;
+    if (f) { const m = blendSpec(f.from, { ax, ay, az, sx, sy, ppu, yaw, pitch, roll }, f.t / f.dur, f); ({ ax, ay, sx, sy, ppu } = m); cyaw = m.yaw; cpitch = m.pitch; croll = m.roll; }
+    this.camSpec = { ax, ay, az, sx, sy, ppu, yaw: cyaw, pitch: cpitch, roll: croll };
     const dist = H / (2 * ppu * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
-    const cp = Math.cos(pitch); this.camDist = dist;
-    cam.position.set(anchor.x + Math.sin(yaw) * cp * dist + shake[0], anchor.y + Math.sin(pitch) * dist + shake[1], anchor.z + Math.cos(yaw) * cp * dist + shake[2]);
+    const cp = Math.cos(cpitch); this.camDist = dist;
+    cam.position.set(ax + Math.sin(cyaw) * cp * dist + shake[0], ay + Math.sin(cpitch) * dist + shake[1], az + Math.cos(cyaw) * cp * dist + shake[2]);
     cam.near = Math.max(4, dist * 0.05); cam.far = 30000;
-    cam.up.set(0, 1, 0); cam.lookAt(anchor.x, anchor.y, anchor.z); if (roll) cam.rotateZ(roll);
-    cam.setViewOffset(W, H, -(screen.x - W / 2), -(screen.y - H / 2), W, H);
+    cam.up.set(0, 1, 0); cam.lookAt(ax, ay, az); if (croll) cam.rotateZ(croll);
+    cam.setViewOffset(W, H, -(sx - W / 2), -(sy - H / 2), W, H);
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
     return ppu;
   }
 
+  // The camera sets off from where it stood to wherever the new screen wants it (placeCamera does the blending).
+  startFlight(from, to) {
+    if (!this.camSpec || this.reduced) { this.flight = null; return; }
+    const spec = flightFor(from, to);
+    this.flight = { t: 0, dur: spec.dur, pull: spec.pull, rise: spec.rise, lift: spec.lift, from: { ...this.camSpec }, to };
+    document.documentElement.dataset.flight = to;
+  }
+  flying() { return Boolean(this.flight); }
+
+  // An element's box as the layout put it, in viewport pixels: it ignores CSS transforms, so a panel that is swinging in, or tilting
+  // with the pointer, does not drag the camera (which is fitted to these boxes) along with it.
+  layoutRect(element) {
+    if (!element || element.offsetWidth === undefined) return null;
+    let x = 0; let y = 0; let n = element;
+    while (n) { x += n.offsetLeft || 0; y += n.offsetTop || 0; n = n.offsetParent; }
+    const sx = window.scrollX || 0; const sy = window.scrollY || 0; const w = element.offsetWidth; const h = element.offsetHeight;
+    return { left: x - sx, top: y - sy, right: x - sx + w, bottom: y - sy + h, width: w, height: h };
+  }
   rectOf(element, fallback) {
-    if (element && element.getBoundingClientRect) {
-      const r = element.getBoundingClientRect();
-      if (r.width > 8 && r.height > 8) return { x: r.left, y: r.top, w: r.width, h: r.height };
-    }
+    const r = this.layoutRect(element) || (element && element.getBoundingClientRect ? element.getBoundingClientRect() : null);
+    if (r && r.width > 8 && r.height > 8) return { x: r.left, y: r.top, w: r.width, h: r.height };
     return fallback || { x: 0, y: 0, w: this.engine.cssWidth, h: this.engine.cssHeight };
   }
   uvRect(rect) { const W = this.engine.cssWidth; const H = this.engine.cssHeight; return [rect.x / W, 1 - (rect.y + rect.h) / H, (rect.x + rect.w) / W, 1 - rect.y / H]; }
@@ -438,34 +503,45 @@ export class Stage {
     return { voted: clamp(total / crowd), fractions: fractions.map(f => f + 0.0001), colors: BALLOT_COLORS[this.theme] };
   }
 
+  sabotageName(id) { const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id); return sab ? sab.name : String(id); }
+  // the icon as a block sculpture made from the page's own artwork (the toy model while the artwork is still being read)
+  makeEmblem(id) { return this.voxel.build(id) || buildIcon(id, this.theme); }
+
   announceEffect(effect, view) {
     const sab = window.SabotageStack && window.SabotageStack.sabotages.find(s => s.id === effect.id); if (!sab) return;
-    const name = sab.name.toUpperCase(); const size = clamp(300 / (name.length * 0.7), 15, 36);
-    const top = this.rig.focusY;
-    this.popups.show({ text: name, position: [0, top + 150, 110], size, depth: 10, color: this.palette.cream, glow: 0.6, style: 'slam', life: 1.9, tilt: 0.06 });
+    const name = sab.name.toUpperCase(); const top = this.rig.focusY;
+    // the name slams in above the tower in blocks, holds, and shatters
+    const cap = clamp(330 / (name.length * 0.62), 24, 50);
+    this.bricks.show({ key: 'effect', text: name, position: [0, top + 150, 110], cap, rows: 9, style: 'slam', life: effect.id === 'spotlight' ? (this.reduced ? 0.9 : 1.2) : 1.9, tilt: 0.04, reduced: this.reduced });
     this.removeBadge();
-    const icon = buildIcon(effect.id, this.theme); icon.scale.multiplyScalar(1.5); icon.position.set(-128, top + 168, 120); this.scene.add(icon);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(30, 33, 48, 1, 0, TAU), new THREE.MeshBasicMaterial({ color: new THREE.Color(this.palette.amber).multiplyScalar(1.6), transparent: true, opacity: 0.9, side: THREE.DoubleSide, toneMapped: false, depthWrite: false }));
+    // the emblem floats beside the tower, outside the lane, while the sabotage is on: the block sculpture of its icon in a medallion
+    // (a disc in the theme's panel colour, so the artwork reads against any world) with a ring that runs down as the sabotage does
+    const icon = this.makeEmblem(effect.id); icon.scale.multiplyScalar(EMBLEM_SCALE); icon.position.set(EMBLEM_X, top + 30, 70); this.scene.add(icon);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(30, 33, 48, 1, 0, TAU), new THREE.MeshBasicMaterial({ color: new THREE.Color(this.palette.amber).multiplyScalar(1.6), transparent: true, opacity: 0.95, side: THREE.DoubleSide, toneMapped: false, depthWrite: false }));
     ring.position.copy(icon.position); ring.position.z -= 4; this.scene.add(ring);
-    this.badge = { icon, ring, born: this.time, progress: 1 };
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(30, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color(this.theme === 'paper' ? this.palette.cream : this.palette.ink), transparent: true, opacity: this.theme === 'paper' ? 0.84 : 0.9, fog: false, toneMapped: false, depthWrite: false }));
+    disc.position.copy(icon.position); disc.position.z -= 9; this.scene.add(disc);
+    this.badge = { icon, ring, disc, born: this.time, progress: 1 };
     this.fx.pulses.pulse({ pos: [0, top + 60, 80], color: this.palette.amber, radius: 220, life: 0.7, from: 0.2, strength: 1, vertical: true });
     this.world.crowd.cheer(0.6); this.world.crowd.chaos(1);
   }
-  removeBadge() { if (!this.badge) return; this.scene.remove(this.badge.icon, this.badge.ring); this.badge.icon.userData.dispose(); this.badge.ring.geometry.dispose(); this.badge.ring.material.dispose(); this.badge = null; }
+  removeBadge() { if (!this.badge) return; const b = this.badge; this.scene.remove(b.icon, b.ring, b.disc); b.icon.userData.dispose(); b.ring.geometry.dispose(); b.ring.material.dispose(); b.disc.geometry.dispose(); b.disc.material.dispose(); this.badge = null; }
   updateBadge(effect, dt, focusY) {
     if (!this.badge) return; const b = this.badge;
     if (!effect) { this.removeBadge(); return; }
-    const age = this.time - b.born; const pop = easeOutCubic(clamp(age / 0.35));
-    b.icon.scale.setScalar(1.5 * pop * (1 + Math.sin(age * 2) * 0.03)); b.icon.rotation.y = age * 1.1; b.icon.position.set(-128, focusY + 168 + Math.sin(age * 2.2) * 3, 120);
+    const age = this.time - b.born; const pop = easeOutBack(clamp(age / 0.45), 1.4); b.pop = pop * 1.5;
+    const calm = this.reduced; // Reduced Motion: it appears and stays, in a three-quarter view, with no turn, bob or pulse
+    b.icon.scale.setScalar(Math.max(0.0001, EMBLEM_SCALE * pop * (calm ? 1 : 1 + Math.sin(age * 2) * 0.03))); b.icon.rotation.y = calm ? 0.3 : dwellSpin(age, 1.0); b.icon.rotation.x = 0.12; b.icon.position.set(EMBLEM_X, focusY + 30 + (calm ? 0 : Math.sin(age * 2.2) * 4), 70);
     const duration = Number(effect.duration) || (Number(effect.elapsed) + Number(effect.remaining)) || 5;
     const progress = clamp(Number.isFinite(Number(effect.remaining)) && effect.remaining > 0 ? effect.remaining / duration : 1, 0, 1);
     if (Math.abs(progress - b.progress) > 0.015) { b.progress = progress; b.ring.geometry.dispose(); b.ring.geometry = new THREE.RingGeometry(30, 33, 48, 1, Math.PI / 2, Math.max(0.001, TAU * progress)); }
-    b.ring.position.set(b.icon.position.x, b.icon.position.y, 116); b.ring.scale.setScalar(pop);
+    b.ring.position.set(b.icon.position.x, b.icon.position.y, 64); b.ring.scale.setScalar(Math.max(0.0001, pop * 1.5));
+    b.disc.position.set(b.icon.position.x, b.icon.position.y, 61); b.disc.scale.setScalar(Math.max(0.0001, pop * 1.5));
   }
 
   // -------------------------------------------------------------------------------------------------------------------
   update_play(dt, view) {
-    const g = view.game; const tower = this.getTower('play'); const hero = this.towers.hero; if (hero) hero.root.visible = false;
+    const g = view.game; const tower = this.getTower('play');
     tower.root.visible = true;
     if (!g) { this.placeIdle(dt, view); return; }
     const state = this.towerStateFromGame(view); this.lastPlayKey = state.id;
@@ -492,12 +568,21 @@ export class Stage {
     let shake = [0, this.rig.kick.step(dt), 0];
     if (this.rig.shakeAmp > 0.01 && !this.reduced) { this.rig.shakeT += dt; this.rig.shakeAmp *= Math.exp(-dt * 2.8); shake = [shake[0] + Math.sin(this.rig.shakeT * 61) * this.rig.shakeAmp, shake[1] + Math.cos(this.rig.shakeT * 53) * this.rig.shakeAmp * 0.7, 0]; }
     if (effectId === 'earthquake' && !this.reduced && g.activeEffect) { const t = view.Core.earthquakeOffset(g.activeEffect.elapsed, g.activeEffect.remaining, false); shake[0] += t.x * 0.55; shake[1] -= t.y * 0.55; }
-    const roll = effectId === 'drunk' && !this.reduced ? Math.sin(this.time * 2.1) * 0.035 + Math.sin(this.time * 3.7) * 0.018 : 0;
+    let roll = effectId === 'drunk' && !this.reduced ? Math.sin(this.time * 2.1) * 0.035 + Math.sin(this.time * 3.7) * 0.018 : 0;
+    // The Pisa Tilt rolls the camera: the whole world leans, up to 16 degrees (the same angle the game's own view takes)
+    if (effectId === 'pisa' && g.activeEffect && view.Core.pisaAngle) roll = view.Core.pisaAngle(g.activeEffect.elapsed, g.activeEffect.remaining, g.activeEffect.tiltDirection, this.reduced);
     this.placeCamera({ anchor, screen, rect, worldW: BOARD_W, worldH: 520, yaw: this.rig.yaw, pitch: this.rig.pitch, zoom: this.rig.zoom, roll, shake });
     // the plinth shakes with the tower so nothing floats
     this.world.plinth.position.set(tower.shake.x, tower.shake.y, 0);
     this.ruler.setHeight(count); this.ruler.group.position.y = 0;
     const ballot = this.ballotFrom(view); if (ballot) this.world.crowd.setBallot(ballot); else this.world.crowd.clearBallot();
+    // your height stands beside the lane as block digits (a phone's screen ends at the lane, so there they are simply off it)
+    const placed = Math.max(0, count - 1);
+    if (this.heightShown !== placed) { this.heightShown = placed; this.bricks.show({ key: 'height', text: String(placed), position: [DIGITS_X, 0, 62], cap: 92, colors: ['#2F8478'], rows: 14, style: 'hold', baseline: true, shatterOld: false, reduced: this.reduced }); if (placed > 0 && !this.reduced) this.fx.dust([DIGITS_X, 6, 70], 4); }
+    // while chat votes, the three candidates hover over the tower and grow with their share
+    { const vote = ballot && g.vote; const remote = Boolean(view.mp.active && g.multiplayer);
+      const mine = vote && !remote && vote.votes && vote.votes.has && vote.votes.has('you') ? vote.options.indexOf(vote.votes.get('you')) : -1;
+      this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70) }); }
     // post: each sabotage has a feel
     if (!this.reduced) {
       if (effectId === 'slowmo') { this.post.desat = 0.5; this.post.tint = [0.9, 0.97, 1.12]; }
@@ -505,34 +590,37 @@ export class Stage {
       if (effectId === 'drunk') this.post.wobble = 1;
       if (effectId === 'earthquake') this.post.ca = 0.0022;
     }
-    if (tower.rig.spot && effect) { const spot = this.spotPost(tower, tower.rig.spot, rect); if (spot) this.post.spots.push(spot); }
+    if (tower.rig.spot && effect) { // Spotlight: the dark falls over the whole view (no box), one lit circle and the emblem's own light stay
+      const full = { x: 0, y: 0, w: this.engine.cssWidth, h: this.engine.cssHeight }; const open = this.spotOpen(effect);
+      const spot = this.spotPost(tower, tower.rig.spot, full, open); if (spot) this.post.spots.push(spot);
+      if (open < 0.999) { const lamp = this.emblemLight(); if (lamp) this.post.spots.push(lamp); }
+    }
     const mover = g.moving; const live = mover && Number.isFinite(mover.left) && Number.isFinite(mover.width);
     this.watch(live ? mover.left + mover.width / 2 - BOARD_W / 2 : topX, live ? levelY(mover.level || count) : topY, 0, 1); // the crowd follows the moving block
     this.updateWorld(dt, this.rig.focusY, altitude, view, tower);
+    // The sun's wide bloom would wash the candidates out while chat votes (the Sunset sun sits right behind them): the haze eases off
+    // for the vote and comes back after it.
+    this.voteCalm = damp(this.voteCalm || 0, this.candidates.cards.length ? 1 : 0, 4, dt);
+    if (this.theme === 'sunset' && this.engine.bloomPass.enabled) this.post.bloom = this.palette.bloom * (1 - 0.82 * this.voteCalm);
     this.post.tiltCenter = 0.5; this.post.blur = 5;
   }
 
-  spotPost(tower, spot, rect) {
+  // The circle of light for a spot, in the post pass's terms. `open` (0..1) is an iris: wide open it lights the whole rectangle, and closing
+  // it brings the dark in from the edges down to the beam itself.
+  spotPost(tower, spot, rect, open = 0) {
     const world = tower.root.localToWorld(new THREE.Vector3(spot.x, spot.y, spot.z)); const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).multiplyScalar(spot.radius * tower.root.scale.x);
     const a = world.clone().project(this.camera); const b = world.clone().add(right).project(this.camera);
-    const aspect = this.camera.aspect; const r = Math.abs((b.x - a.x) * 0.5) * aspect;
-    return { x: a.x * 0.5 + 0.5, y: a.y * 0.5 + 0.5, r, rect: this.uvRect(rect) };
-  }
-
-  // The screen rectangle the demo tower fills: its board, from the floor to a little above the stack. The Spotlight sabotage hides
-  // exactly this in the home scene (not a fixed column that blacked out the headline), so the veil follows the tower however far
-  // the view has been turned.
-  heroFieldRect(tower, blocks) {
-    const W = this.engine.cssWidth; const H = this.engine.cssHeight; const v = this.fieldCorner || (this.fieldCorner = new THREE.Vector3());
-    const top = levelY(blocks + 1) + 24; let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
-    for (const x of [-BOARD_W / 2 - 12, BOARD_W / 2 + 12]) for (const y of [-8, top]) for (const z of [-50, 50]) {
-      tower.root.localToWorld(v.set(x, y, z)); v.project(this.camera);
-      const sx = (v.x * 0.5 + 0.5) * W; const sy = (0.5 - v.y * 0.5) * H;
-      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    const aspect = this.camera.aspect; let r = Math.abs((b.x - a.x) * 0.5) * aspect; const uv = this.uvRect(rect); const x = a.x * 0.5 + 0.5; const y = a.y * 0.5 + 0.5;
+    if (open > 0.001) {
+      const far = Math.max(...[[uv[0], uv[1]], [uv[2], uv[1]], [uv[0], uv[3]], [uv[2], uv[3]]].map(([cx, cy]) => Math.hypot((cx - x) * aspect, cy - y)));
+      r += (far * 1.05 - r) * open;
     }
-    x0 = clamp(x0, 0, W); x1 = clamp(x1, 0, W); y0 = clamp(y0, 0, H); y1 = clamp(y1, 0, H);
-    return { x: x0, y: y0, w: Math.max(8, x1 - x0), h: Math.max(8, y1 - y0) };
+    return { x, y, r, rect: uv };
   }
+  // how far the veil of a running Spotlight is still open: the name slams in first, then the dark closes in (Reduced Motion: it just falls)
+  spotOpen(effect) { const t = Number(effect && effect.elapsed) || 0; if (this.reduced) return t < 0.9 ? 1 : 0; return 1 - easeOutCubic(clamp((t - 0.8) / 0.5)); }
+  // the winning sabotage's emblem keeps a pool of light of its own, so it is still seen under its own veil
+  emblemLight() { const b = this.badge; if (!b) return null; return this.spotWorld(b.disc.position, 52 * Math.max(0.05, b.pop || 1), [0, 0, 1, 1]); }
 
   updateWorld(dt, focusY, altitude, view, tower) {
     this.world.update({ time: this.time, dt, focusY, altitude, dim: 1, camera: this.camera, shadowFocus: { x: 0, y: focusY }, fogDist: this.camDist || 1000 });
@@ -546,40 +634,48 @@ export class Stage {
 
   // -------------------------------------------------------------------------------------------------------------------
   update_hero(dt, view) {
-    const W = this.engine.cssWidth; const H = this.engine.cssHeight; const Core = view.Core;
+    const W = this.engine.cssWidth; const H = this.engine.cssHeight; const reduced = this.reduced;
     const copy = document.querySelector('#title-screen .home-copy'); const bar = document.querySelector('header.topbar');
-    const barBottom = bar ? bar.getBoundingClientRect().bottom : 0; const cr = copy ? copy.getBoundingClientRect() : { left: 0, right: 0, top: H, width: 0 };
+    const barBottom = bar ? bar.getBoundingClientRect().bottom : 0; const cr = (copy && this.layoutRect(copy)) || { left: 0, right: 0, top: H, width: 0 };
     let rect;
     if (W >= 900 && cr.right < W * 0.66) rect = { x: cr.right + 12, y: barBottom + 6, w: W - cr.right - 28, h: H - barBottom - 20 };
     else rect = { x: 6, y: barBottom + 2, w: W - 12, h: Math.max(180, Math.min(cr.top - barBottom - 6, H * 0.62)) };
-    const layout = rect.w / rect.h > 1.75 ? 'wide' : 'tall';
-    if (layout !== this.heroLayout) { this.heroLayout = layout; this.title.build(layout); }
-    const hero = this.getTower('hero'); hero.root.visible = true;
-    if (this.towers.play) this.towers.play.root.visible = false;
-    const director = this.director; if (this.reduced && !director.reducedSet) { director.reducedSet = true; }
-    director.update(dt * this.timeScale, this.reduced);
-    const state = director.state(Core, this.reduced); hero.sync(state, dt, this.time);
-    const effect = state.effect; const key = effect ? effect.id : ''; if (key !== this.lastEffectKey) { this.lastEffectKey = key; }
-    const drop = director.lastDrop; if (drop && drop.n !== this.toySeen) { this.toySeen = drop.n; if (drop.manual) this.toyCallout(drop); }
-    const reduced = this.reduced; const p = this.pointer; const o = this.orbit; const hover = this.hover;
+    const title = this.title; const director = this.director; const p = this.pointer; const o = this.orbit; const hover = this.hover;
+    // ---- the title: built (it rains from the sky) the first time the home scene is shown, and again after a theme change
+    if (!title.titleBuilt) {
+      title.titleBuilt = true; this.swoop = !this.heroSeen && !reduced; title.build({ speed: this.heroSeen ? 2.2 : 1, instant: reduced }); this.heroSeen = true; director.timer = 0;
+    }
+    if (reduced && !title.complete) title.finish();
+    const Lb = title.layout;
+    title.floor = (x, z) => this.floorAt(x, z);
+    const running = title.complete && !title.exploded;
+    if (running) { director.setReduced(reduced); director.update(dt * this.timeScale); } else if (!title.complete) director.timer = 0;
+    const effect = running ? director.effect : null;
+    const pose = effect ? titlePose(effect.id, effect.elapsed, effect.duration, { reduced, dir: effect.dir }) : null;
+    // the menu waits for the title the first time; any press or key rushes the build, and releases it
+    if (this.holdMenu && (reduced || title.age >= title.introDuration * 0.8)) this.releaseMenu();
 
-    // ---- camera: the default composition (headline above, demo tower and ring below), then wherever the visitor has turned it
-    const b = this.title.bounds; const arsenalHalf = 420; const w = Math.max(b.x1 - b.x0, arsenalHalf * 2 + 40); const top = b.y1; const bottom = -175;
-    const worldW = w; const worldH = top - bottom; const cx = 0; const cy = (top + bottom) / 2;
-    const intro = reduced ? 1 : easeInOutCubic(clamp(this.modeTime / 3.2));
-    const floorPitch = Math.asin(clamp((10 - cy) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
+    // ---- camera: the default composition (the stack above, the ring of sabotages round its foot), then wherever the visitor has turned it
+    const b = title.bounds; const ringHalf = this.arsenal.rx + 44; const worldW = Math.max(b.x1 - b.x0, ringHalf * 2) * 1.04;
+    const topY = b.y1 + 96; const bottomY = -70; const worldH = topY - bottomY; const cyBase = (topY + bottomY) / 2 - 24;
+    // the swoop follows the build of the title itself, so rushing the build never makes the camera jump
+    const intro = reduced || !this.swoop ? 1 : easeInOutCubic(clamp(title.age / (title.introDuration + 0.2)));
+    const floorPitch = Math.asin(clamp((10 - cyBase) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
     o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt);
     if (!reduced && o.rotated && !this.drag && !o.moving) { this.idleFor += dt; if (this.idleFor > 30) { o.reset(2.4); this.idleFor = 0; } } else if (this.drag || o.moving) this.idleFor = 0;
     // the pointer's own parallax steps aside while the scene is being turned, and comes back as it settles
     this.dragBlend = damp(this.dragBlend, this.drag || o.moving ? 1 : 0, this.drag ? 14 : 2.2, dt);
     const [px, py] = this.parallax(1.4); const par = 1 - this.dragBlend;
-    const yaw = (1 - intro) * -0.22 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + o.yaw;
-    const pitch = lerp(-0.12, 0.085, intro) + py * par + o.pitch;
-    const zoom = lerp(0.8, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy);
-    const shake = [0, this.rig.kick.step(dt), 0];
-    const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(cx, cy, -20);
-    this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: worldW * 1.04, worldH: worldH * 1.04, yaw, pitch, zoom, shake });
+    const cam = pose ? pose.cam : null; const focus = cam ? cam.focus : 0;
+    const yaw = (1 - intro) * -0.5 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + o.yaw;
+    const pitch = lerp(0.74, 0.085, intro) + py * par + o.pitch;
+    const zoom = lerp(0.46, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy) * (cam ? cam.zoom : 1);
+    const shakeAmp = cam && !reduced ? cam.shake * 8 : 0;
+    const shake = [shakeAmp ? Math.sin(this.time * 61) * shakeAmp : 0, this.rig.kick.step(dt) + (shakeAmp ? Math.cos(this.time * 53) * shakeAmp * 0.7 : 0), 0];
+    const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(lerp(0, Lb.topOffsetX, focus), lerp(cyBase, title.topCenterY, focus), 0);
+    this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h * 0.5 }, rect, worldW, worldH, yaw, pitch, zoom, roll: cam ? cam.roll : 0, shake });
     this.world.setViewYaw(o.yaw); this.popups.faceYaw = yaw;
+    title.toCamera.copy(this.camera.position).sub(tmpTitle.set(0, 150, 0)).normalize();
 
     // ---- the pointer in the scene
     const onScene = p.inside && !p.overUi && !p.touch; // anywhere on the bare page: the grab cursor, the ring's icons
@@ -588,36 +684,92 @@ export class Stage {
     let idx = -1;
     if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.arsenal.pick(this.raycaster); }
     if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx, yaw); } else if (idx >= 0) this.showHoverLabel(idx, yaw, true);
-    const overTower = onScene && !this.drag && idx < 0 && this.overTower(p.lastX, p.lastY);
-    this.setCursor(this.drag ? 'grabbing' : idx >= 0 || overTower ? 'pointer' : onScene ? 'grab' : '');
+    const overTitle = onScene && !this.drag && idx < 0 && title.complete && this.overTitle(p.lastX, p.lastY);
+    this.setCursor(this.drag ? 'grabbing' : idx >= 0 || overTitle ? 'pointer' : onScene ? 'grab' : '');
     hover.update(dt, { point: frame ? frame.point : null, speed: p.speed, blocked: Boolean(this.drag), reduced });
     this.hoverLife(dt, frame, anchor, yaw, rect);
-    { // the crowd's eyes: the demo's moving block, or the pointer once it is over the scene
-      const mv = director.moving; const e = hover.energy; const bx = mv ? mv.left + mv.width / 2 - BOARD_W / 2 : 0; const by = mv ? levelY(mv.level) : 150;
-      this.watch(lerp(bx, hover.x, e), lerp(by, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
+    { // the crowd's eyes: the pointer once it is over the scene, otherwise the title, where the sabotages land
+      const e = hover.energy; const sweep = Math.sin(this.time * 0.5) * (b.x1 - b.x0) * 0.3;
+      this.watch(lerp(sweep, hover.x, e), lerp(title.topCenterY, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
     }
     const pointer = this.drag ? null : frame;
-    this.title.update(dt, this.time, { pointer, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw });
-    this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy });
-    // the demo's chat
-    const ballot = director.ballot; if (ballot) this.world.crowd.setBallot({ voted: ballot.voted, fractions: ballot.fractions, colors: BALLOT_COLORS[this.theme] }); else this.world.crowd.clearBallot();
-    if (effect && effect.id !== this.heroEffect) { this.heroEffect = effect.id; this.world.crowd.cheer(0.8); this.world.crowd.chaos(0.8); this.heroEffectCallout(effect.id, state.blocks.length); } else if (!effect) this.heroEffect = '';
+    title.update(dt, this.time, { pointer, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw, effect, floor: title.floor, toCamera: title.toCamera });
+    this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy, away: title.exploded ? 1 : 0 });
+    this.titleProps.update(pose, { time: this.time, layout: Lb, gateX: title.gateX, topMid: title.topCenterY, reduced });
+    for (const ev of title.events.splice(0)) this.onTitleEvent(ev);
+
+    // ---- the demo's chat
+    const ballot = running ? director.ballot : null; if (ballot) this.world.crowd.setBallot({ voted: ballot.voted, fractions: ballot.fractions, colors: BALLOT_COLORS[this.theme] }); else this.world.crowd.clearBallot();
+    if (effect && effect.n !== this.heroEffectN) { this.heroEffectN = effect.n; this.world.crowd.cheer(0.8); this.world.crowd.chaos(0.8); this.showCaption(effect.id); if (!reduced) title.wave(0, 1500); }
+    else if (!effect && this.captionKey) this.hideCaption();
+    this.placeCaption(rect);
     this.ruler.group.visible = false;
     if (this.hud) {
       this.hud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.hud.setRotated(o.rotated);
       this.hintAge += dt; if (this.hintAge > 10) this.hud.fade(); // the hint is only there to be noticed: it steps aside by itself (until the first drag, it comes back next visit)
     }
-    this.world.plinth.position.set(hero.shake.x, hero.shake.y, 0);
-    const altitude = 0.0;
-    this.updateWorld(dt, 260, altitude, view, hero);
-    const id = effect ? effect.id : '';
-    if (!reduced) { if (id === 'slowmo') { this.post.desat = 0.35; this.post.tint = [0.92, 0.98, 1.08]; } if (id === 'turbo') this.post.zoomBlur = 0.25; if (id === 'drunk') this.post.wobble = 0.6; }
-    this.toyRect = this.heroFieldRect(hero, (state.blocks || []).length); // where the tower is on the screen: the click target, and the Spotlight's veil
-    if (hero.rig.spot && effect) { const sp = this.spotPost(hero, hero.rig.spot, this.toyRect); if (sp) this.post.spots.push(sp); }
+    this.world.plinth.position.set(0, 0, 0);
+    this.updateWorld(dt, 190, 0, view, null);
+    if (pose && !reduced) {
+      const q = pose.post; if (q.zoomBlur) this.post.zoomBlur = q.zoomBlur; if (q.wobble) this.post.wobble = q.wobble; if (q.desat) this.post.desat = q.desat; if (q.tint) this.post.tint = q.tint; if (q.ca) this.post.ca = (this.post.ca || 0) + q.ca;
+    } else if (pose && pose.post.tint) { this.post.tint = pose.post.tint; }
+    // Spotlight: a dark veil comes down over the whole scene, leaving one lit circle that wanders across the title
+    if (pose && pose.veil > 0.01) {
+      const sweepX = pose.spotSweep * (b.x1 - b.x0); const radius = (b.x1 - b.x0) * 0.155;
+      const sp = this.spotWorld(tmpTitle.set(sweepX, title.topCenterY * 0.78, 30), radius * (1 + 4.5 * (1 - easeOutCubic(pose.veil))), [0, 0, 1, 1]); if (sp) this.post.spots.push(sp);
+    }
     // the focus band of the tilt-shift follows the pointer, and the glow swells a little, while it is over the scene
     this.post.tiltCenter = lerp(0.55, clamp((p.ndc.y + 1) / 2, 0.2, 0.85), reduced ? 0 : 0.8 * hover.energy); this.post.blur = 6;
     if (this.engine.bloomPass.enabled) this.post.bloom = this.palette.bloom * (1 + 0.3 * hover.energy);
     this.post.fade = 0;
+  }
+
+  // ---- helpers for the home scene
+  floorAt(x, z) { const s = this.world.plinth.scale; const rx = 250 * s.x; const rz = 250 * s.z; return (x * x) / (rx * rx) + (z * z) / (rz * rz) < 1 ? 0 : -64; }
+  // is a screen point over the title? (its bounding box, projected)
+  overTitle(x, y) {
+    const r = this.titleRect(); return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
+  titleRect() {
+    const W = this.engine.cssWidth; const H = this.engine.cssHeight; const b = this.title.bounds; const v = this.fieldCorner || (this.fieldCorner = new THREE.Vector3());
+    let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const x of [b.x0, b.x1]) for (const y of [b.y0, b.y1]) for (const z of [-60, 60]) {
+      v.set(x, y, z).project(this.camera); const sx = (v.x * 0.5 + 0.5) * W; const sy = (0.5 - v.y * 0.5) * H;
+      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    }
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+  // a circle of light for the spotlight veil, from a world point and a world radius
+  spotWorld(point, radius, rect) {
+    const a = this.spotA || (this.spotA = new THREE.Vector3()); const c = this.spotB || (this.spotB = new THREE.Vector3());
+    a.copy(point).project(this.camera); c.setFromMatrixColumn(this.camera.matrixWorld, 0).multiplyScalar(radius).add(point).project(this.camera);
+    return { x: a.x * 0.5 + 0.5, y: a.y * 0.5 + 0.5, r: Math.abs((c.x - a.x) * 0.5) * this.camera.aspect, rect };
+  }
+  releaseMenu() { if (!this.holdMenu) return; this.holdMenu = false; document.documentElement.removeAttribute('data-intro'); }
+  // thuds from the title (a slab landing): the stage answers with a kick, a ring of dust and a cheer
+  onTitleEvent(ev) {
+    if (ev.type !== 'thud') return;
+    this.rig.kick.velocity -= 60 * ev.power; if (!this.reduced) this.flash = Math.max(this.flash, 0.04 * ev.power);
+    const y = ev.tier === 0 ? this.title.layout.bottomTop : 4;
+    this.fx.pulses.pulse({ pos: [0, y, 40], color: this.palette.amber, radius: ev.tier === 0 ? 330 : 240, life: 0.8, from: 0.2, strength: 1.2 });
+    this.fx.dust([-this.title.layout.slabTW * 0.3, y, 50], 6); this.fx.dust([this.title.layout.slabTW * 0.3, y, 50], 6); this.world.crowd.cheer(ev.tier === 0 ? 1.2 : 0.6);
+  }
+  // "CHAT VOTED: EARTHQUAKE": a pill under the scene while a sabotage is on the title
+  ensureCaption() {
+    if (this.caption) return this.caption;
+    const host = document.getElementById('title-screen'); if (!host) return null;
+    const el = document.createElement('div'); el.className = 'chat-caption'; el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<svg class="chat-caption-icon" viewBox="0 0 32 32" focusable="false"><use href="#sabotage-symbol-empty"></use></svg><span class="chat-caption-text"></span>';
+    host.appendChild(el); this.caption = { el, use: el.querySelector('use'), text: el.querySelector('.chat-caption-text'), x: NaN, y: NaN }; return this.caption;
+  }
+  showCaption(id) {
+    const c = this.ensureCaption(); if (!c) return; const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id);
+    c.use.setAttribute('href', `#sabotage-symbol-${id}`); c.text.textContent = captionFor(sab ? sab.name : id); this.captionKey = id; c.el.classList.add('is-on');
+  }
+  hideCaption() { this.captionKey = ''; if (this.caption) this.caption.el.classList.remove('is-on'); }
+  placeCaption(rect) {
+    const c = this.caption; if (!c) return; const x = Math.round(rect.x + rect.w / 2); const y = Math.round(rect.y + rect.h - 34);
+    if (c.x !== x || c.y !== y) { c.x = x; c.y = y; c.el.style.left = `${x}px`; c.el.style.top = `${y}px`; }
   }
 
   // Everything that makes the home scene answer a pointer resting on it (hover.js says how much): a warm light that follows it,
@@ -745,7 +897,7 @@ export class Stage {
     this.resultsT = (this.resultsT || 0) + dt;
     const frame = document.querySelector('#solo-result-layout .results-frame'); const rect = this.rectOf(frame, this.rectOf(document.getElementById('results-canvas')));
     const standing = start != null ? start : blocks.length; const topY = standing * 22 + 40;
-    const worldH = Math.max(520, topY + 220 + (data.newBest ? 100 : 0)); const focusY = worldH / 2 - 50; this.rig.focusY = damp(this.rig.focusY, focusY, 3, dt);
+    const worldH = Math.max(520, topY + 230 + (data.newBest ? 130 : 0)); const focusY = worldH / 2 - 50; this.rig.focusY = damp(this.rig.focusY, focusY, 3, dt);
     const reveal = this.reduced ? 1 : easeInOutCubic(clamp(this.resultsT / 1.8));
     // the sculpture can be walked all the way round: hold left or right and drag (same controller and rules as the home scene)
     const reduced = this.reduced; const o = this.orbit; const p = this.pointer;
@@ -759,15 +911,15 @@ export class Stage {
     this.setCursor(this.drag ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
     this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) });
     // the height, as a monument
-    if (!this.popups.items.find(i => i.key === 'height') && this.resultsT > 0.4) {
-      this.popups.show({ key: 'height', text: String(data.height), position: [0, standing * 22 + 92, 80], size: 96, depth: 30, color: this.palette.amber, glow: 0.9, style: 'hold', life: 1 });
-      if (data.newBest) this.popups.show({ key: 'best', text: 'NEW BEST', position: [0, standing * 22 + 168, 80], size: 22, depth: 8, color: this.palette.vermilion, glow: 1, style: 'hold', life: 1, tilt: -0.05 });
+    if (!this.scoreShown && this.resultsT > 0.4) {
+      this.scoreShown = true; this.bricks.show({ key: 'score', text: String(data.height), position: [0, standing * 22 + 52, 80], cap: 112, colors: ['#E3A33B'], rows: 15, style: 'hold', baseline: true, reduced: this.reduced });
+      if (data.newBest) this.popups.show({ key: 'best', text: 'NEW BEST', position: [0, standing * 22 + 202, 80], size: 22, depth: 8, color: this.palette.vermilion, glow: 1, style: 'hold', life: 1, tilt: -0.05 });
       if (!this.reduced && (data.newBest || data.height >= 15)) this.fx.confetti.burst({ pos: [0, standing * 22 + 140, 40], count: 130, speed: 360, colors: this.confettiColors(), size: 7.5, life: 4.2, cone: 1.4 });
       this.world.crowd.cheer(data.newBest ? 2.2 : 1);
     }
     // a new session best is crowned: a gold crown pops in above the sculpture, turns, bobs and throws off gold
     if (data.newBest && this.resultsT > 0.5) {
-      const pose = crownPose(this.resultsT - 0.55, this.time, reduced); const y = standing * 22 + 232 + pose.bob; const crown = this.crown;
+      const pose = crownPose(this.resultsT - 0.55, this.time, reduced); const y = standing * 22 + 268 + pose.bob; const crown = this.crown;
       crown.visible = pose.scale > 0.002; crown.position.set(0, y, 80); crown.scale.setScalar(1.75 * Math.max(0.001, pose.scale)); crown.rotation.set(pose.tilt, pose.spin, 0);
       if (!reduced && crown.visible && this.time - this.lastCrownSpark > 0.3) {
         this.lastCrownSpark = this.time; const a = Math.random() * TAU;
@@ -882,6 +1034,8 @@ export class Stage {
     for (const [name, fn] of [['pointermove', this.onPointerMove], ['pointerdown', this.onPointerDown], ['pointerup', this.onPointerUp], ['pointercancel', this.onPointerCancel], ['blur', this.onBlur], ['contextmenu', this.onContextMenu], ['dblclick', this.onDoubleClick], ['keydown', this.onKeyDown]]) window.removeEventListener(name, fn);
     document.documentElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.setCursor(''); this.endDrag(true); if (this.hud) { this.hud.dispose(); this.hud = null; }
+    if (this.bricks) this.bricks.destroy(); if (this.voxel) this.voxel.dispose(); if (this.candidates) this.candidates.dispose();
+    this.releaseMenu(); if (this.caption) { this.caption.el.remove(); this.caption = null; }
     document.documentElement.classList.remove('orbiting');
     this.scene.remove(this.cursorLight); this.cursorLight.dispose();
     if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }

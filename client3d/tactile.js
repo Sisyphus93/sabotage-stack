@@ -1,10 +1,11 @@
 // The tactile UI's behaviour (the keycap look itself is CSS, under html.has-3d):
 //  * a key on the keyboard presses the key on the screen that is named after it: Space sinks the DROP bar, 1 / 2 / 3 sink the vote
 //    keys, for as long as the finger holds them down (the layer adds and removes .is-pressed; the page's own handling is untouched)
-//  * the frosted decks (the home copy, the lobby cards, the results card) tilt a couple of degrees towards the pointer while it is
-//    over them, like a pane hanging in the air, and settle flat again when it leaves.
+//  * the frosted decks (the menu, every side card, the results cards) tilt a couple of degrees towards the pointer while it is over
+//    them, like a pane hanging in the air, and settle back to their resting pose (turned slightly inward, see the CSS) when it leaves.
+//    The tilt is written to --tx / --ty (degrees) so it adds to that resting angle instead of replacing the card's transform.
 // Plain DOM, no three.js. Reduced Motion (the page's html[data-motion="reduced"]) and touch-first devices get no tilt at all.
-const DECKS = '.home-copy, #room-screen .side-card, .result-info, #results-screen .side-card';
+const DECKS = '.home-copy, .side-card, .result-info, .multiplayer-results, .preview-card';
 const VOTE_KEYS = { Digit1: 0, Numpad1: 0, Digit2: 1, Numpad2: 1, Digit3: 2, Numpad3: 2 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
@@ -29,13 +30,13 @@ export function installTactileUi({ doc = document, win = window, maxTilt = 2.2, 
 
   // ---- decks
   const tilt = { el: null, rx: 0, ry: 0, tx: 0, ty: 0, raf: 0 };
-  const flat = el => { if (el) { el.style.transform = ''; el.classList.remove('is-tilting'); } };
+  const flat = el => { if (el) { el.style.removeProperty('--tx'); el.style.removeProperty('--ty'); el.classList.remove('is-tilting'); } };
   const settle = () => {
     tilt.raf = 0; const el = tilt.el; if (!el) return;
     tilt.rx += (tilt.tx - tilt.rx) * 0.16; tilt.ry += (tilt.ty - tilt.ry) * 0.16;
     const home = tilt.tx === 0 && tilt.ty === 0 && Math.abs(tilt.rx) < 0.01 && Math.abs(tilt.ry) < 0.01;
     if (home) { tilt.rx = tilt.ry = 0; flat(el); tilt.el = null; return; }
-    el.style.transform = `perspective(1100px) rotateX(${tilt.rx.toFixed(3)}deg) rotateY(${tilt.ry.toFixed(3)}deg)`;
+    el.style.setProperty('--tx', tilt.rx.toFixed(3)); el.style.setProperty('--ty', tilt.ry.toFixed(3));
     tilt.raf = win.requestAnimationFrame(settle);
   };
   const wake = () => { if (!tilt.raf && tilt.el) tilt.raf = win.requestAnimationFrame(settle); };
