@@ -1,4 +1,4 @@
-// The home view's on-screen controls: the toy dock (Drop block / Trigger sabotage: the title screen is playable), a hint that
+// The home view's on-screen controls: the dock (Trigger sabotage: chat strikes the title on demand), a hint that
 // fades away for good after the first drag, and turn-left / reset / turn-right buttons for keyboards, touch screens and anyone
 // who prefers clicking. Plain DOM, no three.js.
 // The page owns every other element; this one is created by the layer, lives inside #title-screen (so it is hidden whenever
@@ -39,14 +39,14 @@ export function createOrbitHud({ doc = document, storage = null, touch = false, 
   const right = button('right', 'Turn the 3D scene right', () => onTurn(Math.PI / 4));
   const row = doc.createElement('div'); row.className = 'orbit-row'; row.append(hint, left, reset, right);
 
-  // The toy dock: two keycaps under the tower. Both work with the pointer and the keyboard (they are real buttons).
-  const dock = doc.createElement('div'); dock.className = 'toy-dock'; dock.setAttribute('role', 'group'); dock.setAttribute('aria-label', 'Play with the tower');
+  // The dock: one keycap under the title, for anyone without a hover (a phone) or who just wants chat to strike now. A real button.
+  const dock = doc.createElement('div'); dock.className = 'toy-dock'; dock.setAttribute('role', 'group'); dock.setAttribute('aria-label', 'Play with the title');
   const key = (kind, full, short, title) => {
-    const el = doc.createElement('button'); el.type = 'button'; el.className = kind === 'drop' ? 'button button-primary toy-key' : 'button toy-key'; el.dataset.toy = kind; el.title = title;
+    const el = doc.createElement('button'); el.type = 'button'; el.className = 'button toy-key'; el.dataset.toy = kind; el.title = title;
     el.innerHTML = `${ICON[kind]}<span class="toy-full">${full}</span><span class="toy-short">${short}</span>`;
     el.addEventListener('click', () => onToy(kind)); return el;
   };
-  dock.append(key('drop', 'Drop block', 'Drop', 'Drop the moving block (or click the tower)'), key('sabotage', 'Trigger sabotage', 'Sabotage', 'Call a random sabotage down on the tower'));
+  dock.append(key('sabotage', 'Trigger sabotage', 'Sabotage', 'Let chat sabotage the title right now'));
   if (withDock) root.append(dock, row); else root.append(row);
   host.appendChild(root);
 

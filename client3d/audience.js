@@ -65,6 +65,7 @@ export class Crowd {
     this.theme = theme; this.palette = palette; this.group = new THREE.Group(); this.centerY = 0; this.excite = 0; this.time = 0;
     // hovering the home scene: the crowd turns to watch the pointer and gets a little more excited (see setAttention)
     this.attention = { x: 0, z: 0, amount: 0, interest: 0 };
+    this.spread = 0; this.spreadGoal = 0; // how far the galleries stand back from the stage, each to its own side (the home title is wider than the play tower)
     this.ballotColors = BALLOT_COLORS[theme] || BALLOT_COLORS.paper;
     const random = rng(101);
     const slots = [];
@@ -152,6 +153,7 @@ export class Crowd {
   }
 
   setCenterY(y) { this.centerY = y; }
+  setSpread(distance, instant = false) { this.spreadGoal = distance; if (instant) this.spread = distance; }
 
   // voted: 0..1 share of the crowd that has raised a card; fractions: how that share splits across the 3 options.
   setBallot(ballot) {
@@ -195,7 +197,7 @@ export class Crowd {
   setAttention(x, z, amount, interest = 0) { const a = this.attention; a.x = x; a.z = z; a.amount = amount; a.interest = interest; }
 
   update(dt, time) {
-    this.time = time; this.excite = damp(this.excite, 0, 1.6, dt);
+    this.time = time; this.excite = damp(this.excite, 0, 1.6, dt); this.spread = damp(this.spread, this.spreadGoal, 3.2, dt); const spread = this.spread;
     this.frenzy = damp(this.frenzy, this.ballot ? 1 : 0, 3, dt); this.uproar = damp(this.uproar, 0, 0.8, dt);
     const fren = Math.min(1.4, this.frenzy + this.uproar); const uproar = this.uproar; const waves = this.waves;
     for (let k = waves.length - 1; k >= 0; k -= 1) if ((time - waves[k].t0) * waves[k].speed > EXTENT * 2 + waves[k].width + 200) waves.splice(k, 1);
@@ -203,13 +205,13 @@ export class Crowd {
     const d = this.dummy; const cy = this.centerY; const n = this.visible;
     const att = this.attention; const watch = att.amount > 0.004; const excite = this.excite + att.interest * 0.55 + this.frenzy * 0.5;
     for (let i = 0; i < n; i += 1) {
-      const slot = this.slots[i];
+      const slot = this.slots[i]; const px = slot.x + (slot.x < 0 ? -spread : spread);
       this.raise[i] = damp(this.raise[i], this.target[i], 7 + (this.seed[i] % 3), dt);
       const wrapY = cy + mod(slot.y - cy + WRAP / 2, WRAP) - WRAP / 2;
       const bob = Math.sin(time * this.speed[i] + this.seed[i]) * 1.4 * (1 + excite);
       let waveS = 0;
       for (let k = 0; k < waves.length; k += 1) {
-        const w = waves[k]; const phase = (time - w.t0) * w.speed - (w.dir > 0 ? slot.x + EXTENT : EXTENT - slot.x);
+        const w = waves[k]; const phase = (time - w.t0) * w.speed - (w.dir > 0 ? px + EXTENT : EXTENT - px);
         if (phase > 0 && phase < w.width) waveS = Math.max(waveS, Math.sin(Math.PI * phase / w.width));
       }
       const hop = Math.max(0, Math.sin(time * (7 + this.speed[i]) + this.seed[i] * 3)) * excite * 9 + waveS * 30 * slot.s;
@@ -217,17 +219,17 @@ export class Crowd {
       // Turning alone would hardly show on figures that are round, so the lean is what you see.
       let look = 0; let crane = 0; let towards = 0;
       if (watch) {
-        const dx = att.x - slot.x; const dz = att.z - slot.z; const bearing = Math.atan2(dx, dz);
+        const dx = att.x - px; const dz = att.z - slot.z; const bearing = Math.atan2(dx, dz);
         look = clamp(bearing, -0.75, 0.75) * att.amount; crane = att.amount * smoothstep(1900, 420, Math.hypot(dx, dz)); towards = bearing;
       }
       const turn = this.facing[i] * (1 - att.amount * 0.7) + look + Math.sin(time * 0.6 + this.seed[i]) * 0.12;
       const lean = crane * 0.24 * (0.8 + 0.2 * Math.sin(time * 2.1 + this.seed[i]));
-      d.position.set(slot.x, wrapY + bob + hop, slot.z);
+      d.position.set(px, wrapY + bob + hop, slot.z);
       d.rotation.set(lean * Math.cos(towards - turn), turn, this.lean[i] + Math.sin(time * 2 * this.speed[i] + this.seed[i]) * 0.03 * (1 + excite) - lean * Math.sin(towards - turn));
       d.scale.set(slot.s, slot.s * (1 + crane * 0.09 + waveS * 0.16), slot.s); d.updateMatrix(); this.figures.setMatrixAt(i, d.matrix);
       // the eyes ride on the head; each pupil is a loose ball on a spring, aimed at what the figure is looking at
       {
-        const hx = gaze.x - slot.x; const hz = gaze.z - slot.z; const hy = gaze.y - (wrapY + eye.y * slot.s); const away = Math.hypot(hx, hz) + 1;
+        const hx = gaze.x - px; const hz = gaze.z - slot.z; const hy = gaze.y - (wrapY + eye.y * slot.s); const away = Math.hypot(hx, hz) + 1;
         let tx = Math.sin(Math.atan2(hx, hz) - turn) * gaze.amount; let ty = clamp(hy / away * 1.6, -1, 1) * gaze.amount;
         if (uproar > 0.02) { const a = time * 15 + this.seed[i] * 3; tx += Math.cos(a) * uproar * 0.9; ty += Math.sin(a) * uproar * 0.9; }
         tx += Math.sin(time * (4 + this.speed[i]) + this.seed[i]) * 0.07 * (1 + excite); ty += Math.cos(time * (3 + this.speed[i]) + this.seed[i] * 2) * 0.05 * (1 + excite);
@@ -249,7 +251,7 @@ export class Crowd {
       else {
         const flail = Math.sin(time * (14 + this.speed[i] * 4) + this.seed[i] * 5);
         const lift = 44 * slot.s + r * 18 * slot.s + (Math.abs(flail) * 11 * fren + waveS * 16) * slot.s;
-        d.position.set(slot.x + (12 + flail * 6 * fren) * slot.s, wrapY + bob + hop + lift, slot.z + 8);
+        d.position.set(px + (12 + flail * 6 * fren) * slot.s, wrapY + bob + hop + lift, slot.z + 8);
         d.rotation.set(0, this.facing[i] * 0.4, Math.sin(time * 5 + this.seed[i]) * 0.1 + flail * (0.1 + 0.5 * fren));
         d.scale.setScalar(slot.s * (0.3 + 0.7 * r));
       }
@@ -260,7 +262,7 @@ export class Crowd {
       const items = mesh.userData.items;
       for (let i = 0; i < items.length; i += 1) {
         const s = items[i]; const wrapY = cy + mod(s.y - cy + WRAP / 2, WRAP) - WRAP / 2;
-        d.position.set(s.x, wrapY - 3, s.z); d.rotation.set(0, 0, 0); d.scale.setScalar(1); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+        d.position.set(s.x + (s.x < 0 ? -spread : spread), wrapY - 3, s.z); d.rotation.set(0, 0, 0); d.scale.setScalar(1); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
       }
       mesh.instanceMatrix.needsUpdate = true;
     }

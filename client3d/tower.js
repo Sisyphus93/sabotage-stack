@@ -301,7 +301,7 @@ export class Tower {
     let tx = 0; let ty = 0; let rot = 0;
     if (effect && helpers) {
       if (effect.id === 'earthquake') { const t = helpers.earthquakeOffset(effect.elapsed, effect.remaining, this.reduced); tx = t.x * 1.25; ty = -t.y * 1.25; }
-      if (effect.id === 'pisa') rot = -helpers.pisaAngle(effect.elapsed, effect.remaining, effect.tiltDirection, this.reduced);
+      // (The Pisa Tilt is the camera's: stage.js rolls the whole view by the game's own angle, so the tower itself stands straight.)
     }
     this.shake.set(tx, ty, rot);
     const top = this.topMesh();

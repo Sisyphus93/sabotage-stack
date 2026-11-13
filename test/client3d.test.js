@@ -37,10 +37,10 @@ describe('build gates', () => {
   test('the page loads the bundle after its own script and the layer is optional (defer, relative URL)', () => {
     assert.match(html, /<\/script>\s*<script src="public\/stack3d\.js" defer><\/script>\s*<\/body>/);
   });
-  test('every glyph of the headline exists in all three typefaces', async () => {
+  test('every glyph of the title, the digits and the callouts exists in all three typefaces', async () => {
     for (const name of ['paper', 'sunset', 'primetime']) {
       const face = JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', `typeface-${name}.json`), 'utf8'));
-      for (const ch of 'STACK THE BLOCKS. CHAT RUINS YOUR LIFE. PERFECT! TIMBER! 0123456789 NEW BEST') {
+      for (const ch of 'SABOTAGE STACK THE BLOCKS. CHAT RUINS YOUR LIFE. PERFECT! TIMBER! 0123456789 NEW BEST') {
         if (ch !== ' ') assert.ok(face.glyphs[ch] && face.glyphs[ch].o, `${name} typeface is missing "${ch}"`);
       }
     }
@@ -151,56 +151,6 @@ describe('pure logic', () => {
     assert.ok(onPlinth.pos[1] > 4 && onPlinth.pos[1] < 62, `rests on the plinth top (y=${onPlinth.pos[1].toFixed(1)})`);
     assert.ok(offEdge.pos[1] < -40, `fell to the ground (y=${offEdge.pos[1].toFixed(1)})`);
     assert.ok(Number.isFinite(onPlinth.quat[0] + onPlinth.quat[3]));
-  });
-  test('the demo tower plays the real rules for two simulated minutes: stacks, votes, sabotages, topples, repeats', async () => {
-    const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js');
-    const director = new AttractDirector(Core, rng(7));
-    const seen = { perfect: 0, ballot: 0, effects: new Set(), collapse: 0, resets: 0 }; let lastId = director.id; let maxBlocks = 0;
-    for (let i = 0; i < 60 * 120; i += 1) {
-      director.update(1 / 60);
-      if (director.id !== lastId) { seen.resets += 1; lastId = director.id; }
-      const blocks = director.blocks; maxBlocks = Math.max(maxBlocks, blocks.length);
-      for (const block of blocks) { assert.ok(block.right > block.left && block.left >= -0.01 && block.right <= 360.01, 'block inside the board'); }
-      if (director.ballot) { seen.ballot += 1; assert.equal(director.ballot.options.length, 3); assert.ok(director.ballot.fractions.every(f => f > 0 && f <= 1)); }
-      if (director.effect) { seen.effects.add(director.effect.id); assert.ok(Core.SABOTAGE_IDS.includes(director.effect.id)); }
-      if (director.phase === 'collapse') seen.collapse += 1;
-      seen.perfect += blocks.filter(b => b.perfect).length ? 1 : 0;
-      const m = director.moving; if (m) assert.ok(m.width >= Core.MIN_WIDTH - 0.01);
-    }
-    assert.ok(seen.ballot > 0 && seen.effects.size >= 2 && seen.collapse > 0 && seen.resets >= 2 && seen.perfect > 0 && maxBlocks >= 8, JSON.stringify({ ...seen, effects: [...seen.effects] }));
-  });
-  test('the demo is reproducible for a given seed and honours a forced sabotage', async () => {
-    const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js');
-    const play = seed => { const d = new AttractDirector(Core, rng(seed)); const trace = []; for (let i = 0; i < 60 * 30; i += 1) { d.update(1 / 60); if (i % 30 === 0) trace.push(`${d.blocks.length}|${d.effect ? d.effect.id : ''}`); } return trace.join(','); };
-    assert.equal(play(3), play(3)); assert.notEqual(play(3), play(4));
-    const d = new AttractDirector(Core, rng(1)); for (let i = 0; i < 90; i += 1) d.update(1 / 60); d.force('earthquake');
-    let applied = false; for (let i = 0; i < 60 * 10 && !applied; i += 1) { d.update(1 / 60); applied = Boolean(d.effect && d.effect.id === 'earthquake'); }
-    assert.ok(applied, 'forced sabotage reaches the tower');
-  });
-  test('a clicked sabotage is never lost: it survives a toppling tower, decides an open vote, and takes over from a running effect', async () => {
-    const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js');
-    const run = (d, until, limit = 60 * 90) => { for (let i = 0; i < limit; i += 1) { if (until(d)) return true; d.update(1 / 60); } return until(d); };
-    for (const seed of [1, 2, 3, 5, 8]) {
-      // 1. while the tower topples (it used to be wiped by the reset that follows)
-      const a = new AttractDirector(Core, rng(seed)); assert.ok(run(a, d => d.stage === 'collapse'), `seed ${seed}: reaches a collapse`);
-      const pickA = Core.SABOTAGE_IDS.find(id => id !== a.effect?.id); a.force(pickA);
-      assert.ok(run(a, d => d.stage === 'stack' && d.blocks.length === 1), 'the new tower is up'); const freshId = a.id;
-      assert.ok(run(a, d => d.effect && d.effect.id === pickA, 60 * 3), `seed ${seed}: ${pickA} plays on the new tower (forced=${a.forced})`); assert.equal(a.id, freshId, 'on the very tower that replaced the toppled one');
-      // 2. while chat is voting: the vote goes the clicked way, with no duplicate options
-      const b = new AttractDirector(Core, rng(seed)); assert.ok(run(b, d => d.ballot), 'a vote opens');
-      const pickB = Core.SABOTAGE_IDS.find(id => id !== b.ballot.winner); b.force(pickB);
-      assert.equal(b.ballot.winner, pickB); assert.equal(b.ballot.options[0], pickB); assert.equal(new Set(b.ballot.options).size, 3, 'three different options'); assert.equal(b.forced, null, 'the vote consumed it');
-      assert.ok(run(b, d => d.effect, 60 * 5)); assert.equal(b.effect.id, pickB, 'the vote ends on the clicked sabotage');
-      // 2b. the clicked sabotage is one of the other two options: it swaps places with the winner
-      const c = new AttractDirector(Core, rng(seed)); run(c, d => d.ballot); const other = c.ballot.options[2]; const was = c.ballot.winner; c.force(other);
-      assert.deepEqual([c.ballot.options[0], c.ballot.options[2], new Set(c.ballot.options).size], [other, was, 3]);
-      // 3. while another sabotage is running: that one winds down within a moment and the clicked one follows
-      const e = new AttractDirector(Core, rng(seed)); assert.ok(run(e, d => d.effect), 'an effect starts'); const running = e.effect.id;
-      const pickE = Core.SABOTAGE_IDS.find(id => id !== running); e.force(pickE);
-      assert.ok(run(e, d => d.effect && d.effect.id === pickE, 60 * 2), `seed ${seed}: ${pickE} follows ${running} within two seconds`);
-    }
-    // nothing asked for, nothing changes (and clicking twice is harmless: the later click wins)
-    const quiet = new AttractDirector(Core, rng(4)); assert.equal(quiet.forced, null); quiet.force('turbo'); quiet.force('drunk'); assert.equal(quiet.forced, 'drunk');
   });
 });
 
@@ -319,10 +269,9 @@ describe('home view: turning the scene (orbit) and the hover field', () => {
       const buttons = [...hud.root.querySelectorAll('button[data-orbit]')]; assert.deepEqual(buttons.map(b => b.dataset.orbit), ['left', 'reset', 'right']);
       assert.ok(buttons.every(b => b.type === 'button' && b.getAttribute('aria-label') && b.title), 'every control is named for assistive tech');
       const toys = []; const hud2 = createOrbitHud({ doc: page.document, storage: { getItem: () => null, setItem() {} }, onToy: kind => toys.push(kind) });
-      const dock = [...hud2.root.querySelectorAll('.toy-dock button')]; assert.deepEqual(dock.map(b => b.dataset.toy), ['drop', 'sabotage']);
+      const dock = [...hud2.root.querySelectorAll('.toy-dock button')]; assert.deepEqual(dock.map(b => b.dataset.toy), ['sabotage'], 'one key: chat strikes the title on demand');
       assert.ok(dock.every(b => b.type === 'button' && b.classList.contains('toy-key') && b.textContent.trim().length > 3 && b.title), 'the dock keys are real, named buttons');
-      assert.ok(dock[0].classList.contains('button-primary') && !dock[1].classList.contains('button-primary'), 'Drop block is the primary action');
-      dock[0].click(); dock[1].click(); assert.deepEqual(toys, ['drop', 'sabotage']); hud2.dispose();
+      dock[0].click(); assert.deepEqual(toys, ['sabotage']); hud2.dispose();
       buttons[0].click(); buttons[2].click(); buttons[1].click();
       assert.deepEqual(turns, [-Math.PI / 4, Math.PI / 4]); assert.equal(resets, 1);
       assert.ok(!hud.root.classList.contains('is-quiet') && !hintSeen(storage));
@@ -396,46 +345,6 @@ describe('run-once-soon latch (icon baking)', () => {
   });
 });
 
-describe('the title screen toy: the visitor plays the demo tower', () => {
-  const make = async seed => { const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js'); return new AttractDirector(Core, rng(seed)); };
-  const tick = (d, seconds) => { for (let i = 0; i < Math.round(seconds * 60); i += 1) d.update(1 / 60); };
-  const alignAndDrop = d => { const m = d.moving; const below = d.blocks[d.blocks.length - 1]; m.left = (below.left + below.right) / 2 - m.width / 2 + 1; d.blockClock = 1; return d.playerDrop(); };
-
-  test('a drop by hand reports what happened, hands the tower over, and the demo takes it back after the hold', async () => {
-    const { MANUAL_HOLD } = await load('hero.js'); const d = await make(3); tick(d, 1.6);
-    assert.equal(d.manual, false); assert.equal(d.playerDrop() === '' || ['perfect', 'trim', 'ok', 'miss'].includes(d.lastDrop.result), true);
-    const d2 = await make(3); tick(d2, 1.6); d2.blockClock = 1; const before = d2.blocks.length; const result = alignAndDrop(d2);
-    assert.equal(result, 'perfect', 'a block aligned within the friendly window is perfect'); assert.equal(d2.blocks.length, before + 1);
-    assert.ok(d2.manual && d2.lastDrop.manual && d2.lastDrop.result === 'perfect' && d2.lastDrop.n >= 1);
-    tick(d2, MANUAL_HOLD + 0.5); assert.equal(d2.manual, false, 'left alone, the demo plays itself again');
-  });
-  test('nothing drops for the visitor while they play, and a vote does not freeze their block', async () => {
-    const d = await make(5); tick(d, 1.6); alignAndDrop(d); const blocks = d.blocks.length;
-    tick(d, 6); // six seconds, block sweeping back and forth: a demo would have dropped it by now
-    assert.equal(d.blocks.length, blocks, 'no automatic drops in manual play');
-    d.stage = 'vote'; d.ballot = { options: ['turbo', 'drunk', 'slowmo'], base: [0.3, 0.3, 0.3], fractions: [0.3, 0.3, 0.3], voted: 0, winner: 'turbo' }; d.stageTimer = 0;
-    const left = d.moving.left; tick(d, 0.5); assert.notEqual(d.moving.left, left, 'the block keeps moving during the vote');
-  });
-  test('a drop is refused while the block has only just appeared, and while the tower is coming down', async () => {
-    const d = await make(2); tick(d, 1.6); alignAndDrop(d); assert.equal(d.playerDrop(), '', 'the new block is still at the edge');
-    const e = await make(2); tick(e, 1.6); e.stage = 'collapse'; assert.equal(e.playerDrop(), '');
-  });
-  test('a misplaced block topples the tower; finishing the tower locks it, celebrates, and brings it down', async () => {
-    const d = await make(7); tick(d, 1.6); d.blockClock = 1; const m = d.moving; const below = d.blocks[d.blocks.length - 1]; m.left = below.right + 30; // clean miss
-    assert.equal(d.playerDrop(), 'miss'); assert.equal(d.stage, 'collapse');
-    const e = await make(7); tick(e, 1.6); let completed = null; let blocksAtComplete = 0;
-    for (let i = 0; i < 40 && !completed; i += 1) { if (!e.moving) { tick(e, 0.1); continue; } e.blockClock = 1; const r = alignAndDrop(e); if (r && e.lastDrop.complete) { completed = e.lastDrop; blocksAtComplete = e.blocks.length; } }
-    assert.ok(completed && completed.result === 'perfect', 'the tower reaches its height'); assert.ok(blocksAtComplete >= 11);
-    e.blockClock = 1; assert.equal(e.playerDrop(), '', 'a finished tower takes no more blocks');
-    tick(e, 3); assert.equal(e.lastDrop.finale, true, 'then it comes down'); assert.ok(e.stage === 'collapse' || e.blocks.length < blocksAtComplete);
-  });
-  test('the demo itself keeps playing under the same rules as before (no manual state leaks into autoplay)', async () => {
-    const d = await make(9); let drops = 0; let last = 0; tick(d, 0.1);
-    for (let i = 0; i < 60 * 40; i += 1) { d.update(1 / 60); if (d.dropCount !== last) { last = d.dropCount; drops += 1; assert.equal(d.lastDrop.manual, false); } }
-    assert.ok(drops >= 6, `${drops} automatic drops in 40 s`); assert.equal(d.manual, false);
-  });
-});
-
 describe('the living crowd: googly eyes, gaze, waves, paddles, chaos', () => {
   const make = async (theme = 'paper', max = 80) => { const { Crowd } = await load('audience.js'); const { paletteFor } = await load('palette.js'); return new Crowd(theme, paletteFor(theme), { max }); };
   const frames = (crowd, seconds, from = 0) => { let t = from; for (let i = 0; i < Math.round(seconds * 60); i += 1) { t += 1 / 60; crowd.update(1 / 60, t); } return t; };
@@ -493,16 +402,21 @@ describe('tactile UI behaviour (keys that press back, decks that tilt)', () => {
       const deck = page.document.querySelector('.home-copy'); deck.getBoundingClientRect = () => ({ left: 100, top: 100, width: 400, height: 600, right: 500, bottom: 700 });
       const tactile = installTactileUi({ doc: page.document, win: page.window, hover: true });
       const move = (x, y, pointerType = 'mouse') => { const e = new page.window.MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }); Object.defineProperty(e, 'pointerType', { value: pointerType }); deck.dispatchEvent(e); };
-      const angles = () => (deck.style.transform.match(/-?\d+(\.\d+)?(?=deg)/g) || []).map(Number);
+      const angles = () => [Number(deck.style.getPropertyValue('--tx')), Number(deck.style.getPropertyValue('--ty'))]; const flat = () => deck.style.getPropertyValue('--tx') === '' && deck.style.getPropertyValue('--ty') === '';
       move(490, 110); page.advanceAnimation(900, 16);
       const [rx, ry] = angles(); assert.ok(rx > 1.5 && rx <= 2.2 && ry > 1.5 && ry <= 2.2, `tilt ${rx} ${ry}`); assert.ok(deck.classList.contains('is-tilting')); assert.equal(tactile.tilting, deck);
+      assert.equal(deck.style.transform, '', 'the tilt never overwrites the card\'s own transform (its resting angle, its swing-in): it is added to it in CSS');
       move(110, 690); page.advanceAnimation(900, 16); const [rx2, ry2] = angles(); assert.ok(rx2 < -1.5 && ry2 < -1.5, 'the other corner tilts the other way');
       page.document.documentElement.dispatchEvent(new page.window.Event('pointerleave')); page.advanceAnimation(1500, 16);
-      assert.equal(deck.style.transform, '', 'back to flat, with no transform left behind'); assert.equal(deck.classList.contains('is-tilting'), false); assert.equal(tactile.tilting, null);
-      move(300, 400, 'touch'); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'a finger has no hover');
-      page.document.documentElement.dataset.motion = 'reduced'; move(490, 110); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'Reduced Motion: never tilts');
-      page.document.documentElement.dataset.motion = 'full'; move(490, 110); page.advanceAnimation(300, 16); assert.ok(deck.style.transform.includes('rotateX')); tactile.dispose(); assert.equal(deck.style.transform, '', 'disposing levels it');
-      const off = installTactileUi({ doc: page.document, win: page.window, hover: false }); move(490, 110); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'touch-first devices never tilt'); off.dispose();
+      assert.ok(flat(), 'back to its resting pose, with nothing left behind'); assert.equal(deck.classList.contains('is-tilting'), false); assert.equal(tactile.tilting, null);
+      move(300, 400, 'touch'); page.advanceAnimation(300, 16); assert.ok(flat(), 'a finger has no hover');
+      page.document.documentElement.dataset.motion = 'reduced'; move(490, 110); page.advanceAnimation(300, 16); assert.ok(flat(), 'Reduced Motion: never tilts');
+      page.document.documentElement.dataset.motion = 'full'; move(490, 110); page.advanceAnimation(300, 16); assert.ok(!flat()); tactile.dispose(); assert.ok(flat(), 'disposing levels it');
+      const off = installTactileUi({ doc: page.document, win: page.window, hover: false }); move(490, 110); page.advanceAnimation(300, 16); assert.ok(flat(), 'touch-first devices never tilt'); off.dispose();
+      // every glass card is a deck, not just the menu
+      const side = page.document.querySelector('.side-card'); side.getBoundingClientRect = deck.getBoundingClientRect; const again = installTactileUi({ doc: page.document, win: page.window, hover: true });
+      const e = new page.window.MouseEvent('pointermove', { clientX: 490, clientY: 110, bubbles: true }); Object.defineProperty(e, 'pointerType', { value: 'mouse' }); side.dispatchEvent(e); page.advanceAnimation(900, 16);
+      assert.ok(side.style.getPropertyValue('--tx') !== '', 'a side card tilts too'); again.dispose();
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });

@@ -339,23 +339,7 @@ const BUILDERS = {
     };
   },
 
-  accordion(rig) {
-    const group = new THREE.Group(); const p = rig.palette; const lines = new THREE.Group();
-    const material = new THREE.MeshBasicMaterial({ color: p.ink, transparent: true, opacity: 0.38, depthWrite: false });
-    const geo = new THREE.PlaneGeometry(1.1, BLOCK_T * 0.9);
-    const pleats = [];
-    for (let i = 0; i < 9; i += 1) { const m = new THREE.Mesh(geo, material); m.userData.k = (i + 0.5) / 9 - 0.5; m.rotation.z = (i % 2 ? 0.14 : -0.14); lines.add(m); pleats.push(m); }
-    let holder = null;
-    return {
-      group, attach(mover) { if (lines.parent) lines.parent.remove(lines); mover.add(lines); lines.position.z = FRONT; },
-      off() { if (lines.parent) lines.parent.remove(lines); },
-      update({ mover, time, reduced }) {
-        if (!mover) return; if (lines.parent !== mover) { mover.add(lines); lines.position.z = FRONT; }
-        const w = mover.userData.baseW; pleats.forEach(m => { m.position.x = m.userData.k * w; m.scale.x = 1 / Math.max(0.2, mover.scale.x); });
-      },
-      dispose() { material.dispose(); geo.dispose(); }
-    };
-  },
+  // accordion: no cue of its own. The mover's width breathing (the game's rule, drawn by the tower like any other block) is all there is.
 
   crumble(rig) {
     const group = new THREE.Group(); const p = rig.palette;

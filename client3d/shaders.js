@@ -130,7 +130,9 @@ export const passBShader = {
       float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(luma), col, uSat);
       col = (col - 0.5) * uContrast + 0.5;
-      // Spotlight sabotage: everything inside the player's rectangle is hidden by an opaque veil except a soft-edged beam.
+      // Spotlight sabotage: everything inside a spot's rectangle is hidden by an opaque veil except its soft-edged circles of light.
+      // Spots that share a rectangle light it together (the veil is laid once, over the union of their holes).
+      float veiled = 0.0; float lit = 0.0; float rimSum = 0.0;
       for (int i = 0; i < 6; i++) {
         vec4 sp = uSpot[i];
         if (sp.w > 0.5) {
@@ -140,11 +142,12 @@ export const passBShader = {
             float dist = length(d);
             float hole = 1.0 - smoothstep(sp.z * 0.985, sp.z * 1.02, dist);
             float rim = smoothstep(sp.z * 0.93, sp.z, dist) * (1.0 - smoothstep(sp.z, sp.z * 1.05, dist));
-            col = mix(uVeilColor, col, hole);
-            col += rim * vec3(1.0, 0.78, 0.25) * 0.6;
+            veiled = 1.0; lit = max(lit, hole); rimSum += rim;
           }
         }
       }
+      col = mix(col, mix(uVeilColor, col, lit), veiled);
+      col += min(rimSum, 1.0) * veiled * vec3(1.0, 0.78, 0.25) * 0.6;
       vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
       float vig = 1.0 - uVignette * smoothstep(0.25, 1.05, length(p) * 1.35);
       col *= vig;
