@@ -845,6 +845,25 @@ html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; b
 html.has-3d .home-aside { display: none; }
 html.has-3d .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
 html.has-3d #perfect-banner, html.has-3d #canvas-toast { display: none; } /* PERFECT!, TIMBER! and the sabotage's name are 3D lettering in the world */
+/* The bottoms of the pages. The strip under the home scene and the Drop row under the tower were flat, square-cornered pale boxes with their text on the
+   very edge, lying on the 3D floor. They are rounded, padded glass now, in the family of the headings. The strip keeps its 44px on one line and only grows
+   when its words wrap (a phone). The row's glass is one pill round the Drop key and its help (the content keeps the width it always had, so the help never
+   re-wraps), and the tone button has room of its own below it instead of sitting on the pill's edge. */
+html.has-3d .home-bottom {
+  min-height: 44px; height: auto; padding: 8px 18px; column-gap: 24px; row-gap: 2px;
+  border: 1px solid var(--edge); border-radius: 16px; box-shadow: 0 12px 26px -18px rgba(12, 6, 2, .5);
+}
+html.has-3d .home-bottom > span:first-child strong { padding: 1px 7px 2px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); box-shadow: 0 2px 0 var(--edge); }
+html.has-3d .control-row {
+  width: auto; margin-top: 4px; padding: 9px 14px 11px; justify-content: center;
+  border: 1px solid var(--edge); border-radius: 20px; box-shadow: 0 12px 26px -18px rgba(12, 6, 2, .5);
+}
+html.has-3d .control-help { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; } /* the row is the glass; a second layer behind the help only doubled it */
+html.has-3d .play-card > .position-audio-toggle { margin-top: 10px; }
+@media (max-width: 700px) {
+  html.has-3d .home-bottom { justify-content: center; padding: 8px 14px; text-align: center; }
+  html.has-3d .control-row { padding: 8px 10px 10px; border-radius: 18px; }
+}
 /* Multiplayer results: the 3D podium of final towers owns the open space, the cards become a glass column beside it. */
 html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
 @media (min-width: 981px) {
@@ -884,7 +903,16 @@ html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-sele
 .orbit-btn svg { width: 18px; height: 18px; display: block; }
 .orbit-btn[data-orbit="reset"] { display: none; }
 .orbit-hud.is-rotated .orbit-btn[data-orbit="reset"] { display: inline-flex; }
-@media (max-width: 640px) { .orbit-hint-full, .toy-full { display: none; } .orbit-hint-short, .toy-short { display: inline; } .toy-key { padding: 0 13px 0 11px; } }
+@media (max-width: 640px) { .orbit-hint-full, .toy-full { display: none; } .orbit-hint-short, .toy-short { display: inline; } .toy-key { padding: 0 13px 0 11px; } .orbit-row { flex-wrap: wrap; } }
+/* The game's view controls (zoom, turn, reset) sit in the bottom-right corner of the play field, over the floor, with the hint above them; they stay quiet until the pointer is near.
+   The right button turns the view there (the left is DROP), the wheel zooms, and a right-drag shows the grab cursor on the board. */
+.orbit-hud.is-stage { gap: 6px; }
+.orbit-hud.is-stage .orbit-btn { min-width: 36px; min-height: 36px; }
+.orbit-hud.is-stage .orbit-row { opacity: .8; transition: opacity .2s ease; }
+.orbit-hud.is-stage:hover .orbit-row, .orbit-hud.is-stage:focus-within .orbit-row { opacity: 1; }
+html.orbiting #game-canvas { cursor: grabbing; }
+/* The lobby's controls sit in the bottom-right corner of the room screen, under the cards. Below 900 px the cards cover the whole scene (see update_lobby), so there is nothing to turn or zoom and they step aside. */
+@media (max-width: 899px) { #orbit-hud-lobby { display: none; } }
 
 /* Tactile 3D UI (only while the 3D layer runs): buttons, the vote keys and the Space bar are keycaps. Each has a side wall of real
    depth (a box-shadow in a darker shade, a different one per theme), rests a little proud, lifts on hover and sinks into its wall

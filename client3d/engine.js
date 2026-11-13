@@ -9,6 +9,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { passAShader, passBShader } from './shaders.js';
 import { clamp, damp, hexToRgb01 } from './util.js';
 import { paletteFor } from './palette.js';
+import { applyShaderGuards, guardBloomPass } from './shader-guards.js';
 
 export const TIERS = Object.freeze([
   Object.freeze({ name: 'low', dpr: 1, msaa: 0, shadow: 1024, shadowBias: -0.0012, bloom: false, blur: false, crowd: 0.35, particles: 0.4, reflect: 0, soft: false }),
@@ -58,6 +59,7 @@ export class Engine {
     this.contextLost = false;
     this.fade = { value: 1, target: 0, speed: 1.2 };
 
+    applyShaderGuards(); // (before the first program is compiled: see shader-guards.js)
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, stencil: false, depth: true, powerPreference: 'high-performance' });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.localClippingEnabled = true;
@@ -85,7 +87,7 @@ export class Engine {
     const target = new THREE.WebGLRenderTarget(this.width, this.height, { type: THREE.HalfFloatType, samples: this.tier.msaa });
     this.composer = new EffectComposer(this.renderer, target);
     this.renderPass = new RenderPass(this.scene, this.camera);
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), 0.3, 0.6, 0.9);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(this.width, this.height), 0.3, 0.6, 0.9); guardBloomPass(this.bloomPass); // (one NaN pixel must never black out the frame)
     this.passA = new ShaderPass({ ...passAShader, uniforms: THREE.UniformsUtils.clone(passAShader.uniforms) });
     this.outputPass = new OutputPass();
     this.passB = new ShaderPass({ ...passBShader, uniforms: THREE.UniformsUtils.clone(passBShader.uniforms) });

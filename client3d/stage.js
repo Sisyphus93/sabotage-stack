@@ -21,8 +21,9 @@ import { normalizeTheme, paletteFor, BALLOT_COLORS, themedBlockColor } from './p
 import { buildIcon, ICON_IDS } from './icons3d.js';
 import { hasGlyphs } from './text3d.js';
 import { OrbitController } from './orbit.js';
+import { ZoomController } from './view-zoom.js';
 import { HoverField, offsetFromPointer } from './hover.js';
-import { createOrbitHud } from './orbit-hud.js';
+import { createOrbitHud, ZOOM_STEP } from './orbit-hud.js';
 import { Totems, totemSlot, totemHeight } from './totems.js';
 import { buildCrown, crownPose } from './crown.js';
 import { podiumEntries, podiumMetrics, revealCount, revealedFallen, headlineFor } from './podium.js';
@@ -34,8 +35,16 @@ const EMBLEM_X = BOARD_W / 2 + 118; // the running sabotage's emblem floats besi
 const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits on the other side
 const DUST = [0.82, 0.74, 0.6];
 // Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
-const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]';
-const PANEL_SELECTOR = '.side-card, .play-card, .result-info, .preview-card, .home-copy, .home-bottom, .topbar, .footer-note, .orbit-hud';
+const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas)'; // (the game's canvas is a role=button for assistive tech, but it is the scene)
+// Controls that read the arrow keys, Home and the digits themselves keep them: a text field, a select, a slider, a radio group, a menu, a dialog. A button or a link does not, so one that
+// happens to hold the focus (the page focuses the Drop button in a round and the main action of each results screen) must not take the view's keys away.
+const KEY_OWNERS = 'input, textarea, select, dialog, video, audio, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"], [role="spinbutton"], [role="radio"], [role="tab"], [role="listbox"], [role="option"], [role="combobox"], [role="menu"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="tree"], [role="treeitem"], [role="grid"], [role="gridcell"]';
+// The results, podium and lobby controls sit in a corner next to the page's footer note: their hint is short, so it never runs over the note's words.
+const SCENE_HINT = { mouse: '<span class="orbit-hint-full"><b>Drag</b> to turn, <b>scroll</b> to zoom</span><span class="orbit-hint-short"><b>Drag</b> to turn, <b>scroll</b> to zoom</span>' };
+const PANEL_SELECTOR = '.side-card, .play-card, .result-info, .multiplayer-results, .preview-card, .home-copy, .home-bottom, .topbar, .footer-note, .orbit-hud';
+const STAGE_SELECTOR = '#game-stage'; // the play field sits inside a panel (.play-card) but is itself part of the scene
+const PLAY_HINT_KEY = 'sabotage-stack-play-view-hint-v1';
+const FLOOR_CLEARANCE = 14; // the camera never comes lower than this above the plinth, however far the visitor turns it down
 const HOVER_LOOK = {
   paper: { light: '#FFD9A0', power: 52000, sparkles: ['#E3A33B', '#2F8478', '#D5472F', '#FFF1D0', '#C96F8A'] },
   sunset: { light: '#FF6BE0', power: 76000, sparkles: ['#FF4FD8', '#2EE6D6', '#FFC53D', '#B983FF'] },
@@ -43,6 +52,8 @@ const HOVER_LOOK = {
 };
 const tmpTitle = new THREE.Vector3();
 const closest = (target, selector) => Boolean(target && target.closest && target.closest(selector));
+// Chrome: what the pointer must leave alone (controls, the page's glass panels), as opposed to the scene itself
+const chromeAt = target => closest(target, UI_SELECTOR) || (closest(target, PANEL_SELECTOR) && !closest(target, STAGE_SELECTOR));
 const soloIds = new WeakMap(); let soloCounter = 0;
 const soloId = game => { if (!soloIds.has(game)) soloIds.set(game, ++soloCounter); return soloIds.get(game); };
 
@@ -67,8 +78,10 @@ export class Stage {
     this.sinking = new Map(); this.flight = null; this.camSpec = null; this.plinthGoal = null; this.lastDt = 0.016;
     this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
     // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
-    this.orbit = new OrbitController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
-    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
+    this.orbit = new OrbitController(); this.dolly = new ZoomController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
+    // the view the visitor made (turned, zoomed) is added on top of each scene's own camera (userView); facing = the yaw the labels, digits and plates turn by to keep facing it
+    this.facing = 0; this.playHud = null; this.playHintAge = 0; this.lastRightTap = null;
+    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.lobbyHud = null; this.lobbyHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
     this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
     this.scene.add(this.cursorLight);
@@ -85,9 +98,11 @@ export class Stage {
       if (!this.canOrbit()) return;
       // a right-drag that began on the scene owns the menu wherever it is released (Windows raises it on mouse-up, over whatever is there)
       const turning = (this.drag && this.drag.button === 2) || performance.now() < this.contextGuardUntil;
-      if (turning || (!closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR))) e.preventDefault();
+      if (turning || !chromeAt(e.target)) e.preventDefault();
     });
-    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.canOrbit() && !closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR)) this.orbit.reset(); });
+    // (a double click is the game's own two drops, so only the scenes where the left button is free reset on it - home, results, the lobby, the podium and the host's arena; the game resets on a double right click)
+    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode !== 'play' && this.canOrbit() && !chromeAt(e.target)) this.resetView(); });
+    window.addEventListener('wheel', this.onWheel = e => this.handleWheel(e), { passive: false });
     window.addEventListener('keydown', this.onKeyDown = e => this.handleKey(e));
     this.applyTier(this.engine.tier);
     // opening the link on the title screen: the menu is held back until SABOTAGE STACK has rained down (index.js adds has-3d in the same task)
@@ -205,7 +220,7 @@ export class Stage {
     p.speed = Math.min(5000, Math.max(speed, p.speed * 0.6)); p.lastX = event.clientX; p.lastY = event.clientY; p.lastT = now;
     p.x = event.clientX / w * 2 - 1; p.y = -(event.clientY / h * 2 - 1); p.ndc.set(p.x, p.y); p.inside = true;
     p.touch = event.pointerType === 'touch';
-    p.overUi = closest(event.target, UI_SELECTOR) || closest(event.target, PANEL_SELECTOR);
+    p.overUi = chromeAt(event.target);
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -224,7 +239,7 @@ export class Stage {
 
   handleDown(event) {
     this.rushIntro(); this.handlePointer(event); this.idleFor = 0;
-    if (!this.canOrbit() || this.drag || !event.isPrimary) return;
+    if (!this.canOrbit(event.button) || this.drag || !event.isPrimary) return;
     if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
     if (this.pointer.overUi) return;
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp, button: event.button, moved: false, touch: event.pointerType === 'touch' };
@@ -244,9 +259,33 @@ export class Stage {
     this.orbit.end(event ? event.timeStamp / 1000 : performance.now() / 1000);
     if (d.button === 2) this.contextGuardUntil = performance.now() + 500;
     document.documentElement.classList.remove('orbiting');
-    if (d.moved) { if (this.hud) this.hud.quiet(); return; }
+    if (d.moved) { this.usedView(); return; }
     if (!cancelled && event && d.button === 0 && event.timeStamp - d.t < 600) this.handleClick(event);
+    else if (!cancelled && event && d.button === 2) this.handleRightTap(event);
   }
+
+  // Two quick right clicks on the same spot: back to the default view (in the game the left button is DROP, so a double click cannot be the reset there).
+  handleRightTap(event) {
+    const last = this.lastRightTap; const t = event.timeStamp;
+    if (last && t - last.t < 420 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 12) { this.lastRightTap = null; this.resetView(); } else this.lastRightTap = { t, x: event.clientX, y: event.clientY };
+  }
+
+  // The wheel zooms the scene it is over. Panels and controls keep it (they scroll the page), and so does the browser's own zoom (Ctrl + wheel, a trackpad
+  // pinch). Wheeling on against the zoom limit hands the wheel back to the page after a pause (view-zoom.js), so the page can still be scrolled from here.
+  handleWheel(event) {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || !this.canOrbit()) return;
+    if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || chromeAt(event.target) || document.querySelector('dialog[open]')) return;
+    this.dolly.setReduced(this.reduced);
+    if (this.dolly.wheel(event.deltaY, event.deltaMode, event.timeStamp / 1000)) { event.preventDefault(); this.usedView(); }
+  }
+
+  // The visitor has found the view controls: the hints can go (and stay gone), and the scene's idle timer starts over.
+  usedView() { this.idleFor = 0; const hud = this.sceneHud(); if (hud) hud.quiet(); }
+  // the on-screen controls of the scene on show: the home scene, the results (and the podium), the lobby, and the game (and its arena) each have their own
+  sceneHud() { switch (this.mode) { case 'hero': return this.hud; case 'results': case 'celebrate': return this.resultsHud; case 'lobby': return this.lobbyHud; default: return this.playHud; } }
+
+  // Back to the default view: turned and zoomed alike.
+  resetView(duration = 0.9) { this.orbit.reset(duration); this.dolly.reset(duration); this.idleFor = 0; }
 
   handleClick(event) {
     if (this.mode !== 'hero' || !this.arsenal) return;
@@ -259,19 +298,29 @@ export class Stage {
     if (this.title.complete && this.title.poke(this.raycaster) > 0) { this.world.crowd.cheer(0.5); if (!this.reduced) this.title.wave(this.pointerFrame ? this.pointerFrame.point.x : 0, 1900); }
   }
 
-  // Arrow keys turn the scene when nothing else has the keyboard (a focused select or button keeps its own arrows).
+  // The arrow keys turn the scene, + and - zoom it, 0 or Home reset it, wherever the focus is except on a control that reads those keys itself (KEY_OWNERS: a select,
+  // a text field...). The Drop button, a results screen's main action and the game's canvas (Space, Enter and 1 / 2 / 3 are the page's) do not, so they pass them on.
   handleKey(event) {
     this.rushIntro();
     if (!this.canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    const target = event.target; if (target && target !== document.body && target !== document.documentElement) return;
-    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
-    if (event.key === 'ArrowLeft') { this.orbit.rotateBy(-step, 0.35); this.idleFor = 0; event.preventDefault(); }
-    else if (event.key === 'ArrowRight') { this.orbit.rotateBy(step, 0.35); this.idleFor = 0; event.preventDefault(); }
-    else if (event.key === 'Home') { this.orbit.reset(); event.preventDefault(); }
+    if (closest(event.target, KEY_OWNERS)) return;
+    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8; const now = event.timeStamp / 1000;
+    if (event.key === 'ArrowLeft') { this.orbit.rotateBy(-step, 0.35); this.usedView(); event.preventDefault(); }
+    else if (event.key === 'ArrowRight') { this.orbit.rotateBy(step, 0.35); this.usedView(); event.preventDefault(); }
+    else if (event.key === 'Home' || event.key === '0') { this.resetView(); event.preventDefault(); }
+    else if (event.key === '+' || event.key === '=') { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(ZOOM_STEP, now); this.usedView(); event.preventDefault(); }
+    else if (event.key === '-' || event.key === '_') { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(1 / ZOOM_STEP, now); this.usedView(); event.preventDefault(); }
   }
 
-  // The scenes a visitor may turn all the way round: the home scene, and the solo results (the score sculpture).
-  canOrbit() { return this.mode === 'hero' || this.mode === 'results'; }
+  // The scenes a visitor may turn all the way round and zoom: the home scene, the lobby, the game (and the arena that watches it), the solo results (the score
+  // sculpture) and the podium. All but the game turn with either mouse button; the game keeps the left button for itself (DROP), so there only the right one turns the view.
+  canOrbit(button = 2) {
+    switch (this.mode) {
+      case 'hero': case 'results': case 'arena': case 'lobby': case 'celebrate': return true; // (the host's arena, the lobby and the podium have no use for the left button)
+      case 'play': return button === 2;
+      default: return false;
+    }
+  }
 
   setCursor(value) { if (value === this.cursor) return; this.cursor = value; document.documentElement.style.cursor = value; }
 
@@ -332,8 +381,10 @@ export class Stage {
     this.post = { spots: [] };
     this.engine.resize();
     this.watch(0, this.rig.focusY || 220, 0, 0.85); // the crowd looks at the tower unless a mode finds something better
+    this.facing = 0; // (a scene the visitor can turn sets the yaw its labels, digits and plates turn by, to keep facing the camera)
     this['update_' + this.mode](dt, view);
-    this.bricks.update(dt, this.time, { faceYaw: this.mode === 'hero' ? this.popups.faceYaw : 0 }); this.bricks.events.length = 0;
+    this.popups.faceYaw = this.facing; this.ruler.setFacing(this.facing);
+    this.bricks.update(dt, this.time, { faceYaw: this.facing }); this.bricks.events.length = 0;
     this.updateLeaving(dt);
     this.updateCommon(dt);
     if (render) { this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts); }
@@ -362,8 +413,10 @@ export class Stage {
     this.plinthGoal = mode === 'celebrate' ? null : [mode === 'arena' ? 2.3 : hero ? 2.2 : play ? 1.4 : 1, mode === 'arena' ? 0.62 : hero ? 1.5 : 1];
     if (!flies && this.plinthGoal) this.world.plinth.scale.set(this.plinthGoal[0], 1, this.plinthGoal[1]);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
-    if (hero) this.openHud(); else this.leaveHome();
-    if (mode === 'results') this.openResultsHud();
+    if (hero) { this.endDrag(true); this.orbit.snap(); this.dolly.snap(); this.openHud(); } else this.leaveHome(); // (every view starts square on: nothing the visitor did to the last one is inherited)
+    if (mode === 'results' || mode === 'celebrate') this.openResultsHud();
+    if (mode === 'lobby') this.openLobbyHud();
+    if (mode === 'play' || mode === 'arena') this.openPlayHud(); else this.closePlayHud();
     if (hero && !this.director) this.director = new TitleDirector(TITLE_EFFECT_IDS, rng(Date.now() & 0xffff), { reduced: this.reduced });
     if (mode === 'results') { this.resultsT = 0; this.scoreShown = false; }
     this.bricks.hide('score', false); this.bricks.hide('height', false); this.heightShown = -1; this.candidates.release();
@@ -400,20 +453,49 @@ export class Stage {
     if (this.hud) return; this.hintAge = 0;
     let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset(), onToy: () => this.triggerSabotage() });
+    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor), onToy: () => this.triggerSabotage() });
   }
 
-  // The solo results turn too: the same hint and buttons, in the corner of the 3D frame (no toy dock here).
-  openResultsHud() {
-    this.resultsHintAge = 0; if (this.resultsHud) return;
+  // The solo results, the podium and the lobby turn too: the same hint and buttons, in a corner of the scene (no toy dock here). The results and the podium
+  // share the results screen's controls, the lobby has its own in the room screen (the page hides each along with its screen).
+  openResultsHud() { this.resultsHintAge = 0; if (!this.resultsHud) this.resultsHud = this.makeSceneHud('results-screen', 'orbit-hud-results'); }
+  openLobbyHud() { this.lobbyHintAge = 0; if (!this.lobbyHud) this.lobbyHud = this.makeSceneHud('room-screen', 'orbit-hud-lobby'); }
+  makeSceneHud(hostId, id) {
     let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    this.resultsHud = createOrbitHud({ doc: document, storage, touch: coarse, hostId: 'results-screen', id: 'orbit-hud-results', dock: false, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.resultsHud) this.resultsHud.quiet(); }, onReset: () => this.orbit.reset() });
+    return createOrbitHud({ doc: document, storage, touch: coarse, hostId, id, dock: false, hint: SCENE_HINT, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor) });
   }
+  // the lobby's controls sit in the bottom-right corner of the screen, under the cards (a narrow screen is all cards: the page hides them there)
+  placeLobbyHud(W, H, dt) {
+    const hud = this.lobbyHud; if (!hud) return;
+    hud.place(W - 16, H - 14); hud.setRotated(this.orbit.rotated || this.dolly.zoomed);
+    this.lobbyHintAge += dt; if (this.lobbyHintAge > 10) hud.fade();
+  }
+
+  // The game's view controls: zoom, turn and reset in the corner of the play field, for the mouse (the right button turns the view there, the wheel zooms) and
+  // for the keyboard. Not on a touch screen: the board is for the thumb, and a finger cannot hold the right button.
+  openPlayHud() {
+    if (this.playHud) return; this.playHintAge = 0;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
+    let shown = 0; try { shown = Number(storage.getItem(`${PLAY_HINT_KEY}-shown`)) || 0; storage.setItem(`${PLAY_HINT_KEY}-shown`, String(shown + 1)); } catch (_) { shown = 0; }
+    const hint = { mouse: '<span class="orbit-hint-full"><b>Right-drag</b> to look around, <b>scroll</b> to zoom</span><span class="orbit-hint-short"><b>Right-drag</b> to look, <b>scroll</b> to zoom</span>' };
+    this.playHud = createOrbitHud({ doc: document, storage, hostId: 'game-screen', id: 'orbit-hud-play', dock: false, layout: 'stage', hint, hintKey: PLAY_HINT_KEY, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor) });
+    if (shown >= 3 && this.playHud) this.playHud.fade(); // (it has said its piece: three games, or the first time it was used)
+  }
+  closePlayHud() { if (this.playHud) { this.playHud.dispose(); this.playHud = null; } }
+  // the bottom-right corner of the play field: the floor, never the sky where the votes and the sabotage names appear
+  placePlayHud(rect, dt) {
+    const hud = this.playHud; if (!hud) return;
+    hud.place(rect.x + rect.w - 10, rect.y + rect.h - 12); hud.setRotated(this.orbit.rotated || this.dolly.zoomed);
+    this.playHintAge += dt; if (this.playHintAge > 12) hud.fade();
+  }
+
+  zoomBy(factor) { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(factor, performance.now() / 1000); this.usedView(); }
 
   // Everything the home view changed that the other views must not inherit.
   leaveHome() {
-    this.endDrag(true); this.orbit.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.dragBlend = 0;
+    this.endDrag(true); this.orbit.snap(); this.dolly.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.facing = 0; this.lastRightTap = null; this.dragBlend = 0;
     this.setCursor(''); this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
     this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0); this.hideCaption();
     this.engine.bloomPass.strength = this.palette.bloom;
@@ -432,6 +514,21 @@ export class Stage {
     if (this.flash > 0.01) this.post.flashColor = this.theme === 'primetime' ? [1, 0.9, 0.6] : this.desatPulse > 0.2 ? [0.9, 0.25, 0.2] : [1, 0.86, 0.55];
   }
 
+  // The visitor's own view of the scene (right-drag, the wheel, the buttons, the keys), added on top of whatever the scene's camera is doing: exactly nothing
+  // until it has been used. Returns the yaw and pitch to add, the zoom factor to multiply by, and how much of the pointer's own parallax is still wanted
+  // (it steps aside while the scene is being turned). `focusY` is the height the camera looks at, which decides how low it may come.
+  userView(dt, focusY, { idleReset = false } = {}) {
+    const o = this.orbit; const z = this.dolly; const reduced = this.reduced;
+    const floorPitch = Math.asin(clamp((10 - focusY) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
+    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt); z.setReduced(reduced); z.update(dt);
+    const turning = Boolean(this.drag) || o.moving;
+    // a scene on show (home, results) returns to its default view by itself after 30 s untouched; the game keeps whatever view its player chose
+    if (idleReset && !reduced && (o.rotated || z.zoomed) && !turning && !z.moving) { this.idleFor += dt; if (this.idleFor > 30) { this.resetView(2.4); this.idleFor = 0; } } else if (turning || z.moving) this.idleFor = 0;
+    // the pointer's own parallax steps aside while the scene is being turned, and comes back as it settles
+    this.dragBlend = damp(this.dragBlend, turning ? 1 : 0, this.drag ? 14 : 2.2, dt);
+    return { yaw: o.yaw, pitch: o.pitch, zoom: z.value, par: 1 - this.dragBlend };
+  }
+
   // -------------------------------------------------------------------------------------------------------------------
   // Camera. `anchor` is the world point that must appear at `screen` (px). `rect` supplies the scale: worldW x worldH world
   // units are fitted inside it, which is how the play field lands exactly on the page's stage element.
@@ -443,8 +540,9 @@ export class Stage {
     // on the screen it lands on, the zoom, the angles. The arc pulls back and rises in the middle, so it reads as travelling.
     const f = this.flight;
     if (f) { const m = blendSpec(f.from, { ax, ay, az, sx, sy, ppu, yaw, pitch, roll }, f.t / f.dur, f); ({ ax, ay, sx, sy, ppu } = m); cyaw = m.yaw; cpitch = m.pitch; croll = m.roll; }
-    this.camSpec = { ax, ay, az, sx, sy, ppu, yaw: cyaw, pitch: cpitch, roll: croll };
     const dist = H / (2 * ppu * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
+    cpitch = Math.max(cpitch, Math.asin(clamp((FLOOR_CLEARANCE - ay) / dist, -0.99, 0.99))); // a turned or zoomed view never takes the camera under the floor
+    this.camSpec = { ax, ay, az, sx, sy, ppu, yaw: cyaw, pitch: cpitch, roll: croll };
     const cp = Math.cos(cpitch); this.camDist = dist;
     cam.position.set(ax + Math.sin(cyaw) * cp * dist + shake[0], ay + Math.sin(cpitch) * dist + shake[1], az + Math.cos(cyaw) * cp * dist + shake[2]);
     cam.near = Math.max(4, dist * 0.05); cam.far = 30000;
@@ -531,7 +629,7 @@ export class Stage {
     if (!effect) { this.removeBadge(); return; }
     const age = this.time - b.born; const pop = easeOutBack(clamp(age / 0.45), 1.4); b.pop = pop * 1.5;
     const calm = this.reduced; // Reduced Motion: it appears and stays, in a three-quarter view, with no turn, bob or pulse
-    b.icon.scale.setScalar(Math.max(0.0001, EMBLEM_SCALE * pop * (calm ? 1 : 1 + Math.sin(age * 2) * 0.03))); b.icon.rotation.y = calm ? 0.3 : dwellSpin(age, 1.0); b.icon.rotation.x = 0.12; b.icon.position.set(EMBLEM_X, focusY + 30 + (calm ? 0 : Math.sin(age * 2.2) * 4), 70);
+    b.icon.scale.setScalar(Math.max(0.0001, EMBLEM_SCALE * pop * (calm ? 1 : 1 + Math.sin(age * 2) * 0.03))); b.icon.rotation.y = (calm ? 0.3 : dwellSpin(age, 1.0)) + this.facing; b.icon.rotation.x = 0.12; b.ring.rotation.y = this.facing; b.disc.rotation.y = this.facing; b.icon.position.set(EMBLEM_X, focusY + 30 + (calm ? 0 : Math.sin(age * 2.2) * 4), 70);
     const duration = Number(effect.duration) || (Number(effect.elapsed) + Number(effect.remaining)) || 5;
     const progress = clamp(Number.isFinite(Number(effect.remaining)) && effect.remaining > 0 ? effect.remaining / duration : 1, 0, 1);
     if (Math.abs(progress - b.progress) > 0.015) { b.progress = progress; b.ring.geometry.dispose(); b.ring.geometry = new THREE.RingGeometry(30, 33, 48, 1, Math.PI / 2, Math.max(0.001, TAU * progress)); }
@@ -549,14 +647,16 @@ export class Stage {
     const blocks = state.blocks; const count = blocks.length; const effectId = g.activeEffect ? g.activeEffect.id : '';
     const targetFocus = Math.max(220, (count + 1) * 22 - 60);
     this.rig.focusY = this.reduced ? targetFocus : damp(this.rig.focusY, targetFocus, 1 / 0.12, dt);
+    const uv = this.userView(dt, this.rig.focusY); this.facing = uv.yaw; tower.setFacing(uv.yaw); // (the badge, the digits, the labels and the Teamwork plaques turn to face the visitor's view)
     const altitude = clamp(this.rig.focusY / 2200);
     const effect = g.activeEffect; const key = effect ? `${effect.id}:${effect.targetPlayerId || ''}` : '';
     if (key !== this.lastEffectKey) { if (effect) this.announceEffect(effect, view); else this.removeBadge(); this.lastEffectKey = key; }
     this.updateBadge(effect, dt, this.rig.focusY);
-    // zoom sabotage: 1.85x about the top block, like the 2D view
+    // zoom sabotage: 1.85x about the top block, like the 2D view. The visitor's own zoom (the wheel) closes in the same way: the closer the view, the more
+    // it centres on the top block, so a short tower is never zoomed off the bottom of the field (and zooming out simply shows more of the world)
     const zoomTarget = effectId === 'zoom' ? 1.85 : 1;
     this.rig.zoom = this.reduced ? zoomTarget : damp(this.rig.zoom, zoomTarget, 1 / 0.12, dt);
-    const zk = clamp((this.rig.zoom - 1) / 0.85);
+    const zk = clamp((this.rig.zoom * uv.zoom - 1) / 0.85);
     const topBlock = blocks[blocks.length - 1]; const topX = topBlock ? (topBlock.left + topBlock.right) / 2 - 180 : 0; const topY = topBlock ? levelY(topBlock.level) : 11;
     const stageEl = document.getElementById('game-stage'); const rect = this.rectOf(stageEl);
     const ppu1 = Math.min(rect.w / BOARD_W, rect.h / 520);
@@ -564,14 +664,15 @@ export class Stage {
     const screen = { x: rect.x + rect.w / 2 + lerp(0, topX * ppu1, zk), y: rect.y + rect.h / 2 - lerp(0, (topY - this.rig.focusY) * ppu1, zk) };
     // camera life: gentle sway, pointer parallax, landing kick, earthquake / collapse shake, drunk roll
     const [px, py] = this.parallax(); const sway = this.reduced ? 0 : Math.sin(this.time * 0.23) * 0.05;
-    this.rig.yaw = damp(this.rig.yaw, sway + px + (this.reduced ? 0 : 0), 4, dt); this.rig.pitch = damp(this.rig.pitch, 0.1 + py + (this.reduced ? 0 : Math.sin(this.time * 0.17) * 0.012), 4, dt);
+    this.rig.yaw = damp(this.rig.yaw, sway + px * uv.par, 4, dt); this.rig.pitch = damp(this.rig.pitch, 0.1 + py * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.17) * 0.012), 4, dt);
     let shake = [0, this.rig.kick.step(dt), 0];
     if (this.rig.shakeAmp > 0.01 && !this.reduced) { this.rig.shakeT += dt; this.rig.shakeAmp *= Math.exp(-dt * 2.8); shake = [shake[0] + Math.sin(this.rig.shakeT * 61) * this.rig.shakeAmp, shake[1] + Math.cos(this.rig.shakeT * 53) * this.rig.shakeAmp * 0.7, 0]; }
     if (effectId === 'earthquake' && !this.reduced && g.activeEffect) { const t = view.Core.earthquakeOffset(g.activeEffect.elapsed, g.activeEffect.remaining, false); shake[0] += t.x * 0.55; shake[1] -= t.y * 0.55; }
     let roll = effectId === 'drunk' && !this.reduced ? Math.sin(this.time * 2.1) * 0.035 + Math.sin(this.time * 3.7) * 0.018 : 0;
     // The Pisa Tilt rolls the camera: the whole world leans, up to 16 degrees (the same angle the game's own view takes)
     if (effectId === 'pisa' && g.activeEffect && view.Core.pisaAngle) roll = view.Core.pisaAngle(g.activeEffect.elapsed, g.activeEffect.remaining, g.activeEffect.tiltDirection, this.reduced);
-    this.placeCamera({ anchor, screen, rect, worldW: BOARD_W, worldH: 520, yaw: this.rig.yaw, pitch: this.rig.pitch, zoom: this.rig.zoom, roll, shake });
+    this.placeCamera({ anchor, screen, rect, worldW: BOARD_W, worldH: 520, yaw: this.rig.yaw + uv.yaw, pitch: this.rig.pitch + uv.pitch, zoom: this.rig.zoom * uv.zoom, roll, shake });
+    this.world.setViewYaw(uv.yaw); this.placePlayHud(rect, dt);
     // the plinth shakes with the tower so nothing floats
     this.world.plinth.position.set(tower.shake.x, tower.shake.y, 0);
     this.ruler.setHeight(count); this.ruler.group.position.y = 0;
@@ -582,7 +683,7 @@ export class Stage {
     // while chat votes, the three candidates hover over the tower and grow with their share
     { const vote = ballot && g.vote; const remote = Boolean(view.mp.active && g.multiplayer);
       const mine = vote && !remote && vote.votes && vote.votes.has && vote.votes.has('you') ? vote.options.indexOf(vote.votes.get('you')) : -1;
-      this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70) }); }
+      this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70), faceYaw: this.facing }); }
     // post: each sabotage has a feel
     if (!this.reduced) {
       if (effectId === 'slowmo') { this.post.desat = 0.5; this.post.tint = [0.9, 0.97, 1.12]; }
@@ -596,7 +697,7 @@ export class Stage {
       if (open < 0.999) { const lamp = this.emblemLight(); if (lamp) this.post.spots.push(lamp); }
     }
     const mover = g.moving; const live = mover && Number.isFinite(mover.left) && Number.isFinite(mover.width);
-    this.watch(live ? mover.left + mover.width / 2 - BOARD_W / 2 : topX, live ? levelY(mover.level || count) : topY, 0, 1); // the crowd follows the moving block
+    this.watch(live ? mover.left + mover.width / 2 - BOARD_W / 2 : topX, live ? levelY(mover.level || count) : topY, 0, 1, uv.yaw); // the crowd follows the moving block
     this.updateWorld(dt, this.rig.focusY, altitude, view, tower);
     // The sun's wide bloom would wash the candidates out while chat votes (the Sunset sun sits right behind them): the haze eases off
     // for the vote and comes back after it.
@@ -660,21 +761,17 @@ export class Stage {
     const topY = b.y1 + 96; const bottomY = -70; const worldH = topY - bottomY; const cyBase = (topY + bottomY) / 2 - 24;
     // the swoop follows the build of the title itself, so rushing the build never makes the camera jump
     const intro = reduced || !this.swoop ? 1 : easeInOutCubic(clamp(title.age / (title.introDuration + 0.2)));
-    const floorPitch = Math.asin(clamp((10 - cyBase) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
-    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt);
-    if (!reduced && o.rotated && !this.drag && !o.moving) { this.idleFor += dt; if (this.idleFor > 30) { o.reset(2.4); this.idleFor = 0; } } else if (this.drag || o.moving) this.idleFor = 0;
-    // the pointer's own parallax steps aside while the scene is being turned, and comes back as it settles
-    this.dragBlend = damp(this.dragBlend, this.drag || o.moving ? 1 : 0, this.drag ? 14 : 2.2, dt);
-    const [px, py] = this.parallax(1.4); const par = 1 - this.dragBlend;
+    const uv = this.userView(dt, cyBase, { idleReset: true }); const par = uv.par;
+    const [px, py] = this.parallax(1.4);
     const cam = pose ? pose.cam : null; const focus = cam ? cam.focus : 0;
     const yaw = (1 - intro) * -0.5 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + o.yaw;
     const pitch = lerp(0.74, 0.085, intro) + py * par + o.pitch;
-    const zoom = lerp(0.46, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy) * (cam ? cam.zoom : 1);
+    const zoom = lerp(0.46, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy) * (cam ? cam.zoom : 1) * uv.zoom;
     const shakeAmp = cam && !reduced ? cam.shake * 8 : 0;
     const shake = [shakeAmp ? Math.sin(this.time * 61) * shakeAmp : 0, this.rig.kick.step(dt) + (shakeAmp ? Math.cos(this.time * 53) * shakeAmp * 0.7 : 0), 0];
     const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(lerp(0, Lb.topOffsetX, focus), lerp(cyBase, title.topCenterY, focus), 0);
     this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h * 0.5 }, rect, worldW, worldH, yaw, pitch, zoom, roll: cam ? cam.roll : 0, shake });
-    this.world.setViewYaw(o.yaw); this.popups.faceYaw = yaw;
+    this.world.setViewYaw(o.yaw); this.facing = yaw;
     title.toCamera.copy(this.camera.position).sub(tmpTitle.set(0, 150, 0)).normalize();
 
     // ---- the pointer in the scene
@@ -705,7 +802,10 @@ export class Stage {
     this.placeCaption(rect);
     this.ruler.group.visible = false;
     if (this.hud) {
-      this.hud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.hud.setRotated(o.rotated);
+      // The strip under the scene rises from the bottom of the window as the page scrolls: the controls ride above it instead of covering its right end.
+      const strip = document.querySelector('#title-screen .home-bottom'); const sr = strip ? strip.getBoundingClientRect() : null;
+      const ceiling = sr && sr.height > 4 && sr.top < H ? sr.top - 10 : Infinity;
+      this.hud.place(rect.x + rect.w - 14, Math.max(rect.y + 120, Math.min(rect.y + rect.h - 12, ceiling))); this.hud.setRotated(o.rotated);
       this.hintAge += dt; if (this.hintAge > 10) this.hud.fade(); // the hint is only there to be noticed: it steps aside by itself (until the first drag, it comes back next visit)
     }
     this.world.plinth.position.set(0, 0, 0);
@@ -824,6 +924,7 @@ export class Stage {
     while (this.arena.length < n) { const t = new Tower(this.kit, this.fx, { scale: 1 }); t.root.visible = true; this.scene.add(t.root); this.wireTower(t, 'arena'); this.arena.push(t); }
     this.arena.forEach((t, i) => { t.root.visible = i < n; });
     const rect = this.rectOf(document.getElementById('game-stage'));
+    const uv = this.userView(dt, 226); this.facing = uv.yaw; // (the name plates below turn to face the visitor's view)
     const colW = 720 / n; const maxHeight = Math.max(0, ...players.map(p => Number(p.height) || (p.blocks ? p.blocks.length - 1 : 0)));
     const scale = clamp(Math.min(colW / 400, 440 / ((maxHeight + 2) * 22)), 0.06, 0.9);
     const effects = g.remoteEffects || [];
@@ -849,12 +950,17 @@ export class Stage {
         const sp = this.spotPost(tower, tower.rig.spot, colRect); if (sp && this.post.spots.length < 6) this.post.spots.push(sp);
       }
     });
-    this.watch(Math.sin(this.time * 0.8) * colW * Math.max(0.5, (n - 1) / 2), this.rig.focusY, 0, 1); // the crowd scans the lanes
+    this.watch(Math.sin(this.time * 0.8) * colW * Math.max(0.5, (n - 1) / 2), this.rig.focusY, 0, 1, uv.yaw); // the crowd scans the lanes
     for (let i = n; i < this.arena.length; i += 1) this.arena[i].root.visible = false;
     for (let i = n; i < this.labels.length; i += 1) this.labels[i].mesh.visible = false;
     const focusY = 226; const [px, py] = this.parallax(0.7);
-    this.placeCamera({ anchor: new THREE.Vector3(0, focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 720, worldH: 520, yaw: px * 0.8 + (this.reduced ? 0 : Math.sin(this.time * 0.2) * 0.04), pitch: 0.12 + py });
-    const topCrowd = (maxHeight + 1) * 22 * scale; this.ruler.group.visible = false;
+    // Zooming in closes in on the middle of the towers (the wide view is centred on the sky above them), so the stacks never leave the frame.
+    const topCrowd = (maxHeight + 1) * 22 * scale; const zk = clamp((uv.zoom - 1) / 0.85);
+    const lowFocus = clamp(topCrowd * 0.55, 30, focusY); this.arenaFocus = this.arenaFocus == null || this.reduced ? lowFocus : damp(this.arenaFocus, lowFocus, 1 / 0.3, dt);
+    const anchorY = lerp(focusY, this.arenaFocus, zk); const ppu1 = Math.min(rect.w / 720, rect.h / 520);
+    this.placeCamera({ anchor: new THREE.Vector3(0, anchorY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 - (anchorY - focusY) * ppu1 }, rect, worldW: 720, worldH: 520, yaw: px * 0.8 * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.2) * 0.04) + uv.yaw, pitch: 0.12 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.world.setViewYaw(uv.yaw); this.placePlayHud(rect, dt);
+    this.ruler.group.visible = false;
     this.world.crowd.clearBallot(); const ballot = this.ballotFrom(view); if (ballot) this.world.crowd.setBallot(ballot);
     this.updateWorld(dt, focusY, 0, view);
     this.post.tiltCenter = 0.5; this.post.blur = 4;
@@ -885,7 +991,7 @@ export class Stage {
       ctx.textAlign = 'center'; ctx.fillText(status, 128, 72, 220); label.texture.needsUpdate = true;
     }
     const colW = opts.colW || 720 / Math.max(1, this.view.game.remotePlayers.length);
-    label.mesh.scale.setScalar(clamp(colW / 150, 0.5, 1.15)); label.mesh.position.set(x, opts.y == null ? 470 : opts.y, 120);
+    label.mesh.scale.setScalar(clamp(colW / 150, 0.5, 1.15)); label.mesh.position.set(x, opts.y == null ? 470 : opts.y, 120); label.mesh.rotation.y = this.facing;
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -901,15 +1007,12 @@ export class Stage {
     const reveal = this.reduced ? 1 : easeInOutCubic(clamp(this.resultsT / 1.8));
     // the sculpture can be walked all the way round: hold left or right and drag (same controller and rules as the home scene)
     const reduced = this.reduced; const o = this.orbit; const p = this.pointer;
-    const floorPitch = Math.asin(clamp((10 - this.rig.focusY) / (this.camDist || 1700), -0.95, 0.95));
-    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt);
-    if (!reduced && o.rotated && !this.drag && !o.moving) { this.idleFor += dt; if (this.idleFor > 30) { o.reset(2.4); this.idleFor = 0; } } else if (this.drag || o.moving) this.idleFor = 0;
-    this.dragBlend = damp(this.dragBlend, this.drag || o.moving ? 1 : 0, this.drag ? 14 : 2.2, dt);
-    const [px, py] = this.parallax(1.4); const par = 1 - this.dragBlend;
+    const uv = this.userView(dt, this.rig.focusY, { idleReset: true }); const par = uv.par;
+    const [px, py] = this.parallax(1.4);
     const yaw = (Math.sin(this.time * 0.22) * 0.14 + px) * par + o.yaw; const pitch = lerp(0.04, 0.13, reveal) + py * par + o.pitch;
-    this.world.setViewYaw(o.yaw);
+    this.world.setViewYaw(o.yaw); this.facing = o.yaw;
     this.setCursor(this.drag ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
-    this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) });
+    this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) * uv.zoom });
     // the height, as a monument
     if (!this.scoreShown && this.resultsT > 0.4) {
       this.scoreShown = true; this.bricks.show({ key: 'score', text: String(data.height), position: [0, standing * 22 + 52, 80], cap: 112, colors: ['#E3A33B'], rows: 15, style: 'hold', baseline: true, reduced: this.reduced });
@@ -927,7 +1030,7 @@ export class Stage {
       }
     } else this.crown.visible = false;
     if (this.resultsHud) {
-      this.resultsHud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.resultsHud.setRotated(o.rotated);
+      this.resultsHud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.resultsHud.setRotated(o.rotated || this.dolly.zoomed);
       this.resultsHintAge += dt; if (this.resultsHintAge > 10) this.resultsHud.fade();
     }
     this.ruler.setHeight(blocks.length); this.world.plinth.position.set(0, 0, 0); this.world.crowd.clearBallot();
@@ -954,6 +1057,7 @@ export class Stage {
     this.podiumClock += dt;
     const maxBlocks = Math.max(1, ...entries.map(e => e.blocks.length));
     const { worldW, colW, scale, maxHeight } = podiumMetrics(n, maxBlocks);
+    const uv = this.userView(dt, (maxHeight + 1) * 11 * scale + 40, { idleReset: true }); this.facing = uv.yaw; // (the name plates and plaques turn to face the visitor's view)
     let finished = true;
     const labelScale = clamp(colW / 150, 0.5, 1.15);
     entries.forEach((entry, i) => {
@@ -963,7 +1067,7 @@ export class Stage {
       if (entry.shown < total) finished = false;
       const count = revealedFallen(entry.fallen, entry.shown, total);
       if (count !== entry.fallenShown) { entry.fallenShown = count; entry.fallenView = entry.fallen.slice(0, count); }
-      const tower = this.arena[i]; const x = entry.slot * colW;
+      const tower = this.arena[i]; tower.setFacing(uv.yaw); const x = entry.slot * colW;
       tower.root.position.set(x, 0, 0); tower.root.scale.setScalar(scale);
       tower.sync({ id: `podium:${this.podiumId}:${entry.key}`, blocks: entry.blockView.length ? entry.blockView : [Core.makeBase()], fallen: entry.fallenView, moving: null, effect: null, helpers: Core, phase: 'ended', collapsed: false, reduced: this.reduced, ended: true, teamPlacers: Boolean(entry.team) }, dt, this.time);
       if (entry.team) { if (this.labels[i]) this.labels[i].mesh.visible = false; return; }
@@ -1003,13 +1107,21 @@ export class Stage {
     const free = wide ? { x: 12, y: heading.y + heading.h + 8, w: Math.max(240, panel.x - 36), h: Math.max(240, H - heading.y - heading.h - 24) }
       : { x: 8, y: heading.y + heading.h + 6, w: W - 16, h: Math.max(200, panel.y - heading.y - heading.h - 14) };
     const focusY = topY * 0.5 + 40; const worldH = topY + 220; const [px, py] = this.parallax(1.2);
-    this.placeCamera({ anchor: new THREE.Vector3(0, focusY, 30), screen: { x: free.x + free.w / 2, y: free.y + free.h * 0.47 }, rect: free, worldW: worldW + 60, worldH, yaw: px + (this.reduced ? 0 : Math.sin(this.time * 0.18) * 0.1), pitch: 0.1 + py });
+    this.placeCamera({ anchor: new THREE.Vector3(0, focusY, 30), screen: { x: free.x + free.w / 2, y: free.y + free.h * 0.47 }, rect: free, worldW: worldW + 60, worldH, yaw: px * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.18) * 0.1) + uv.yaw, pitch: 0.1 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.world.setViewYaw(uv.yaw);
+    if (this.resultsHud) {
+      // beside the cards the screen's bottom-right corner is free (as in the lobby, and clear of the page's footer note); above them it is the corner of the podium's own area
+      if (wide) this.resultsHud.place(W - 16, H - 14); else this.resultsHud.place(free.x + free.w - 14, free.y + free.h - 12);
+      this.resultsHud.setRotated(this.orbit.rotated || this.dolly.zoomed);
+      this.resultsHintAge += dt; if (this.resultsHintAge > 10) this.resultsHud.fade();
+    }
     this.ruler.group.visible = false; this.world.crowd.clearBallot(); this.updateWorld(dt, focusY, 0.04, view); this.post.tiltCenter = 0.5; this.post.blur = 4;
   }
 
   // The lobby: one block of every colour per player on the plinth, the room code as a giant 3D sign.
   update_lobby(dt, view) {
     const room = view.mp.room; const players = (room && room.players) || []; const tower = this.getTower('lobby'); tower.root.visible = true;
+    const uv = this.userView(dt, 230, { idleReset: true }); this.facing = uv.yaw; tower.setFacing(uv.yaw); // (the name plates, plaques and totems turn to face the visitor's view)
     const blocks = [view.Core.makeBase()];
     players.forEach((p, i) => { const w = Math.max(60, 190 - i * 18); const c = (360 - w) / 2 + ((i % 2) ? 8 : -8); blocks.push({ left: c, right: c + w, level: i + 1, color: p.color || '#E3A33B', perfect: false, placer: p.name || 'Player' }); });
     tower.sync({ id: `lobby:${view.mp.code}`, blocks, fallen: [], moving: null, effect: null, helpers: view.Core, phase: 'lobby', collapsed: false, reduced: this.reduced, teamPlacers: true }, dt, this.time);
@@ -1018,20 +1130,23 @@ export class Stage {
     const free = W >= 900 ? { x: W * 0.36, y: 60, w: W * 0.62, h: H - 80 } : { x: 8, y: 54, w: W - 16, h: H * 0.5 };
     // on a desktop the cards cover the upper two thirds, so the stage (tower, totems and their name plates) sits in the band under them
     const wide = W >= 900; const screenY = wide ? Math.max(free.y + free.h / 2, H * 0.69) : free.y + free.h / 2;
-    this.placeCamera({ anchor: new THREE.Vector3(0, 230, 0), screen: { x: free.x + free.w / 2, y: screenY }, rect: free, worldW: 620, worldH: wide ? 760 : 640, yaw: px + Math.sin(this.time * 0.2) * 0.1, pitch: 0.1 + py });
+    // Zooming in closes in on the totems and the middle of the tower (the wide view is centred on the air above them), so they never leave the frame.
+    const zk = clamp((uv.zoom - 1) / 0.85); const anchorY = lerp(230, 70, zk); const ppu1 = Math.min(free.w / 620, free.h / (wide ? 760 : 640));
+    this.placeCamera({ anchor: new THREE.Vector3(0, anchorY, 0), screen: { x: free.x + free.w / 2, y: screenY - (anchorY - 230) * ppu1 }, rect: free, worldW: 620, worldH: wide ? 760 : 640, yaw: px * uv.par + Math.sin(this.time * 0.2) * 0.1 + uv.yaw, pitch: 0.1 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.world.setViewYaw(uv.yaw);
     this.world.plinth.position.set(0, 0, 0); this.ruler.group.visible = false; this.world.crowd.clearBallot();
     // the players themselves: a totem each, in their colour, on a beacon ring, with a name plate; their eyes follow the pointer
     const here = players.slice(0, 6); const p = this.pointer; const tame = p.inside && !p.touch;
-    this.totems.sync(here.map(q => ({ id: q.id, name: q.name, color: q.color, ready: q.connected !== false })), dt, this.time, { x: tame ? p.x : 0, y: tame ? p.y : 0 }, this.reduced);
+    this.totems.sync(here.map(q => ({ id: q.id, name: q.name, color: q.color, ready: q.connected !== false })), dt, this.time, { x: tame ? p.x : 0, y: tame ? p.y : 0 }, this.reduced, uv.yaw);
     here.forEach((q, i) => this.arenaLabel(i, q, totemSlot(i).x, 1, 0, { status: q.connected === false ? 'OFFLINE' : 'READY', colW: 160, y: totemHeight(this.theme) + 36 + Math.floor(i / 2) * 36 }));
     for (let i = here.length; i < this.labels.length; i += 1) this.labels[i].mesh.visible = false;
-    this.watch(0, 200, 0, 0.8);
+    this.watch(0, 200, 0, 0.8, uv.yaw); this.placeLobbyHud(W, H, dt);
     this.updateWorld(dt, 230, 0, view, tower);
     this.post.tiltCenter = 0.5; this.post.blur = 5;
   }
 
   dispose() {
-    for (const [name, fn] of [['pointermove', this.onPointerMove], ['pointerdown', this.onPointerDown], ['pointerup', this.onPointerUp], ['pointercancel', this.onPointerCancel], ['blur', this.onBlur], ['contextmenu', this.onContextMenu], ['dblclick', this.onDoubleClick], ['keydown', this.onKeyDown]]) window.removeEventListener(name, fn);
+    for (const [name, fn] of [['pointermove', this.onPointerMove], ['pointerdown', this.onPointerDown], ['pointerup', this.onPointerUp], ['pointercancel', this.onPointerCancel], ['blur', this.onBlur], ['contextmenu', this.onContextMenu], ['dblclick', this.onDoubleClick], ['wheel', this.onWheel], ['keydown', this.onKeyDown]]) window.removeEventListener(name, fn);
     document.documentElement.removeEventListener('pointerleave', this.onPointerLeave);
     this.setCursor(''); this.endDrag(true); if (this.hud) { this.hud.dispose(); this.hud = null; }
     if (this.bricks) this.bricks.destroy(); if (this.voxel) this.voxel.dispose(); if (this.candidates) this.candidates.dispose();
@@ -1041,6 +1156,7 @@ export class Stage {
     if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }
     if (this.crown) { this.scene.remove(this.crown); this.crown.userData.dispose(); }
     if (this.resultsHud) { this.resultsHud.dispose(); this.resultsHud = null; }
+    if (this.lobbyHud) { this.lobbyHud.dispose(); this.lobbyHud = null; }
     this.engine.dispose();
   }
 }

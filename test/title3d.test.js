@@ -383,7 +383,7 @@ describe('Spotlight in play: no box, the name first, then the dark closes in, an
   });
   test('the emblem sits in a medallion, turns face-on-first, and holds still under Reduced Motion', () => {
     const stage = fs.readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8');
-    assert.match(stage, /b\.icon\.rotation\.y = calm \? 0\.3 : dwellSpin\(age, 1\.0\)/); assert.match(stage, /const calm = this\.reduced;/);
+    assert.match(stage, /b\.icon\.rotation\.y = \(calm \? 0\.3 : dwellSpin\(age, 1\.0\)\) \+ this\.facing/, 'the emblem still turns face-on-first (and holds still under Reduced Motion), now relative to the view the player has chosen'); assert.match(stage, /const calm = this\.reduced;/);
     assert.match(stage, /this\.badge = \{ icon, ring, disc, born: this\.time, progress: 1 \}/); assert.match(stage, /removeBadge\(\) \{ if \(!this\.badge\) return; const b = this\.badge; this\.scene\.remove\(b\.icon, b\.ring, b\.disc\);/);
   });
 });
