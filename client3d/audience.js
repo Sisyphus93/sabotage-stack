@@ -2,7 +2,7 @@
 // camera however high the tower climbs. During a vote they raise colour-coded cards in proportion to the live tally.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { rng, damp, mod, TAU, hexToRgb01 } from './util.js';
+import { rng, damp, mod, clamp, smoothstep, TAU, hexToRgb01 } from './util.js';
 import { BALLOT_COLORS } from './palette.js';
 
 const TIER_H = 104;
@@ -55,6 +55,8 @@ function shelfGeometry(theme, width, depth) {
 export class Crowd {
   constructor(theme, palette, { max = 700, density = 1 } = {}) {
     this.theme = theme; this.palette = palette; this.group = new THREE.Group(); this.centerY = 0; this.excite = 0; this.time = 0;
+    // hovering the home scene: the crowd turns to watch the pointer and gets a little more excited (see setAttention)
+    this.attention = { x: 0, z: 0, amount: 0, interest: 0 };
     this.ballotColors = BALLOT_COLORS[theme] || BALLOT_COLORS.paper;
     const random = rng(101);
     const slots = [];
@@ -116,7 +118,7 @@ export class Crowd {
       const mesh = new THREE.InstancedMesh(geometry, shelfMaterial, items.length); mesh.frustumCulled = false; mesh.receiveShadow = false;
       mesh.userData.items = items; this.shelfMeshes.push(mesh); this.group.add(mesh);
     }
-    this.dummy = new THREE.Object3D();
+    this.dummy = new THREE.Object3D(); this.dummy.rotation.order = 'YXZ'; // the turn is applied last, so a lean stays a lean in the figure's own frame
     this.group.add(this.figures, this.cards);
     this.density = 1; this.setDensity(density);
     this.ballot = null; this.ballotKey = '';
@@ -154,18 +156,31 @@ export class Crowd {
 
   cheer(power = 1) { this.excite = Math.min(2.5, this.excite + power); }
 
+  // x / z: where the pointer is, in the crowd's own space; amount 0..1: how much they look at it; interest 0..1: a steady buzz
+  setAttention(x, z, amount, interest = 0) { const a = this.attention; a.x = x; a.z = z; a.amount = amount; a.interest = interest; }
+
   update(dt, time) {
     this.time = time; this.excite = damp(this.excite, 0, 1.6, dt);
     const d = this.dummy; const cy = this.centerY; const n = this.visible;
+    const att = this.attention; const watch = att.amount > 0.004; const excite = this.excite + att.interest * 0.55;
     for (let i = 0; i < n; i += 1) {
       const slot = this.slots[i];
       this.raise[i] = damp(this.raise[i], this.target[i], 7 + (this.seed[i] % 3), dt);
       const wrapY = cy + mod(slot.y - cy + WRAP / 2, WRAP) - WRAP / 2;
-      const bob = Math.sin(time * this.speed[i] + this.seed[i]) * 1.4 * (1 + this.excite);
-      const hop = Math.max(0, Math.sin(time * (7 + this.speed[i]) + this.seed[i] * 3)) * this.excite * 9;
+      const bob = Math.sin(time * this.speed[i] + this.seed[i]) * 1.4 * (1 + excite);
+      const hop = Math.max(0, Math.sin(time * (7 + this.speed[i]) + this.seed[i] * 3)) * excite * 9;
+      // They watch the pointer: turn towards it (limited, so nobody turns their back) and crane that way, the nearer ones most.
+      // Turning alone would hardly show on figures that are round, so the lean is what you see.
+      let look = 0; let crane = 0; let towards = 0;
+      if (watch) {
+        const dx = att.x - slot.x; const dz = att.z - slot.z; const bearing = Math.atan2(dx, dz);
+        look = clamp(bearing, -0.75, 0.75) * att.amount; crane = att.amount * smoothstep(1900, 420, Math.hypot(dx, dz)); towards = bearing;
+      }
+      const turn = this.facing[i] * (1 - att.amount * 0.7) + look + Math.sin(time * 0.6 + this.seed[i]) * 0.12;
+      const lean = crane * 0.24 * (0.8 + 0.2 * Math.sin(time * 2.1 + this.seed[i]));
       d.position.set(slot.x, wrapY + bob + hop, slot.z);
-      d.rotation.set(0, this.facing[i] + Math.sin(time * 0.6 + this.seed[i]) * 0.12, this.lean[i] + Math.sin(time * 2 * this.speed[i] + this.seed[i]) * 0.03 * (1 + this.excite));
-      d.scale.setScalar(slot.s); d.updateMatrix(); this.figures.setMatrixAt(i, d.matrix);
+      d.rotation.set(lean * Math.cos(towards - turn), turn, this.lean[i] + Math.sin(time * 2 * this.speed[i] + this.seed[i]) * 0.03 * (1 + excite) - lean * Math.sin(towards - turn));
+      d.scale.set(slot.s, slot.s * (1 + crane * 0.09), slot.s); d.updateMatrix(); this.figures.setMatrixAt(i, d.matrix);
       const r = this.raise[i];
       if (r < 0.01) { d.scale.setScalar(0); }
       else {

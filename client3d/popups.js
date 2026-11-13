@@ -11,20 +11,26 @@ export function letterMaterial(theme, color, glow = 0.55, transparent = true) {
 }
 
 export class Popups {
-  constructor(theme, palette) { this.group = new THREE.Group(); this.items = []; this.setTheme(theme, palette); }
+  constructor(theme, palette) { this.group = new THREE.Group(); this.items = []; this.faceYaw = 0; this.setTheme(theme, palette); }
   setTheme(theme, palette) { this.theme = theme; this.palette = palette; this.clear(); }
   clear() { for (const item of this.items) this.dispose(item); this.items.length = 0; }
   dispose(item) { this.group.remove(item.mesh); item.mesh.material.dispose(); }
 
+  // faceYaw: turns every label to face a camera that has been orbited round the scene (home view only; 0 elsewhere)
   // style: 'slam' (drops in huge and stamps), 'rise' (pops and drifts up), 'hold' (pops, stays until hide())
   show({ text, position = [0, 0, 80], size = 34, depth = 10, color = this.palette.amber, glow = 0.6, style = 'slam', life = 1.6, tilt = 0, key = null }) {
-    if (key) { const old = this.items.find(item => item.key === key); if (old) { old.t = Math.min(old.t, old.life * 0.0); old.life = life; old.dying = false; return old; } }
+    if (key) {
+      const old = this.items.find(item => item.key === key);
+      // the same words under the same key: bring the label back; different words: it is a new label, built fresh
+      if (old && old.text === text) { old.t = Math.min(old.t, old.life * 0.0); old.life = life; old.dying = false; old.base = position.slice(); return old; }
+      if (old) { this.dispose(old); this.items.splice(this.items.indexOf(old), 1); }
+    }
     const fontKey = this.palette.fontKey;
     const { geometry } = textGeometry(fontKey, text, { size, depth });
     const mesh = new THREE.Mesh(geometry, letterMaterial(this.theme, color, glow));
     mesh.castShadow = false; mesh.position.set(...position); mesh.renderOrder = 9;
     this.group.add(mesh);
-    const item = { mesh, t: 0, life, style, base: position.slice(), tilt, key, dying: false, seed: Math.random() * TAU };
+    const item = { mesh, text, t: 0, life, style, base: position.slice(), tilt, key, dying: false, seed: Math.random() * TAU };
     this.items.push(item); return item;
   }
   hide(key) { const item = this.items.find(i => i.key === key); if (item) { item.dying = true; item.dieT = 0; } }
@@ -38,14 +44,14 @@ export class Popups {
         const s = item.t < 0.22 ? 2.6 - 1.6 * easeOutCubic(item.t / 0.22) : 1;
         scale = s * (item.t < 0.22 ? 1 : 1 + Math.exp(-(item.t - 0.22) * 9) * Math.cos((item.t - 0.22) * 26) * 0.06);
         m.position.set(item.base[0], item.base[1] + (item.t < 0.22 ? (1 - item.t / 0.22) * 46 : 0) + Math.sin(time * 1.3 + item.seed) * 1.4, item.base[2]);
-        m.rotation.set(0, Math.sin(time * 0.9 + item.seed) * 0.12, item.tilt * (1 + Math.exp(-item.t * 6)));
+        m.rotation.set(0, this.faceYaw + Math.sin(time * 0.9 + item.seed) * 0.12, item.tilt * (1 + Math.exp(-item.t * 6)));
         alpha = smoothstep(0, 0.1, item.t) * (1 - smoothstep(0.72, 1, k));
         if (item.life <= 0) alpha = 1;
       } else if (item.style === 'rise') {
-        scale = pop; m.position.set(item.base[0], item.base[1] + item.t * 30, item.base[2]); m.rotation.set(0, Math.sin(time * 2 + item.seed) * 0.18, item.tilt);
+        scale = pop; m.position.set(item.base[0], item.base[1] + item.t * 30, item.base[2]); m.rotation.set(0, this.faceYaw + Math.sin(time * 2 + item.seed) * 0.18, item.tilt);
         alpha = smoothstep(0, 0.08, item.t) * (1 - smoothstep(0.55, 1, k));
       } else { // hold
-        scale = pop; m.position.set(item.base[0], item.base[1] + Math.sin(time * 1.7 + item.seed) * 2.2, item.base[2]); m.rotation.set(0, Math.sin(time * 0.8 + item.seed) * 0.16, item.tilt);
+        scale = pop; m.position.set(item.base[0], item.base[1] + Math.sin(time * 1.7 + item.seed) * 2.2, item.base[2]); m.rotation.set(0, this.faceYaw + Math.sin(time * 0.8 + item.seed) * 0.16, item.tilt);
         alpha = 1;
       }
       if (item.dying) { item.dieT = (item.dieT || 0) + dt; alpha *= 1 - clamp(item.dieT / 0.35); scale *= 1 - 0.2 * clamp(item.dieT / 0.35); }

@@ -12,11 +12,23 @@ import { TitleBoard, AttractDirector, Arsenal } from './hero.js';
 import { normalizeTheme, paletteFor, BALLOT_COLORS, themedBlockColor } from './palette.js';
 import { buildIcon } from './icons3d.js';
 import { hasGlyphs } from './text3d.js';
+import { OrbitController } from './orbit.js';
+import { HoverField, offsetFromPointer } from './hover.js';
+import { createOrbitHud } from './orbit-hud.js';
 import { podiumEntries, podiumMetrics, revealCount, revealedFallen, headlineFor } from './podium.js';
 import { clamp, damp, lerp, smoothstep, easeInOutCubic, easeOutCubic, TAU, rng, Spring } from './util.js';
 
 const BOARD_W = 360;
 const DUST = [0.82, 0.74, 0.6];
+// Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
+const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]';
+const PANEL_SELECTOR = '.side-card, .play-card, .result-info, .preview-card, .home-copy, .home-bottom, .topbar, .footer-note, .orbit-hud';
+const HOVER_LOOK = {
+  paper: { light: '#FFD9A0', power: 52000, sparkles: ['#E3A33B', '#2F8478', '#D5472F', '#FFF1D0', '#C96F8A'] },
+  sunset: { light: '#FF6BE0', power: 76000, sparkles: ['#FF4FD8', '#2EE6D6', '#FFC53D', '#B983FF'] },
+  primetime: { light: '#CFE0FF', power: 64000, sparkles: ['#FFC83D', '#FFFFFF', '#35D0E8', '#FF7FA8'] }
+};
+const closest = (target, selector) => Boolean(target && target.closest && target.closest(selector));
 const soloIds = new WeakMap(); let soloCounter = 0;
 const soloId = game => { if (!soloIds.has(game)) soloIds.set(game, ++soloCounter); return soloIds.get(game); };
 
@@ -29,27 +41,44 @@ export class Stage {
     if (scale !== 1) { this.engine.scale = scale; this.engine.forcedTier = true; }
     this.scene = this.engine.scene; this.camera = this.engine.camera;
     this.fx = {
-      sparks: new Sparks(1800), confetti: new Confetti(420), pulses: new Pulses(12),
+      sparks: new Sparks(1800), glints: new Sparks(260), confetti: new Confetti(420), pulses: new Pulses(12), // glints: the pointer's sparkle trail (home view)
       dust: (pos, count = 6) => this.fx.sparks.burst({ pos, count, speed: 70, spread: 1, color: DUST, size: 16, life: 0.9, gravity: 10, up: 0.5, drag: 1.5, alpha: 0.34, growth: 16 })
     };
-    this.scene.add(this.fx.sparks.points, this.fx.confetti.mesh, this.fx.pulses.group);
+    this.scene.add(this.fx.sparks.points, this.fx.glints.points, this.fx.confetti.mesh, this.fx.pulses.group);
     this.pointer = { x: 0, y: 0, px: 0, py: 0, speed: 0, inside: false, lastX: 0, lastY: 0, lastT: 0, ndc: new THREE.Vector2() };
     this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 40);
     this.rig = { yaw: 0, pitch: 0.1, zoom: 1, roll: 0, kick: new Spring(0, 220, 14), shakeAmp: 0, shakeT: 0, focusY: 220, intro: 0 };
     this.timeScale = 1; this.slowT = 0; this.flash = 0; this.desatPulse = 0; this.caPulse = 0;
     this.towers = {}; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
     this.heroLayout = ''; this.introDone = false; this.heroHover = -1;
+    // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
+    this.orbit = new OrbitController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
+    this.hud = null; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
+    this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
+    this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
+    this.scene.add(this.cursorLight);
     this.buildTheme(this.theme);
     this.engine.on('tier', tier => this.applyTier(tier));
     this.engine.on('restored', () => this.buildTheme(this.theme, true));
-    window.addEventListener('pointermove', this.onPointerMove = e => this.handlePointer(e), { passive: true });
-    window.addEventListener('pointerdown', this.onPointerDown = e => this.handleClick(e), { passive: true });
-    window.addEventListener('pointerleave', this.onPointerLeave = () => { this.pointer.inside = false; });
+    window.addEventListener('pointermove', this.onPointerMove = e => this.handleMove(e), { passive: true });
+    window.addEventListener('pointerdown', this.onPointerDown = e => this.handleDown(e), { passive: true });
+    window.addEventListener('pointerup', this.onPointerUp = e => this.handleUp(e), { passive: true });
+    window.addEventListener('pointercancel', this.onPointerCancel = e => this.handleUp(e, true), { passive: true });
+    document.documentElement.addEventListener('pointerleave', this.onPointerLeave = () => { this.pointer.inside = false; });
+    window.addEventListener('blur', this.onBlur = () => { this.pointer.inside = false; this.endDrag(true); });
+    window.addEventListener('contextmenu', this.onContextMenu = e => {
+      if (this.mode !== 'hero') return;
+      // a right-drag that began on the scene owns the menu wherever it is released (Windows raises it on mouse-up, over whatever is there)
+      const turning = (this.drag && this.drag.button === 2) || performance.now() < this.contextGuardUntil;
+      if (turning || (!closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR))) e.preventDefault();
+    });
+    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode === 'hero' && !closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR)) this.orbit.reset(); });
+    window.addEventListener('keydown', this.onKeyDown = e => this.handleKey(e));
     this.applyTier(this.engine.tier);
   }
 
   applyTier(tier) {
-    this.fx.sparks.density = tier.particles; this.fx.confetti.density = tier.particles;
+    this.fx.sparks.density = tier.particles; this.fx.glints.density = tier.particles; this.fx.confetti.density = tier.particles;
     if (this.world) this.world.setCrowdDensity(tier.crowd);
     this.world && (this.world.lights.key.shadow.mapSize.width !== tier.shadow) && (() => { this.world.lights.key.shadow.mapSize.set(tier.shadow, tier.shadow); if (this.world.lights.key.shadow.map) { this.world.lights.key.shadow.map.dispose(); this.world.lights.key.shadow.map = null; } })();
   }
@@ -58,6 +87,14 @@ export class Stage {
   buildTheme(theme, force = false) {
     if (this.world) { this.scene.remove(this.world.root); this.world.dispose(); }
     this.theme = theme; this.engine.setTheme(theme); this.palette = this.engine.palette;
+    // how the pointer lights the home scene: a warm lamp for paper, neon for the arcade, a cool spot for the studio
+    const look = HOVER_LOOK[theme] || HOVER_LOOK.paper;
+    this.cursorLight.color.set(look.light); this.cursorLightPower = look.power;
+    this.sparkleColors = look.sparkles.map(hex => { const c = new THREE.Color(hex); return [c.r, c.g, c.b]; });
+    // glowing sparkles vanish against the pale paper sky, so there they are drawn as ordinary soft dots in full colour
+    const glints = this.fx.glints.material; const blending = theme === 'paper' ? THREE.NormalBlending : THREE.AdditiveBlending;
+    if (glints.blending !== blending) { glints.blending = blending; glints.needsUpdate = true; }
+    this.glintBoost = theme === 'paper' ? 1 : 1.7;
     if (this.kit) this.kit.dispose(); this.kit = new BlockKit(theme);
     this.world = createWorld(theme, this.engine, { crowdDensity: this.engine.tier.crowd });
     this.scene.add(this.world.root); this.scene.fog = this.world.fog; this.scene.environment = this.world.envTexture;
@@ -73,7 +110,7 @@ export class Stage {
     this.arsenal = new Arsenal(theme, this.palette, window.SabotageStack && window.SabotageStack.sabotages); this.scene.add(this.arsenal.group);
     for (const tower of Object.values(this.towers)) tower.setKit(this.kit);
     for (const tower of this.arena) tower.setKit(this.kit);
-    this.badge = null; this.labels.forEach(l => { this.scene.remove(l.mesh); l.mesh.material.map.dispose(); l.mesh.material.dispose(); l.mesh.geometry.dispose(); }); this.labels.length = 0;
+    this.removeBadge(); this.labels.forEach(l => { this.scene.remove(l.mesh); l.mesh.material.map.dispose(); l.mesh.material.dispose(); l.mesh.geometry.dispose(); }); this.labels.length = 0;
     this.applyTier(this.engine.tier);
     this.mode = ''; // re-enter the current mode so everything is re-laid-out
   }
@@ -125,20 +162,85 @@ export class Stage {
     const p = this.pointer; const now = performance.now(); const w = window.innerWidth; const h = window.innerHeight;
     const dt = Math.max(1, now - p.lastT);
     const speed = Math.hypot(event.clientX - p.lastX, event.clientY - p.lastY) / dt * 1000;
-    p.speed = Math.max(speed, p.speed * 0.6); p.lastX = event.clientX; p.lastY = event.clientY; p.lastT = now;
+    p.speed = Math.min(5000, Math.max(speed, p.speed * 0.6)); p.lastX = event.clientX; p.lastY = event.clientY; p.lastT = now;
     p.x = event.clientX / w * 2 - 1; p.y = -(event.clientY / h * 2 - 1); p.ndc.set(p.x, p.y); p.inside = true;
-    p.overUi = Boolean(event.target && event.target.closest && event.target.closest('button, a, select, input, label, dialog, summary, [role="button"], .side-card, .play-card, .result-info, .preview-card'));
+    p.touch = event.pointerType === 'touch';
+    p.overUi = closest(event.target, UI_SELECTOR) || closest(event.target, PANEL_SELECTOR);
   }
+
+  // -------------------------------------------------------------------------------------------------------------------
+  // Home view input. Hold the left or the right mouse button (or a finger) on the scene and drag to turn it all the way round
+  // (orbit.js). A press that never moves is a click: it pops a headline letter or calls a sabotage from the ring.
+  handleMove(event) {
+    this.handlePointer(event); this.idleFor = 0;
+    const d = this.drag; if (!d || event.pointerId !== d.id) return;
+    if (event.pointerType === 'mouse' && event.buttons === 0) { this.endDrag(false, event); return; } // let go outside the window
+    if (!d.moved && Math.hypot(event.clientX - d.x, event.clientY - d.y) > this.orbit.tapSlop) d.moved = true;
+    this.orbit.move(event.clientX, event.clientY, event.timeStamp / 1000, { pitch: !d.touch });
+  }
+
+  handleDown(event) {
+    this.handlePointer(event); this.idleFor = 0;
+    if (this.mode !== 'hero' || !this.arsenal || this.drag || !event.isPrimary) return;
+    if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
+    if (this.pointer.overUi) return;
+    this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp, button: event.button, moved: false, touch: event.pointerType === 'touch' };
+    this.orbit.begin(event.clientX, event.clientY, event.timeStamp / 1000);
+    document.documentElement.classList.add('orbiting');
+    const selection = window.getSelection && window.getSelection(); if (selection && selection.removeAllRanges) selection.removeAllRanges();
+  }
+
+  handleUp(event, cancelled = false) {
+    const d = this.drag; if (!d || event.pointerId !== d.id) return;
+    if (event.pointerType === 'touch') this.pointer.inside = false; // a finger has no hover
+    this.endDrag(cancelled, event);
+  }
+
+  endDrag(cancelled = false, event = null) {
+    const d = this.drag; if (!d) return; this.drag = null;
+    this.orbit.end(event ? event.timeStamp / 1000 : performance.now() / 1000);
+    if (d.button === 2) this.contextGuardUntil = performance.now() + 500;
+    document.documentElement.classList.remove('orbiting');
+    if (d.moved) { if (this.hud) this.hud.quiet(); return; }
+    if (!cancelled && event && d.button === 0 && event.timeStamp - d.t < 600) this.handleClick(event);
+  }
+
   handleClick(event) {
     if (this.mode !== 'hero' || !this.arsenal) return;
-    if (event.target && event.target.closest && event.target.closest('button, a, select, input, label, dialog, summary, [role="button"]')) return;
+    if (closest(event.target, UI_SELECTOR)) return;
     this.handlePointer(event);
     this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
     const idx = this.arsenal.pick(this.raycaster);
-    if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); return; }
-    const point = new THREE.Vector3(); if (this.raycaster.ray.intersectPlane(this.plane, point)) this.title.poke(point);
+    if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); if (!this.reduced) this.title.wave(this.arsenal.items[idx].holder.position.x); return; }
+    const frame = this.heroAnchor && this.pointerOnScreenPlane(this.heroAnchor, this.pointer.ndc, 0);
+    if (frame && this.title.poke(frame) && !this.reduced) this.title.wave(frame.point.x, 1900);
   }
-  directorForce(id) { if (this.director) { this.director.forced = id; this.director.voted = false; } }
+
+  // Arrow keys turn the scene when nothing else has the keyboard (a focused select or button keeps its own arrows).
+  handleKey(event) {
+    if (this.mode !== 'hero' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target; if (target && target !== document.body && target !== document.documentElement) return;
+    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
+    if (event.key === 'ArrowLeft') { this.orbit.rotateBy(-step, 0.35); this.idleFor = 0; event.preventDefault(); }
+    else if (event.key === 'ArrowRight') { this.orbit.rotateBy(step, 0.35); this.idleFor = 0; event.preventDefault(); }
+    else if (event.key === 'Home') { this.orbit.reset(); event.preventDefault(); }
+  }
+
+  setCursor(value) { if (value === this.cursor) return; this.cursor = value; document.documentElement.style.cursor = value; }
+
+  // The pointer in the scene: where its ray meets a plane that faces the camera and passes through `anchor` (moved `advance`
+  // units towards the camera), plus that plane's right / up axes, so distances can be measured across the screen.
+  pointerOnScreenPlane(anchor, ndc = this.pointer.ndc, advance = 0) {
+    const cam = this.camera; const forward = cam.getWorldDirection(this.tmpForward || (this.tmpForward = new THREE.Vector3()));
+    const plane = this.screenPlane || (this.screenPlane = new THREE.Plane()); const through = this.tmpThrough || (this.tmpThrough = new THREE.Vector3());
+    plane.normal.copy(forward).negate(); plane.constant = -plane.normal.dot(through.copy(anchor).addScaledVector(forward, -advance));
+    this.raycaster.setFromCamera(ndc, cam);
+    const frame = this.pointerFrame || (this.pointerFrame = { point: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3() });
+    if (!this.raycaster.ray.intersectPlane(plane, frame.point)) return null;
+    frame.right.setFromMatrixColumn(cam.matrixWorld, 0); frame.up.setFromMatrixColumn(cam.matrixWorld, 1);
+    return frame;
+  }
+  directorForce(id) { if (this.director) { this.director.voted = false; this.director.force(id); } }
 
   // -------------------------------------------------------------------------------------------------------------------
   pickMode(view) {
@@ -195,17 +297,34 @@ export class Stage {
     this.ruler.group.visible = play;
     if (mode !== 'celebrate') this.world.plinth.scale.set(mode === 'arena' ? 2.3 : 1, 1, mode === 'arena' ? 0.62 : 1);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
+    if (hero) this.openHud(); else this.leaveHome();
     if (mode === 'hero' && !this.director) this.director = new AttractDirector(view.Core, rng(Date.now() & 0xffff));
     if (mode === 'results') this.resultsT = 0;
     this.world.crowd.clearBallot();
     if (previous === 'results' || previous === 'celebrate') this.fx.confetti.floor = -64;
   }
 
+  // The home view's on-screen controls (they live inside the title screen, so the page hides them with it).
+  openHud() {
+    if (this.hud) return; this.hintAge = 0;
+    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
+    const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset() });
+  }
+
+  // Everything the home view changed that the other views must not inherit.
+  leaveHome() {
+    this.endDrag(true); this.orbit.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.dragBlend = 0;
+    this.setCursor(''); this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
+    this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0);
+    this.engine.bloomPass.strength = this.palette.bloom;
+  }
+
   updateCommon(dt) {
     const time = this.time;
     this.engine.fade.value = damp(this.engine.fade.value, this.engine.fade.target, this.engine.fade.speed * 3, dt);
-    this.fx.sparks.update(dt * this.timeScale); this.fx.confetti.update(dt, time); this.fx.pulses.update(dt);
-    this.fx.sparks.setScale(this.engine.height * 0.95);
+    this.fx.sparks.update(dt * this.timeScale); this.fx.glints.update(dt); this.fx.confetti.update(dt, time); this.fx.pulses.update(dt);
+    this.fx.sparks.setScale(this.engine.height * 0.95); this.fx.glints.setScale(this.engine.height * 0.95);
     this.popups.update(dt, time);
     this.flash = damp(this.flash, 0, 7, dt); this.desatPulse = damp(this.desatPulse, 0, 3.2, dt); this.caPulse = damp(this.caPulse, 0, 4, dt);
     this.post.flash = this.flash; this.post.desat = Math.max(this.post.desat || 0, this.desatPulse * 0.45);
@@ -341,6 +460,21 @@ export class Stage {
     return { x: a.x * 0.5 + 0.5, y: a.y * 0.5 + 0.5, r, rect: this.uvRect(rect) };
   }
 
+  // The screen rectangle the demo tower fills: its board, from the floor to a little above the stack. The Spotlight sabotage hides
+  // exactly this in the home scene (not a fixed column that blacked out the headline), so the veil follows the tower however far
+  // the view has been turned.
+  heroFieldRect(tower, blocks) {
+    const W = this.engine.cssWidth; const H = this.engine.cssHeight; const v = this.fieldCorner || (this.fieldCorner = new THREE.Vector3());
+    const top = levelY(blocks + 1) + 24; let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+    for (const x of [-BOARD_W / 2 - 12, BOARD_W / 2 + 12]) for (const y of [-8, top]) for (const z of [-50, 50]) {
+      tower.root.localToWorld(v.set(x, y, z)); v.project(this.camera);
+      const sx = (v.x * 0.5 + 0.5) * W; const sy = (0.5 - v.y * 0.5) * H;
+      x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+    }
+    x0 = clamp(x0, 0, W); x1 = clamp(x1, 0, W); y0 = clamp(y0, 0, H); y1 = clamp(y1, 0, H);
+    return { x: x0, y: y0, w: Math.max(8, x1 - x0), h: Math.max(8, y1 - y0) };
+  }
+
   updateWorld(dt, focusY, altitude, view, tower) {
     this.world.update({ time: this.time, dt, focusY, altitude, dim: 1, camera: this.camera, shadowFocus: { x: 0, y: focusY }, fogDist: this.camDist || 1000 });
   }
@@ -367,43 +501,102 @@ export class Stage {
     director.update(dt * this.timeScale, this.reduced);
     const state = director.state(Core, this.reduced); hero.sync(state, dt, this.time);
     const effect = state.effect; const key = effect ? effect.id : ''; if (key !== this.lastEffectKey) { this.lastEffectKey = key; }
-    // pointer ray -> title plane + arsenal hover
-    let pointerPoint = null; this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
-    if (this.pointer.inside && !this.pointer.overUi) {
-      const point = new THREE.Vector3(); if (this.raycaster.ray.intersectPlane(this.plane, point)) pointerPoint = point;
-      const idx = this.arsenal.pick(this.raycaster);
-      if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx); document.documentElement.style.cursor = idx >= 0 ? 'pointer' : ''; }
-    } else if (this.heroHover !== -1) { this.heroHover = -1; this.arsenal.hover = -1; this.showHoverLabel(-1); document.documentElement.style.cursor = ''; }
-    this.title.update(dt, this.time, { pointer: pointerPoint, pointerSpeed: this.pointer.speed, reduced: this.reduced });
-    this.arsenal.update(dt, this.time, this.reduced);
+    const reduced = this.reduced; const p = this.pointer; const o = this.orbit; const hover = this.hover;
+
+    // ---- camera: the default composition (headline above, demo tower and ring below), then wherever the visitor has turned it
+    const b = this.title.bounds; const arsenalHalf = 420; const w = Math.max(b.x1 - b.x0, arsenalHalf * 2 + 40); const top = b.y1; const bottom = -175;
+    const worldW = w; const worldH = top - bottom; const cx = 0; const cy = (top + bottom) / 2;
+    const intro = reduced ? 1 : easeInOutCubic(clamp(this.modeTime / 3.2));
+    const floorPitch = Math.asin(clamp((10 - cy) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
+    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt);
+    if (!reduced && o.rotated && !this.drag && !o.moving) { this.idleFor += dt; if (this.idleFor > 30) { o.reset(2.4); this.idleFor = 0; } } else if (this.drag || o.moving) this.idleFor = 0;
+    // the pointer's own parallax steps aside while the scene is being turned, and comes back as it settles
+    this.dragBlend = damp(this.dragBlend, this.drag || o.moving ? 1 : 0, this.drag ? 14 : 2.2, dt);
+    const [px, py] = this.parallax(1.4); const par = 1 - this.dragBlend;
+    const yaw = (1 - intro) * -0.22 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + o.yaw;
+    const pitch = lerp(-0.12, 0.085, intro) + py * par + o.pitch;
+    const zoom = lerp(0.8, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy);
+    const shake = [0, this.rig.kick.step(dt), 0];
+    const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(cx, cy, -20);
+    this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: worldW * 1.04, worldH: worldH * 1.04, yaw, pitch, zoom, shake });
+    this.world.setViewYaw(o.yaw); this.popups.faceYaw = yaw;
+
+    // ---- the pointer in the scene
+    const onScene = p.inside && !p.overUi && !p.touch; // anywhere on the bare page: the grab cursor, the ring's icons
+    const inRect = onScene && p.lastX >= rect.x && p.lastX <= rect.x + rect.w && p.lastY >= rect.y && p.lastY <= rect.y + rect.h;
+    const frame = inRect ? this.pointerOnScreenPlane(anchor, p.ndc, 0) : null; // its place on a plane through the scene that faces the camera
+    let idx = -1;
+    if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.arsenal.pick(this.raycaster); }
+    if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx, yaw); } else if (idx >= 0) this.showHoverLabel(idx, yaw, true);
+    this.setCursor(this.drag ? 'grabbing' : idx >= 0 ? 'pointer' : onScene ? 'grab' : '');
+    hover.update(dt, { point: frame ? frame.point : null, speed: p.speed, blocked: Boolean(this.drag), reduced });
+    this.hoverLife(dt, frame, anchor, yaw, rect);
+    const pointer = this.drag ? null : frame;
+    this.title.update(dt, this.time, { pointer, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw });
+    this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy });
     // the demo's chat
     const ballot = director.ballot; if (ballot) this.world.crowd.setBallot({ voted: ballot.voted, fractions: ballot.fractions, colors: BALLOT_COLORS[this.theme] }); else this.world.crowd.clearBallot();
     if (effect && effect.id !== this.heroEffect) { this.heroEffect = effect.id; this.world.crowd.cheer(0.8); } else if (!effect) this.heroEffect = '';
     this.ruler.group.visible = false;
-    // framing: headline above, demo tower and arsenal below
-    const b = this.title.bounds; const arsenalHalf = 420; const w = Math.max(b.x1 - b.x0, arsenalHalf * 2 + 40); const top = b.y1; const bottom = -175;
-    const worldW = w; const worldH = top - bottom; const cx = 0; const cy = (top + bottom) / 2;
-    const intro = this.reduced ? 1 : easeInOutCubic(clamp(this.modeTime / 3.2));
-    const [px, py] = this.parallax(1.4);
-    const yaw = (1 - intro) * -0.22 + px + (this.reduced ? 0 : Math.sin(this.time * 0.19) * 0.035);
-    const pitch = lerp(-0.12, 0.085, intro) + py;
-    const zoom = lerp(0.8, 1, intro);
-    const shake = [0, this.rig.kick.step(dt), 0];
-    this.placeCamera({ anchor: new THREE.Vector3(cx, cy, -20), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: worldW * 1.04, worldH: worldH * 1.04, yaw, pitch, zoom, shake });
+    if (this.hud) {
+      this.hud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.hud.setRotated(o.rotated);
+      this.hintAge += dt; if (this.hintAge > 10) this.hud.fade(); // the hint is only there to be noticed: it steps aside by itself (until the first drag, it comes back next visit)
+    }
     this.world.plinth.position.set(hero.shake.x, hero.shake.y, 0);
     const altitude = 0.0;
     this.updateWorld(dt, 260, altitude, view, hero);
     const id = effect ? effect.id : '';
-    if (!this.reduced) { if (id === 'slowmo') { this.post.desat = 0.35; this.post.tint = [0.92, 0.98, 1.08]; } if (id === 'turbo') this.post.zoomBlur = 0.25; if (id === 'drunk') this.post.wobble = 0.6; }
-    if (hero.rig.spot && effect) { const sp = this.spotPost(hero, hero.rig.spot, { x: rect.x + rect.w * 0.5 - 150, y: rect.y, w: 300, h: rect.h }); if (sp) this.post.spots.push(sp); }
-    this.post.tiltCenter = 0.55; this.post.blur = 6;
+    if (!reduced) { if (id === 'slowmo') { this.post.desat = 0.35; this.post.tint = [0.92, 0.98, 1.08]; } if (id === 'turbo') this.post.zoomBlur = 0.25; if (id === 'drunk') this.post.wobble = 0.6; }
+    if (hero.rig.spot && effect) { const sp = this.spotPost(hero, hero.rig.spot, this.heroFieldRect(hero, (state.blocks || []).length)); if (sp) this.post.spots.push(sp); }
+    // the focus band of the tilt-shift follows the pointer, and the glow swells a little, while it is over the scene
+    this.post.tiltCenter = lerp(0.55, clamp((p.ndc.y + 1) / 2, 0.2, 0.85), reduced ? 0 : 0.8 * hover.energy); this.post.blur = 6;
+    if (this.engine.bloomPass.enabled) this.post.bloom = this.palette.bloom * (1 + 0.3 * hover.energy);
     this.post.fade = 0;
   }
-  showHoverLabel(index) {
-    this.popups.hide('hover');
-    if (index < 0) return; const item = this.arsenal.items[index];
+
+  // Everything that makes the home scene answer a pointer resting on it (hover.js says how much): a warm light that follows it,
+  // a trail of sparkles when it moves, ripples on the floor, the crowd turning to watch and cheering when it arrives.
+  hoverLife(dt, frame, anchor, yaw, rect) {
+    const hover = this.hover; const e = hover.energy; const reduced = this.reduced; const light = this.cursorLight; const crowd = this.world.crowd;
+    const forward = this.tmpForward;
+    if (e > 0.003 && forward) {
+      light.position.set(hover.x, hover.y, hover.z).addScaledVector(forward, -170);
+      light.intensity = e * this.cursorLightPower;
+    } else light.intensity = 0;
+    if (reduced || !frame) { crowd.setAttention(0, 0, 0, 0); return; }
+    const c = Math.cos(this.orbit.yaw); const s = Math.sin(this.orbit.yaw); // into the crowd's own (turned) space
+    crowd.setAttention(c * hover.x - s * hover.z, s * hover.x + c * hover.z + 260, e * 0.85, e * (hover.dwell > 1.2 ? 1 : 0.65));
+    if (hover.entered) { this.title.wave(frame.point.x); crowd.cheer(0.55); this.groundRipple(1); }
+    for (let n = hover.sparks(dt, this.pointer.speed, reduced); n > 0; n -= 1) this.sparkle(frame);
+    if (this.pointer.speed > 340 && this.time - this.lastRipple > 0.34) { this.lastRipple = this.time; this.groundRipple(0.7); }
+  }
+
+  sparkle(frame) {
+    const colors = this.sparkleColors; const c = colors[Math.floor(Math.random() * colors.length) % colors.length]; const f = this.tmpForward; const k = this.glintBoost;
+    const a = (Math.random() - 0.5) * 40; const b = (Math.random() - 0.5) * 40; const r = frame.right; const u = frame.up;
+    this.fx.glints.emit({
+      pos: [frame.point.x + r.x * a + u.x * b - f.x * 150, frame.point.y + r.y * a + u.y * b - f.y * 150, frame.point.z + r.z * a + u.z * b - f.z * 150],
+      vel: [(Math.random() - 0.5) * 56, 26 + Math.random() * 50, (Math.random() - 0.5) * 30], color: [c[0] * k, c[1] * k, c[2] * k], alpha: 1,
+      size: (this.theme === 'paper' ? 12 : 9) + Math.random() * 12, life: 0.7 + Math.random() * 0.6, drag: 1.5, gravity: -38
+    });
+  }
+
+  // A ring spreads over the floor from where the pointer's ray lands.
+  groundRipple(strength = 1) {
+    this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
+    const hit = this.raycaster.ray.intersectPlane(this.groundPlane, this.tmpGround || (this.tmpGround = new THREE.Vector3()));
+    if (!hit || Math.hypot(hit.x, hit.z) > 1000) return;
+    this.fx.pulses.pulse({ pos: [hit.x, -58, hit.z], color: this.theme === 'sunset' ? '#FF4FD8' : this.palette.amber, radius: 90 + 110 * strength, life: 1.05, from: 0.08, strength: 1.1 });
+  }
+  // The name over the icon under the pointer. It sits towards the camera from the icon, wherever the view has been turned to, and
+  // follows the icon as the ring turns (follow = true only moves it).
+  showHoverLabel(index, yaw = 0, follow = false) {
+    if (!follow) this.popups.hide('hover');
+    if (index < 0) return; const item = this.arsenal.items[index]; const pos = item.holder.position;
+    const position = [pos.x + Math.sin(yaw) * 60, pos.y + 92, pos.z + Math.cos(yaw) * 60];
+    if (follow) { const label = this.popups.items.find(i => i.key === 'hover' && !i.dying); if (label) label.base = position; return; }
     const name = String(item.name || item.id).toUpperCase();
-    this.popups.show({ key: 'hover', text: name, position: [item.holder.position.x, item.holder.position.y + 92, item.holder.position.z + 60], size: clamp(300 / (name.length * 0.72), 14, 30), depth: 8, color: this.palette.cream, glow: 0.7, style: 'hold', life: 1 });
+    this.popups.show({ key: 'hover', text: name, position, size: clamp(300 / (name.length * 0.72), 14, 30), depth: 8, color: this.theme === 'paper' ? this.palette.ink : this.palette.cream, glow: this.theme === 'paper' ? 0.15 : 0.7, style: 'hold', life: 1 });
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -590,7 +783,11 @@ export class Stage {
   }
 
   dispose() {
-    window.removeEventListener('pointermove', this.onPointerMove); window.removeEventListener('pointerdown', this.onPointerDown); window.removeEventListener('pointerleave', this.onPointerLeave);
+    for (const [name, fn] of [['pointermove', this.onPointerMove], ['pointerdown', this.onPointerDown], ['pointerup', this.onPointerUp], ['pointercancel', this.onPointerCancel], ['blur', this.onBlur], ['contextmenu', this.onContextMenu], ['dblclick', this.onDoubleClick], ['keydown', this.onKeyDown]]) window.removeEventListener(name, fn);
+    document.documentElement.removeEventListener('pointerleave', this.onPointerLeave);
+    this.setCursor(''); this.endDrag(true); if (this.hud) { this.hud.dispose(); this.hud = null; }
+    document.documentElement.classList.remove('orbiting');
+    this.scene.remove(this.cursorLight); this.cursorLight.dispose();
     this.engine.dispose();
   }
 }

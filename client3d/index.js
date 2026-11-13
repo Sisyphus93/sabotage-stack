@@ -4,6 +4,7 @@ import { Stage } from './stage.js';
 import { webglSupported } from './engine.js';
 import { renderIconSprites, applyIconSprites, restoreFlatIcons } from './icons3d.js';
 import { snapshotTower } from './snapshot.js';
+import { createOnceSoon } from './once-soon.js';
 
 const VIEW_KEY = 'sabotage-stack-view-v1';
 
@@ -18,7 +19,7 @@ function boot() {
   let wanted = forcedOff ? 'flat' : params.get('3d') === 'on' ? '3d' : storedView();
   const supported = webglSupported();
   const doc = document; const root = doc.documentElement;
-  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let iconTimer = 0;
+  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = '';
 
   const toggle = doc.createElement('button');
   toggle.type = 'button'; toggle.id = 'view-toggle'; toggle.className = 'button view-toggle';
@@ -31,14 +32,15 @@ function boot() {
     toggle.setAttribute('aria-label', active ? '3D view is on. Activate to switch to the flat 2D view.' : 'Flat view is on. Activate to switch to the 3D view.');
   }
 
-  function bakeIcons(force = false) {
+  // Bakes the page's sabotage icons from the 3D models once the stage is up (and again after a theme change). It is asked for on
+  // every frame until it has happened, so it must be a latch, not a debounce (see once-soon.js).
+  const iconBake = createOnceSoon(() => {
     if (!stage) return;
-    const theme = stage.theme; if (!force && iconTheme === theme) return;
-    clearTimeout(iconTimer);
-    iconTimer = setTimeout(() => {
-      try { applyIconSprites(doc, renderIconSprites(theme, { size: 192 })); iconTheme = theme; } catch (error) { console.warn('3D icon sprites unavailable', error); }
-    }, 160);
-  }
+    const theme = stage.theme; // the theme now, which may not be the one that asked for the bake
+    iconTheme = theme; // also when baking fails: stay with the page's own icons rather than retrying every frame
+    try { applyIconSprites(doc, renderIconSprites(theme, { size: 192 })); } catch (error) { console.warn('3D icon sprites unavailable', error); }
+  }, 160);
+  function bakeIcons() { if (stage && stage.theme !== iconTheme) iconBake.request(); }
 
   function tick(ts) {
     raf = requestAnimationFrame(tick);
@@ -66,7 +68,7 @@ function boot() {
   }
 
   function disable(remember) {
-    cancelAnimationFrame(raf); clearTimeout(iconTimer);
+    cancelAnimationFrame(raf); iconBake.cancel();
     if (stage) { try { stage.dispose(); } catch (_) { /* context already gone */ } }
     if (canvas) canvas.remove();
     stage = null; canvas = null; iconTheme = ''; window.__stack3d = null;

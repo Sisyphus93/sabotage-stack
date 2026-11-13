@@ -40,6 +40,29 @@ Fallbacks, in order: no usable WebGL2 → the toggle is hidden and the flat game
 the layer disables itself and the flat view takes over mid-run; Reduced Motion (system or the page's Motion menu) is honoured
 by every scene (no shake, no confetti, instant reveals).
 
+## Turning the home scene
+
+On the home screen the whole scene can be turned a full 360 degrees and looked at from above or below.
+
+| | |
+|---|---|
+| hold the **left or right mouse button** on the scene and drag | turns it (right-click drags work, the context menu stays out of the way); lets go with a little inertia |
+| a finger on the scene, swiping **sideways** | turns it; vertical swipes still scroll the page |
+| double-click, **Home**, or the reset button | back to the default view (it also returns by itself after 30 s of no input) |
+| **Left / Right arrow** (Shift = quarter turn), or the two arrow buttons | step round the scene |
+| a click that does not move | still pops a headline letter or calls a sabotage from the ring |
+
+Drags that start on a button, a link, a menu or one of the page's glass panels are left alone, so text stays selectable and
+controls stay controls. The stage (plinth, floor, tower, headline, icons) stays put while the camera circles it; the set
+dressing (crowd galleries, key / rim / fill lights, reflections, the sky and the backdrop) turns with the camera, so every
+angle is composed and lit like the default one. Leaving the home screen always snaps back to the default view.
+
+While the pointer rests on the scene it is *hovered*: one `HoverField` (`hover.js`) turns "where is the pointer and how fast"
+into a single energy that every reaction reads: letters ripple, lean away and swell near it, a wave runs through the
+headline when it arrives, the ring's icons lean in like magnets (and the ring slows so the one you are reaching for holds
+still), the crowd cranes towards it and cheers, a warm light follows it, a sparkle trail and floor ripples answer fast
+movement, and the tilt-shift focus follows it. Reduced Motion removes every one of those motions (the light stays).
+
 ## What is in 3D
 
 * **Three worlds**, one per theme: Paper (paper-cut hills, clearcoat blocks, tilt-shift), Sunset Stack '94 (synthwave sun and
@@ -65,6 +88,8 @@ by every scene (no shake, no confetti, instant reveals).
 | `tower.js`, `blocks.js`, `physics.js` | the 3D tower, block geometry/materials, a small rigid-body solver for tumbling pieces |
 | `effects3d.js`, `particles.js`, `popups.js` | sabotage rigs, sparks/confetti/pulse rings, 3D text popups and the ruler |
 | `hero.js` | headline letters, the self-playing demo (`AttractDirector`), the icon ring (`Arsenal`) |
+| `orbit.js`, `hover.js`, `orbit-hud.js` | pure turn-the-scene and hover rules (unit-tested in Node) and the on-screen hint / turn buttons |
+| `once-soon.js` | a "run once, soon" latch (the page's icon sprites are baked with it; a restarting debounce would never fire at 60 fps) |
 | `podium.js` | pure layout/reveal rules for the multiplayer results podium |
 | `icons3d.js`, `text3d.js`, `snapshot.js` | 3D icons and baked sprites, typefaces → geometry, result-card snapshots |
 | `assets/typeface-*.json` | glyph outlines extracted from the fonts already embedded in the page |

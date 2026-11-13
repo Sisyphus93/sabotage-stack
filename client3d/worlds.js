@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { createSky, createEnvironment, createPlinth, createGround, createMotes, cloudShape, hillGeometry, colorOf } from './world-common.js';
 import { Crowd } from './audience.js';
+import { backdropYaw } from './orbit.js';
 import { rng, TAU, lerp, mod, clamp, smoothstep, fbm1 } from './util.js';
 
 const mix3 = (a, b, t) => a.clone().lerp(b, t);
@@ -57,6 +58,7 @@ function paperDecor(root, palette, ctx) {
   }));
   rays.position.set(-1200, 500, -3600); rays.renderOrder = -50; decor.add(rays); disposables.push(rays.geometry, rays.material);
   return {
+    group: decor,
     update({ time, focusY, altitude, dim }) {
       for (const c of clouds) {
         const u = c.userData; const wrapped = mod(u.y - focusY * 0.62 + period / 2, period) - period / 2;
@@ -103,6 +105,7 @@ function sunsetDecor(root, palette) {
   }
   disposables.push(pyramidGeo, edgeGeo);
   return {
+    group: decor,
     update({ time, focusY, altitude, dim }) {
       ridges.forEach((m, i) => { m.position.y = -52 - focusY * (0.22 + i * 0.12); });
       for (const s of shapes) { const u = s.userData; s.position.set(u.x, focusY * 0.55 + mod(u.y - focusY * 0.4, 3000) - 800 + Math.sin(time * u.sp + u.ph) * 24, u.z); s.rotation.set(time * u.sp * 0.7, time * u.sp, 0); s.scale.setScalar(u.s); }
@@ -172,6 +175,7 @@ function primetimeDecor(root, palette) {
   for (let i = 0; i < 28; i += 1) { const b = new THREE.Mesh(bulbGeo, bulbMat); b.position.set((i - 13.5) * 120, -16, 14); truss.add(b); bulbs.push(b); }
   disposables.push(bulbGeo, bulbMat);
   return {
+    group: decor,
     update({ time, focusY, altitude }) {
       burst.material.uniforms.uTime.value = time; burst.position.y = 520 + focusY * 0.82; burst.rotation.z = time * 0.02;
       wall.material.uniforms.uTime.value = time; wall.position.y = 600 + focusY * 0.9; wall.material.uniforms.uShift.value = focusY;
@@ -186,6 +190,7 @@ function primetimeDecor(root, palette) {
 // ---------------------------------------------------------------------------------------------------------------------
 export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
   const palette = engine.palette; const root = new THREE.Group();
+  if (engine.scene && engine.scene.environmentRotation) engine.scene.environmentRotation.y = 0; // the scene outlives its worlds
   const lights = makeLights(palette, theme); root.add(lights.group);
   const sky = createSky(palette, theme === 'paper'
     ? { stars: 1, sunSize: 0.0035, sunDir: [-0.42, 0.16, -1], sunColor: '#FFE2A8', sunGlow: 0.75 }
@@ -205,7 +210,7 @@ export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
 
   const fog = new THREE.FogExp2(colorOf(palette.fog), palette.fogDensity);
   const tmpA = new THREE.Color(); const tmpB = new THREE.Color();
-  const baseExposure = {}; let lastDim = 1;
+  const baseExposure = {}; let lastDim = 1; let viewYaw = 0;
   const baseKey = lights.key.intensity; const baseHemi = lights.hemi.intensity; const baseRim = lights.rim.intensity; const baseFront = lights.front.intensity;
 
   return {
@@ -234,6 +239,21 @@ export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
       lastDim = dim;
     },
     setCrowdDensity(d) { crowd.setDensity(d); },
+    // Orbit view. The stage (plinth, floor, tower, headline, icons) stays where it is while the camera circles it, and the set
+    // dressing turns with the camera so that every angle is as well lit and as well composed as the default one and nothing
+    // ever shows its back: the crowd galleries, the key / rim / fill lights and the reflections follow exactly; the sky and the
+    // far backdrop follow with a gentle drift (backdropYaw in orbit.js), which is what depth looks like.
+    // yaw 0 is the default view and renders exactly as before.
+    setViewYaw(yaw) {
+      if (Math.abs(yaw - viewYaw) < 1e-5) return;
+      viewYaw = yaw;
+      const far = backdropYaw(yaw);
+      lights.group.rotation.y = yaw; crowd.group.rotation.y = yaw;
+      decor.group.rotation.y = far; sky.mesh.rotation.y = far;
+      ground.userData.setViewYaw(yaw);
+      if (engine.scene && engine.scene.environmentRotation) engine.scene.environmentRotation.y = yaw;
+    },
+    get viewYaw() { return viewYaw; },
     dispose() {
       decor.dispose(); crowd.dispose(); plinth.userData.dispose(); ground.userData.dispose(); motes.userData.dispose();
       sky.mesh.geometry.dispose(); sky.material.dispose(); envTexture.dispose();

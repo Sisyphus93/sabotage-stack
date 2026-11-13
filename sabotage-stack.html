@@ -860,6 +860,28 @@ html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid va
   html.has-3d #title-screen { padding-top: min(54vh, 480px); }
   html.has-3d .home-grid { grid-template-columns: 1fr; }
 }
+/* Turning the home scene: hold the left or right mouse button on it and drag (a finger swipes sideways; vertical swipes still scroll).
+   The hint and the buttons are created by the 3D layer inside #title-screen and sit in the corner of the 3D region. */
+html.has-3d #title-screen { touch-action: pan-y pinch-zoom; }
+html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-select: none !important; }
+.orbit-hud { position: fixed; z-index: 4; transform: translate(-100%, -100%); display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: calc(100vw - 20px); pointer-events: none; }
+.orbit-hud > .orbit-btn { pointer-events: auto; }
+.orbit-hint {
+  margin: 0; padding: 8px 14px; border: 1px solid var(--edge); border-radius: 999px; background: var(--glass); color: var(--ink);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+  font-size: 12px; font-weight: 600; letter-spacing: .01em; white-space: nowrap; transition: opacity .7s ease, transform .7s ease;
+}
+.orbit-hint b { font-weight: 800; }
+.orbit-hint-short { display: none; }
+.orbit-hud.is-quiet .orbit-hint { opacity: 0; transform: translateY(6px); }
+.orbit-btn {
+  min-height: 40px; min-width: 40px; padding: 0; border-color: var(--edge); border-radius: 999px; background: var(--glass);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
+}
+.orbit-btn svg { width: 18px; height: 18px; display: block; }
+.orbit-btn[data-orbit="reset"] { display: none; }
+.orbit-hud.is-rotated .orbit-btn[data-orbit="reset"] { display: inline-flex; }
+@media (max-width: 640px) { .orbit-hint-full { display: none; } .orbit-hint-short { display: inline; } }
 </style>
 </head>
 <body>

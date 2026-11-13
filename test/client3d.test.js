@@ -177,6 +177,213 @@ describe('pure logic', () => {
     let applied = false; for (let i = 0; i < 60 * 10 && !applied; i += 1) { d.update(1 / 60); applied = Boolean(d.effect && d.effect.id === 'earthquake'); }
     assert.ok(applied, 'forced sabotage reaches the tower');
   });
+  test('a clicked sabotage is never lost: it survives a toppling tower, decides an open vote, and takes over from a running effect', async () => {
+    const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js');
+    const run = (d, until, limit = 60 * 90) => { for (let i = 0; i < limit; i += 1) { if (until(d)) return true; d.update(1 / 60); } return until(d); };
+    for (const seed of [1, 2, 3, 5, 8]) {
+      // 1. while the tower topples (it used to be wiped by the reset that follows)
+      const a = new AttractDirector(Core, rng(seed)); assert.ok(run(a, d => d.stage === 'collapse'), `seed ${seed}: reaches a collapse`);
+      const pickA = Core.SABOTAGE_IDS.find(id => id !== a.effect?.id); a.force(pickA);
+      assert.ok(run(a, d => d.stage === 'stack' && d.blocks.length === 1), 'the new tower is up'); const freshId = a.id;
+      assert.ok(run(a, d => d.effect && d.effect.id === pickA, 60 * 3), `seed ${seed}: ${pickA} plays on the new tower (forced=${a.forced})`); assert.equal(a.id, freshId, 'on the very tower that replaced the toppled one');
+      // 2. while chat is voting: the vote goes the clicked way, with no duplicate options
+      const b = new AttractDirector(Core, rng(seed)); assert.ok(run(b, d => d.ballot), 'a vote opens');
+      const pickB = Core.SABOTAGE_IDS.find(id => id !== b.ballot.winner); b.force(pickB);
+      assert.equal(b.ballot.winner, pickB); assert.equal(b.ballot.options[0], pickB); assert.equal(new Set(b.ballot.options).size, 3, 'three different options'); assert.equal(b.forced, null, 'the vote consumed it');
+      assert.ok(run(b, d => d.effect, 60 * 5)); assert.equal(b.effect.id, pickB, 'the vote ends on the clicked sabotage');
+      // 2b. the clicked sabotage is one of the other two options: it swaps places with the winner
+      const c = new AttractDirector(Core, rng(seed)); run(c, d => d.ballot); const other = c.ballot.options[2]; const was = c.ballot.winner; c.force(other);
+      assert.deepEqual([c.ballot.options[0], c.ballot.options[2], new Set(c.ballot.options).size], [other, was, 3]);
+      // 3. while another sabotage is running: that one winds down within a moment and the clicked one follows
+      const e = new AttractDirector(Core, rng(seed)); assert.ok(run(e, d => d.effect), 'an effect starts'); const running = e.effect.id;
+      const pickE = Core.SABOTAGE_IDS.find(id => id !== running); e.force(pickE);
+      assert.ok(run(e, d => d.effect && d.effect.id === pickE, 60 * 2), `seed ${seed}: ${pickE} follows ${running} within two seconds`);
+    }
+    // nothing asked for, nothing changes (and clicking twice is harmless: the later click wins)
+    const quiet = new AttractDirector(Core, rng(4)); assert.equal(quiet.forced, null); quiet.force('turbo'); quiet.force('drunk'); assert.equal(quiet.forced, 'drunk');
+  });
+});
+
+describe('home view: turning the scene (orbit) and the hover field', () => {
+  const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
+  const make = async (options = {}) => { const { OrbitController } = await load('orbit.js'); return new OrbitController(options); };
+  // a drag of `steps` samples, `dx` / `dy` pixels apart and `dt` seconds apart; returns the clock
+  const drag = (o, { steps = 10, dx = 0, dy = 0, dt = 0.016, x = 500, y = 300, t = 0, opts } = {}) => {
+    o.begin(x, y, t);
+    for (let i = 1; i <= steps; i += 1) { t += dt; o.move(x + dx * i, y + dy * i, t, opts); }
+    return t;
+  };
+
+  test('dragging turns the scene proportionally, to the right with the pointer, and 360 degrees is reachable while dragging', async () => {
+    const o = await make(); const t = drag(o, { steps: 10, dx: 50 }); // 500 px to the right
+    assert.ok(o.dragging && o.rotated);
+    assert.ok(near(o.yaw, -500 * o.yawPerPixel), `yaw ${o.yaw}`);
+    const wheel = await make(); drag(wheel, { steps: 40, dx: -50 }); // 2000 px to the left in one continuous drag
+    assert.ok(wheel.yaw > Math.PI * 2, `a long drag keeps turning past a full circle (yaw ${wheel.yaw.toFixed(2)})`);
+    o.end(t + 0.5); assert.ok(!o.dragging);
+  });
+  test('pitch is clamped, a finger turns the scene sideways only, and non-finite input is ignored', async () => {
+    const o = await make(); drag(o, { steps: 50, dy: 100 });
+    assert.ok(near(o.pitch, o.maxPitch), 'dragging down stops at the top-down limit'); drag(o, { steps: 100, dy: -100 });
+    assert.ok(near(o.pitch, o.minPitch), 'dragging up stops at the lowest view');
+    const touch = await make(); drag(touch, { steps: 10, dx: 30, dy: 80, opts: { pitch: false } });
+    assert.equal(touch.pitch, 0, 'a vertical swipe stays free to scroll the page'); assert.ok(touch.yaw < -1);
+    const bad = await make(); bad.begin(NaN, 5, 0); assert.ok(!bad.dragging);
+    bad.begin(10, 10, 0); assert.equal(bad.move(NaN, 10, 0.1), false); assert.equal(bad.yaw, 0);
+  });
+  test('letting go while moving flings the scene and friction stops it; pausing first, or Reduced Motion, leaves it where it is', async () => {
+    const o = await make(); const t = drag(o, { steps: 8, dx: 20 }); const yawAtRelease = o.yaw; o.end(t + 0.01);
+    assert.ok(Math.abs(o.vyaw) > 0.5 && Math.abs(o.vyaw) <= o.maxSpeed, `fling speed ${o.vyaw}`);
+    for (let i = 0; i < 60 * 8; i += 1) o.update(1 / 60);
+    assert.equal(o.vyaw, 0); assert.ok(o.yaw < yawAtRelease - 0.3, 'it coasted on in the same direction'); assert.ok(!o.moving);
+    const paused = await make(); const tp = drag(paused, { steps: 8, dx: 20 }); paused.end(tp + 0.4); assert.equal(paused.vyaw, 0);
+    const reduced = await make(); reduced.setReduced(true); const tr = drag(reduced, { steps: 8, dx: 20 }); reduced.end(tr + 0.01); assert.equal(reduced.vyaw, 0);
+    const fast = await make(); const tf = drag(fast, { steps: 8, dx: 400, dt: 0.004 }); fast.end(tf + 0.001); assert.ok(Math.abs(fast.vyaw) <= fast.maxSpeed, 'a violent flick is capped');
+  });
+  test('reset and the step buttons ease to where they are going by the shortest way round, and land exactly', async () => {
+    const o = await make(); o.yaw = 5.9; o.pitch = 0.5; o.reset(0.5);
+    for (let i = 0; i < 60; i += 1) o.update(1 / 60);
+    assert.ok(near(o.yaw, 0, 1e-9) && near(o.pitch, 0, 1e-9) && !o.rotated && !o.tween, `ended at yaw ${o.yaw}`);
+    const turn = await make(); turn.rotateBy(Math.PI / 4); turn.rotateBy(Math.PI / 4); // pressed twice before it lands
+    for (let i = 0; i < 90; i += 1) turn.update(1 / 60);
+    assert.ok(near(turn.yaw, Math.PI / 2, 1e-9), 'two quick presses add up to a quarter turn');
+    const shortReset = await make(); shortReset.yaw = 6.0; shortReset.reset(1); shortReset.update(0.5);
+    assert.ok(shortReset.yaw > 6.0 && shortReset.yaw <= Math.PI * 2 + 1e-9, 'from just short of a full circle it finishes the circle instead of unwinding');
+    const reduced = await make(); reduced.setReduced(true); reduced.yaw = 2; reduced.reset(0.9); for (let i = 0; i < 20; i += 1) reduced.update(1 / 60);
+    assert.ok(!reduced.tween && near(reduced.yaw, 0, 1e-9), 'Reduced Motion shortens the tween');
+  });
+  test('snap goes straight back to the default view, and grabbing mid-tween takes over', async () => {
+    const calm = await make(); calm.reset(); assert.equal(calm.tween, null, 'resetting a view that is already the default does nothing (no needless ease)');
+    const o = await make(); const t = drag(o, { steps: 6, dx: 40 }); o.end(t + 0.01); o.snap();
+    assert.deepEqual([o.yaw, o.pitch, o.vyaw, o.vpitch, o.dragging, o.tween], [0, 0, 0, 0, false, null]);
+    o.yaw = 3; o.reset(2); o.update(0.2); assert.ok(o.tween); o.begin(10, 10, 5); assert.equal(o.tween, null, 'a new drag cancels the ease');
+  });
+  test('the sky and backdrop mapping is periodic (no jump after a full turn or a reset), monotonic and leads with the camera', async () => {
+    const { backdropYaw, BACKDROP_DRIFT, wrapAngle } = await load('orbit.js');
+    for (let yaw = -10; yaw <= 10; yaw += 0.37) {
+      assert.ok(near(backdropYaw(yaw + Math.PI * 2) - backdropYaw(yaw), Math.PI * 2, 1e-9), `periodic at ${yaw}`);
+      assert.ok(backdropYaw(yaw + 0.01) > backdropYaw(yaw), 'never runs backwards');
+      assert.ok(Math.abs(backdropYaw(yaw) - yaw) <= BACKDROP_DRIFT + 1e-12);
+      assert.ok(near(wrapAngle(yaw), Math.atan2(Math.sin(yaw), Math.cos(yaw)), 1e-9));
+    }
+    assert.equal(backdropYaw(0), 0, 'the default view is untouched');
+  });
+
+  test('the hover field wakes up while the pointer is on the scene, settles when it leaves, and ignores a pointer that is busy dragging', async () => {
+    const { HoverField } = await load('hover.js'); const h = new HoverField(); const point = { x: 10, y: 20, z: 5 };
+    h.update(1 / 60, { point, speed: 0 }); assert.ok(h.entered && h.inside); assert.equal(h.enterX, 10);
+    h.update(1 / 60, { point, speed: 0 }); assert.ok(!h.entered, 'entered lasts a single frame');
+    for (let i = 0; i < 60; i += 1) h.update(1 / 60, { point, speed: 0 });
+    assert.ok(h.energy > 0.97 && h.dwell > 0.9, `energy ${h.energy} dwell ${h.dwell}`);
+    h.update(1 / 60, { point, speed: 900 }); assert.ok(h.dwell < 1, 'a fast pointer is not a patient one');
+    h.update(1 / 60, { point: null }); assert.ok(!h.inside && h.energy < 1);
+    for (let i = 0; i < 60 * 4; i += 1) h.update(1 / 60, { point: null }); assert.equal(h.energy, 0);
+    const busy = new HoverField(); for (let i = 0; i < 30; i += 1) busy.update(1 / 60, { point, speed: 0, blocked: true }); assert.equal(busy.energy, 0, 'dragging keeps the scene calm');
+    const bad = new HoverField(); bad.update(0, { point }); bad.update(NaN, { point }); assert.equal(bad.energy, 0);
+  });
+  test('the sparkle trail follows the pointer speed: nothing when still or under Reduced Motion, a stream when fast', async () => {
+    const { HoverField } = await load('hover.js'); const h = new HoverField(); const point = { x: 0, y: 0 };
+    h.update(1 / 60, { point });
+    const total = (speed, reduced) => { let n = 0; for (let i = 0; i < 120; i += 1) n += h.sparks(1 / 60, speed, reduced); return n; };
+    assert.equal(total(0, false), 0); assert.equal(total(60, false), 0);
+    const slow = total(400, false); const fast = total(2000, false);
+    assert.ok(slow > 5 && fast > slow && fast <= 4 * 120, `${slow} then ${fast}`);
+    assert.equal(total(2000, true), 0); const away = new HoverField(); assert.equal(away.sparks(1 / 60, 2000, false), 0, 'no trail while the pointer is elsewhere');
+  });
+  test('offsetFromPointer measures across the screen, whichever way the camera is turned', async () => {
+    const { offsetFromPointer } = await load('hover.js'); const out = { dx: 0, dy: 0 };
+    const front = { point: { x: 100, y: 50, z: 0 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 } };
+    assert.deepEqual(offsetFromPointer(front, 130, 20, 99, out), { dx: 30, dy: -30 }, 'depth is ignored: the plane faces the camera');
+    const side = { point: { x: 0, y: 0, z: 0 }, right: { x: 0, y: 0, z: -1 }, up: { x: 0, y: 1, z: 0 } }; // camera turned a quarter circle
+    assert.deepEqual(offsetFromPointer(side, 200, 10, -40, out), { dx: 40, dy: 10 });
+  });
+
+  test('a keyed popup is rebuilt when its words change (the hover name always matches the icon under the pointer) and revived when they do not', async () => {
+    const { Popups } = await load('popups.js'); const { paletteFor } = await load('palette.js'); const popups = new Popups('paper', paletteFor('paper'));
+    const show = text => popups.show({ key: 'hover', text, position: [0, 0, 0], style: 'hold', life: 1 });
+    const first = show('TURBO'); popups.hide('hover'); const same = show('TURBO');
+    assert.equal(same, first, 'same words: the dying label comes back'); assert.equal(first.dying, false);
+    popups.hide('hover'); const other = show('MAGNET');
+    assert.notEqual(other, first); assert.equal(popups.items.filter(i => i.key === 'hover').length, 1, 'the stale label is gone, not left behind');
+    assert.equal(popups.items.find(i => i.key === 'hover').text, 'MAGNET');
+    popups.faceYaw = 1.2; popups.update(0.5, 1); assert.ok(near(other.mesh.rotation.y, 1.2 + Math.sin(0.8 + other.seed) * 0.16, 1e-9), 'labels face an orbited camera');
+    popups.clear();
+  });
+  test('the on-screen turn controls: buttons, labels, hint that retires for good after the first drag, tidy removal', async () => {
+    const { createOrbitHud, hintSeen } = await load('orbit-hud.js'); const page = await boot(HTML_PATH);
+    try {
+      const store = new Map(); const storage = { getItem: k => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v) };
+      const turns = []; let resets = 0;
+      const hud = createOrbitHud({ doc: page.document, storage, onTurn: d => turns.push(d), onReset: () => { resets += 1; } });
+      assert.ok(hud && page.document.getElementById('title-screen').contains(hud.root), 'lives inside the title screen, so it is hidden with it');
+      const buttons = [...hud.root.querySelectorAll('button')]; assert.deepEqual(buttons.map(b => b.dataset.orbit), ['left', 'reset', 'right']);
+      assert.ok(buttons.every(b => b.type === 'button' && b.getAttribute('aria-label') && b.title), 'every control is named for assistive tech');
+      buttons[0].click(); buttons[2].click(); buttons[1].click();
+      assert.deepEqual(turns, [-Math.PI / 4, Math.PI / 4]); assert.equal(resets, 1);
+      assert.ok(!hud.root.classList.contains('is-quiet') && !hintSeen(storage));
+      hud.fade(); assert.ok(hud.root.classList.contains('is-quiet') && !hintSeen(storage), 'fading by itself is not remembered');
+      hud.quiet(); assert.ok(hintSeen(storage), 'a real drag is');
+      hud.setRotated(true); assert.ok(hud.root.classList.contains('is-rotated')); hud.place(300.2, 400.2); assert.equal(hud.root.style.left, '300px');
+      hud.dispose(); assert.equal(page.document.getElementById('orbit-hud'), null);
+      const again = createOrbitHud({ doc: page.document, storage }); assert.ok(again.root.classList.contains('is-quiet'), 'a returning visitor never sees the hint again'); again.dispose();
+      assert.equal(createOrbitHud({ doc: { getElementById: () => null } }), null, 'no title screen, no controls');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('the page styles the controls, keeps pinch-zoom on the title screen and suppresses text selection only while dragging', async () => {
+    assert.match(html, /html\.has-3d #title-screen \{ touch-action: pan-y pinch-zoom; \}/);
+    assert.match(html, /html\.orbiting, html\.orbiting \* \{[^}]*user-select: none !important/);
+    assert.match(html, /\.orbit-hud \{ position: fixed;[^}]*pointer-events: none;/);
+    assert.match(html, /\.orbit-hud > \.orbit-btn \{ pointer-events: auto; \}/);
+    assert.match(html, /\.orbit-hud\.is-rotated \.orbit-btn\[data-orbit="reset"\] \{ display: inline-flex; \}/);
+  });
+});
+
+describe('run-once-soon latch (icon baking)', () => {
+  // a deterministic clock: timers fire in order as time is advanced
+  const makeClock = () => {
+    let now = 0; let nextId = 1; const timers = new Map();
+    return {
+      timers: { set: (fn, ms) => { const id = nextId++; timers.set(id, { at: now + ms, fn }); return id; }, clear: id => { timers.delete(id); } },
+      advance(ms) { const end = now + ms; for (;;) { const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0]; if (!due) break; timers.delete(due[0]); now = due[1].at; due[1].fn(); } now = end; },
+      get now() { return now; }, get waiting() { return timers.size; },
+    };
+  };
+  test('asked for on every frame, it still runs: once, 160 ms after the first request (a debounce would starve for ever at 60 fps)', async () => {
+    const { createOnceSoon } = await load('once-soon.js'); const clock = makeClock(); const ran = []; let baked = false;
+    const latch = createOnceSoon(() => { ran.push(clock.now); baked = true; }, 160, clock.timers);
+    // the page's pattern: every frame asks until the work has happened (two seconds of 16 ms frames)
+    let scheduled = 0; for (let frame = 0; frame < 120; frame += 1) { if (!baked && latch.request()) scheduled += 1; clock.advance(16); }
+    assert.deepEqual(ran, [160], 'ran exactly once, 160 ms after the first request'); assert.equal(scheduled, 1); assert.equal(clock.waiting, 0);
+    // asking even after it has run is allowed: it simply keeps running, at most once per delay, never starved
+    const clock3 = makeClock(); let again = 0; const keen = createOnceSoon(() => { again += 1; }, 160, clock3.timers);
+    for (let frame = 0; frame < 120; frame += 1) { keen.request(); clock3.advance(16); } assert.ok(again >= 10 && again <= 12, `ran ${again} times in 1.9 s`);
+    // the restarting kind, for contrast: the same traffic never fires
+    const clock2 = makeClock(); let fired = 0; let handle = null;
+    const debounce = () => { if (handle !== null) clock2.timers.clear(handle); handle = clock2.timers.set(() => { fired += 1; }, 160); };
+    for (let frame = 0; frame < 120; frame += 1) { debounce(); clock2.advance(16); } assert.equal(fired, 0, 'a debounce is starved by per-frame requests');
+  });
+  test('after it has run a new request schedules afresh, a cancelled one never runs, and the work may request again', async () => {
+    const { createOnceSoon } = await load('once-soon.js'); const clock = makeClock(); let runs = 0; let latch;
+    latch = createOnceSoon(() => { runs += 1; }, 100, clock.timers);
+    assert.equal(latch.pending, false); assert.equal(latch.request(), true); assert.equal(latch.pending, true); assert.equal(latch.request(), false);
+    clock.advance(99); assert.equal(runs, 0); clock.advance(1); assert.equal(runs, 1); assert.equal(latch.pending, false);
+    assert.equal(latch.request(), true); latch.cancel(); assert.equal(latch.pending, false); clock.advance(500); assert.equal(runs, 1, 'cancelled');
+    latch.cancel(); // cancelling with nothing waiting is harmless
+    assert.equal(latch.request(), true); clock.advance(100); assert.equal(runs, 2, 'and it can be used again after a cancel');
+    let again = 0; const self = createOnceSoon(() => { again += 1; if (again < 3) self.request(); }, 10, clock.timers); self.request(); clock.advance(100); assert.equal(again, 3);
+  });
+  test('works with the real timers (and a timer id that is falsy is still a pending timer)', async () => {
+    const { createOnceSoon } = await load('once-soon.js'); let runs = 0; const latch = createOnceSoon(() => { runs += 1; }, 5);
+    latch.request(); latch.request(); await new Promise(r => setTimeout(r, 40)); assert.equal(runs, 1);
+    const zero = createOnceSoon(() => { runs += 10; }, 1, { set: () => 0, clear() {} }); assert.equal(zero.request(), true); assert.equal(zero.request(), false, 'id 0 counts as pending');
+  });
+  test('the page-side boot uses the latch for its icon baking, and always lets go of it when 3D is switched off', async () => {
+    const source = fs.readFileSync(path.join(ROOT, 'client3d', 'index.js'), 'utf8');
+    assert.match(source, /import \{ createOnceSoon \} from '\.\/once-soon\.js'/);
+    assert.match(source, /const iconBake = createOnceSoon\(/); assert.match(source, /iconBake\.cancel\(\)/);
+    assert.doesNotMatch(source, /clearTimeout\(iconTimer\)/, 'no restarting debounce on the per-frame path');
+  });
 });
 
 describe('adaptive quality governor', () => {

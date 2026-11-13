@@ -195,17 +195,17 @@ export function createGround(theme, palette, { y = -64, radius = 8800 } = {}) {
     uniforms: {
       uColor: { value: vec3(palette.floorLine) }, uTime: { value: 0 }, uCell: { value: theme === 'sunset' ? 90 : 48 },
       uFade: { value: theme === 'sunset' ? 4200 : 2600 }, uStrength: { value: theme === 'paper' ? 0.5 : theme === 'sunset' ? 1.5 : 0.35 },
-      uScroll: { value: theme === 'sunset' ? 1 : 0 }, uMajor: { value: theme === 'paper' ? 5 : 4 }
+      uScroll: { value: theme === 'sunset' ? 1 : 0 }, uMajor: { value: theme === 'paper' ? 5 : 4 }, uScrollDir: { value: new THREE.Vector2(0, 1) }
     },
     vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
     fragmentShader: /* glsl */`
-      varying vec3 vW; uniform vec3 uColor; uniform float uTime, uCell, uFade, uStrength, uScroll, uMajor;
+      varying vec3 vW; uniform vec3 uColor; uniform vec2 uScrollDir; uniform float uTime, uCell, uFade, uStrength, uScroll, uMajor;
       float line(vec2 p, float cell) {
         vec2 g = p / cell; vec2 d = abs(fract(g - 0.5) - 0.5) / fwidth(g);
         return 1.0 - min(min(d.x, d.y), 1.0);
       }
       void main() {
-        vec2 p = vW.xz; p.y += uScroll * uTime * 70.0;
+        vec2 p = vW.xz + uScrollDir * (uScroll * uTime * 70.0);
         float minor = line(p, uCell);
         float major = line(p, uCell * uMajor);
         float dist = length(vW.xz);
@@ -221,6 +221,8 @@ export function createGround(theme, palette, { y = -64, radius = 8800 } = {}) {
   overlay.position.y = y + 0.4; overlay.renderOrder = -20;
   group.add(overlay);
   group.userData.update = (t) => { grid.uniforms.uTime.value = t; };
+  // the retro grid keeps flowing towards the camera however far the view has been orbited
+  group.userData.setViewYaw = (yaw) => { grid.uniforms.uScrollDir.value.set(Math.sin(yaw), Math.cos(yaw)); };
   group.userData.dispose = () => { floor.geometry.dispose(); floorMaterial.dispose(); overlay.geometry.dispose(); grid.dispose(); };
   group.userData.floorMesh = floor;
   return group;
