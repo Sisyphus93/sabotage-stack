@@ -316,8 +316,13 @@ describe('home view: turning the scene (orbit) and the hover field', () => {
       const turns = []; let resets = 0;
       const hud = createOrbitHud({ doc: page.document, storage, onTurn: d => turns.push(d), onReset: () => { resets += 1; } });
       assert.ok(hud && page.document.getElementById('title-screen').contains(hud.root), 'lives inside the title screen, so it is hidden with it');
-      const buttons = [...hud.root.querySelectorAll('button')]; assert.deepEqual(buttons.map(b => b.dataset.orbit), ['left', 'reset', 'right']);
+      const buttons = [...hud.root.querySelectorAll('button[data-orbit]')]; assert.deepEqual(buttons.map(b => b.dataset.orbit), ['left', 'reset', 'right']);
       assert.ok(buttons.every(b => b.type === 'button' && b.getAttribute('aria-label') && b.title), 'every control is named for assistive tech');
+      const toys = []; const hud2 = createOrbitHud({ doc: page.document, storage: { getItem: () => null, setItem() {} }, onToy: kind => toys.push(kind) });
+      const dock = [...hud2.root.querySelectorAll('.toy-dock button')]; assert.deepEqual(dock.map(b => b.dataset.toy), ['drop', 'sabotage']);
+      assert.ok(dock.every(b => b.type === 'button' && b.classList.contains('toy-key') && b.textContent.trim().length > 3 && b.title), 'the dock keys are real, named buttons');
+      assert.ok(dock[0].classList.contains('button-primary') && !dock[1].classList.contains('button-primary'), 'Drop block is the primary action');
+      dock[0].click(); dock[1].click(); assert.deepEqual(toys, ['drop', 'sabotage']); hud2.dispose();
       buttons[0].click(); buttons[2].click(); buttons[1].click();
       assert.deepEqual(turns, [-Math.PI / 4, Math.PI / 4]); assert.equal(resets, 1);
       assert.ok(!hud.root.classList.contains('is-quiet') && !hintSeen(storage));
@@ -331,10 +336,15 @@ describe('home view: turning the scene (orbit) and the hover field', () => {
     } finally { page.close(); }
   });
   test('the page styles the controls, keeps pinch-zoom on the title screen and suppresses text selection only while dragging', async () => {
-    assert.match(html, /html\.has-3d #title-screen \{ touch-action: pan-y pinch-zoom; \}/);
+    assert.match(html, /html\.has-3d #title-screen, html\.has-3d #solo-result-layout \.results-frame \{ touch-action: pan-y pinch-zoom; \}/);
     assert.match(html, /html\.orbiting, html\.orbiting \* \{[^}]*user-select: none !important/);
     assert.match(html, /\.orbit-hud \{ position: fixed;[^}]*pointer-events: none;/);
-    assert.match(html, /\.orbit-hud > \.orbit-btn \{ pointer-events: auto; \}/);
+    assert.match(html, /\.orbit-hud \.orbit-btn, \.orbit-hud \.toy-key \{ pointer-events: auto; \}/);
+    // the keycap look exists only while the 3D layer runs, so the flat view is exactly what it was, and every theme has its own wall
+    assert.match(html, /html\.has-3d \.button:not\(:disabled\), html\.has-3d \.drop-button:not\(:disabled\), html\.has-3d \.vote-key \{/);
+    assert.match(html, /html\.has-3d\[data-theme="sunset"\] \{ --cap-wall:/); assert.match(html, /html\.has-3d\[data-theme="primetime"\] \{ --cap-wall:/);
+    assert.match(html, /html\.has-3d \.vote-option\.is-pressed \.vote-key/); assert.match(html, /html\.has-3d \.drop-button\.is-pressed/);
+    assert.doesNotMatch(html.replace(/html\.has-3d[^{]*\{[^}]*\}/g, ''), /--cap-depth/, 'no keycap rule outside html.has-3d');
     assert.match(html, /\.orbit-hud\.is-rotated \.orbit-btn\[data-orbit="reset"\] \{ display: inline-flex; \}/);
   });
 });
@@ -383,6 +393,182 @@ describe('run-once-soon latch (icon baking)', () => {
     assert.match(source, /import \{ createOnceSoon \} from '\.\/once-soon\.js'/);
     assert.match(source, /const iconBake = createOnceSoon\(/); assert.match(source, /iconBake\.cancel\(\)/);
     assert.doesNotMatch(source, /clearTimeout\(iconTimer\)/, 'no restarting debounce on the per-frame path');
+  });
+});
+
+describe('the title screen toy: the visitor plays the demo tower', () => {
+  const make = async seed => { const { AttractDirector } = await load('hero.js'); const { rng } = await load('util.js'); return new AttractDirector(Core, rng(seed)); };
+  const tick = (d, seconds) => { for (let i = 0; i < Math.round(seconds * 60); i += 1) d.update(1 / 60); };
+  const alignAndDrop = d => { const m = d.moving; const below = d.blocks[d.blocks.length - 1]; m.left = (below.left + below.right) / 2 - m.width / 2 + 1; d.blockClock = 1; return d.playerDrop(); };
+
+  test('a drop by hand reports what happened, hands the tower over, and the demo takes it back after the hold', async () => {
+    const { MANUAL_HOLD } = await load('hero.js'); const d = await make(3); tick(d, 1.6);
+    assert.equal(d.manual, false); assert.equal(d.playerDrop() === '' || ['perfect', 'trim', 'ok', 'miss'].includes(d.lastDrop.result), true);
+    const d2 = await make(3); tick(d2, 1.6); d2.blockClock = 1; const before = d2.blocks.length; const result = alignAndDrop(d2);
+    assert.equal(result, 'perfect', 'a block aligned within the friendly window is perfect'); assert.equal(d2.blocks.length, before + 1);
+    assert.ok(d2.manual && d2.lastDrop.manual && d2.lastDrop.result === 'perfect' && d2.lastDrop.n >= 1);
+    tick(d2, MANUAL_HOLD + 0.5); assert.equal(d2.manual, false, 'left alone, the demo plays itself again');
+  });
+  test('nothing drops for the visitor while they play, and a vote does not freeze their block', async () => {
+    const d = await make(5); tick(d, 1.6); alignAndDrop(d); const blocks = d.blocks.length;
+    tick(d, 6); // six seconds, block sweeping back and forth: a demo would have dropped it by now
+    assert.equal(d.blocks.length, blocks, 'no automatic drops in manual play');
+    d.stage = 'vote'; d.ballot = { options: ['turbo', 'drunk', 'slowmo'], base: [0.3, 0.3, 0.3], fractions: [0.3, 0.3, 0.3], voted: 0, winner: 'turbo' }; d.stageTimer = 0;
+    const left = d.moving.left; tick(d, 0.5); assert.notEqual(d.moving.left, left, 'the block keeps moving during the vote');
+  });
+  test('a drop is refused while the block has only just appeared, and while the tower is coming down', async () => {
+    const d = await make(2); tick(d, 1.6); alignAndDrop(d); assert.equal(d.playerDrop(), '', 'the new block is still at the edge');
+    const e = await make(2); tick(e, 1.6); e.stage = 'collapse'; assert.equal(e.playerDrop(), '');
+  });
+  test('a misplaced block topples the tower; finishing the tower locks it, celebrates, and brings it down', async () => {
+    const d = await make(7); tick(d, 1.6); d.blockClock = 1; const m = d.moving; const below = d.blocks[d.blocks.length - 1]; m.left = below.right + 30; // clean miss
+    assert.equal(d.playerDrop(), 'miss'); assert.equal(d.stage, 'collapse');
+    const e = await make(7); tick(e, 1.6); let completed = null; let blocksAtComplete = 0;
+    for (let i = 0; i < 40 && !completed; i += 1) { if (!e.moving) { tick(e, 0.1); continue; } e.blockClock = 1; const r = alignAndDrop(e); if (r && e.lastDrop.complete) { completed = e.lastDrop; blocksAtComplete = e.blocks.length; } }
+    assert.ok(completed && completed.result === 'perfect', 'the tower reaches its height'); assert.ok(blocksAtComplete >= 11);
+    e.blockClock = 1; assert.equal(e.playerDrop(), '', 'a finished tower takes no more blocks');
+    tick(e, 3); assert.equal(e.lastDrop.finale, true, 'then it comes down'); assert.ok(e.stage === 'collapse' || e.blocks.length < blocksAtComplete);
+  });
+  test('the demo itself keeps playing under the same rules as before (no manual state leaks into autoplay)', async () => {
+    const d = await make(9); let drops = 0; let last = 0; tick(d, 0.1);
+    for (let i = 0; i < 60 * 40; i += 1) { d.update(1 / 60); if (d.dropCount !== last) { last = d.dropCount; drops += 1; assert.equal(d.lastDrop.manual, false); } }
+    assert.ok(drops >= 6, `${drops} automatic drops in 40 s`); assert.equal(d.manual, false);
+  });
+});
+
+describe('the living crowd: googly eyes, gaze, waves, paddles, chaos', () => {
+  const make = async (theme = 'paper', max = 80) => { const { Crowd } = await load('audience.js'); const { paletteFor } = await load('palette.js'); return new Crowd(theme, paletteFor(theme), { max }); };
+  const frames = (crowd, seconds, from = 0) => { let t = from; for (let i = 0; i < Math.round(seconds * 60); i += 1) { t += 1 / 60; crowd.update(1 / 60, t); } return t; };
+  const mean = (arr, n) => { let sum = 0; for (let i = 0; i < n; i += 1) sum += arr[i]; return sum / n; };
+
+  test('every spectator has two eyes with a pupil each, in every theme, and nothing goes non-finite', async () => {
+    for (const theme of ['paper', 'sunset', 'primetime']) {
+      const crowd = await make(theme); assert.equal(crowd.eyes.count, crowd.visible * 2); assert.equal(crowd.pupils.count, crowd.visible * 2);
+      crowd.setBallot({ voted: 0.8, fractions: [0.5, 0.3, 0.2], colors: null }); crowd.chaos(1); crowd.wave(1); frames(crowd, 1.5);
+      for (const mesh of [crowd.figures, crowd.cards, crowd.eyes, crowd.pupils]) assert.ok(mesh.instanceMatrix.array.every(Number.isFinite), `${theme}: finite matrices`);
+      crowd.setDensity(0.5); assert.equal(crowd.eyes.count, crowd.visible * 2, 'eyes follow the density'); crowd.dispose();
+    }
+  });
+  test('the pupils look where the gaze is: right of the crowd means right-ish, left means left-ish, and straight ahead is neutral', async () => {
+    const crowd = await make('paper', 120); const n = crowd.visible;
+    crowd.setGaze(4000, 200, 300, 1); let t = frames(crowd, 1.2); const right = mean(crowd.pupilX, n);
+    crowd.setGaze(-4000, 200, 300, 1); t = frames(crowd, 1.2, t); const left = mean(crowd.pupilX, n);
+    crowd.setGaze(0, 200, 5000, 0); frames(crowd, 1.2, t); const ahead = mean(crowd.pupilX, n);
+    assert.ok(right > 0.3 && left < -0.3, `right ${right.toFixed(2)} left ${left.toFixed(2)}`); assert.ok(Math.abs(ahead) < 0.3, `ahead ${ahead.toFixed(2)}`);
+    assert.ok(crowd.pupilX.every(v => Math.abs(v) < 3) && crowd.pupilY.every(v => Math.abs(v) < 3), 'the springs are stable (googly, not unhinged)');
+  });
+  test('stadium waves are rationed, run across the galleries, and finish; paddles flail harder in a vote than at rest', async () => {
+    const crowd = await make(); frames(crowd, 0.2, 10);
+    assert.equal(crowd.wave(1), true); assert.equal(crowd.wave(-1), false, 'a second wave inside the gap is turned away'); assert.equal(crowd.waves.length, 1);
+    const rest = crowd.frenzy; frames(crowd, 4, 10.2); assert.equal(crowd.waves.length, 0, 'the wave ran its course and was dropped'); assert.equal(crowd.wave(-1), true, 'and the next one may start');
+    crowd.setBallot({ voted: 0.9, fractions: [0.4, 0.4, 0.2], colors: null }); frames(crowd, 2, 15); assert.ok(crowd.frenzy > 0.9 && rest < 0.2, `frenzy ${rest.toFixed(2)} -> ${crowd.frenzy.toFixed(2)}`);
+    crowd.clearBallot(); frames(crowd, 3, 17); assert.ok(crowd.frenzy < 0.1, 'and they calm down afterwards');
+    crowd.chaos(1); assert.ok(crowd.uproar >= 1); frames(crowd, 4, 20); assert.ok(crowd.uproar < 0.1, 'chaos passes');
+    crowd.dispose();
+  });
+});
+
+describe('tactile UI behaviour (keys that press back, decks that tilt)', () => {
+  const key = (page, type, code, target) => { const e = new page.window.KeyboardEvent(type, { code, key: code, bubbles: true, cancelable: true }); (target || page.document.body).dispatchEvent(e); return e; };
+  test('Space sinks the drop bar and 1/2/3 sink the vote keys, only during a game and only while held', async () => {
+    const { installTactileUi } = await load('tactile.js'); const page = await boot(HTML_PATH);
+    try {
+      const tactile = installTactileUi({ doc: page.document, win: page.window, hover: false });
+      const drop = page.document.getElementById('drop-button'); const options = [...page.document.querySelectorAll('.vote-option')];
+      drop.disabled = false; options.forEach(o => { o.disabled = false; });
+      page.document.body.dataset.screen = 'title'; key(page, 'keydown', 'Space'); assert.equal(drop.classList.contains('is-pressed'), false, 'not on the title screen');
+      page.document.body.dataset.screen = 'game'; key(page, 'keydown', 'Space'); assert.equal(drop.classList.contains('is-pressed'), true);
+      key(page, 'keyup', 'Space'); assert.equal(drop.classList.contains('is-pressed'), false, 'let go, it comes back up');
+      key(page, 'keydown', 'Digit2'); assert.ok(options[1].classList.contains('is-pressed') && !options[0].classList.contains('is-pressed')); key(page, 'keyup', 'Digit2'); assert.ok(!options[1].classList.contains('is-pressed'));
+      key(page, 'keydown', 'Numpad3'); assert.ok(options[2].classList.contains('is-pressed')); page.window.dispatchEvent(new page.window.Event('blur')); assert.ok(!options[2].classList.contains('is-pressed'), 'losing focus lifts every key');
+      drop.disabled = true; key(page, 'keydown', 'Space'); assert.equal(drop.classList.contains('is-pressed'), false, 'a disabled key does not move');
+      drop.disabled = false; const select = page.document.createElement('select'); page.document.body.appendChild(select); key(page, 'keydown', 'Space', select); assert.equal(drop.classList.contains('is-pressed'), false, 'typing into a control is not a key press');
+      tactile.dispose(); key(page, 'keydown', 'Space'); assert.equal(drop.classList.contains('is-pressed'), false, 'disposed: no more listeners');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('a deck tilts towards the pointer, only a couple of degrees, settles flat, and does nothing under Reduced Motion or on touch', async () => {
+    const { installTactileUi } = await load('tactile.js'); const page = await boot(HTML_PATH, { manualAnimationFrame: true });
+    try {
+      const deck = page.document.querySelector('.home-copy'); deck.getBoundingClientRect = () => ({ left: 100, top: 100, width: 400, height: 600, right: 500, bottom: 700 });
+      const tactile = installTactileUi({ doc: page.document, win: page.window, hover: true });
+      const move = (x, y, pointerType = 'mouse') => { const e = new page.window.MouseEvent('pointermove', { clientX: x, clientY: y, bubbles: true }); Object.defineProperty(e, 'pointerType', { value: pointerType }); deck.dispatchEvent(e); };
+      const angles = () => (deck.style.transform.match(/-?\d+(\.\d+)?(?=deg)/g) || []).map(Number);
+      move(490, 110); page.advanceAnimation(900, 16);
+      const [rx, ry] = angles(); assert.ok(rx > 1.5 && rx <= 2.2 && ry > 1.5 && ry <= 2.2, `tilt ${rx} ${ry}`); assert.ok(deck.classList.contains('is-tilting')); assert.equal(tactile.tilting, deck);
+      move(110, 690); page.advanceAnimation(900, 16); const [rx2, ry2] = angles(); assert.ok(rx2 < -1.5 && ry2 < -1.5, 'the other corner tilts the other way');
+      page.document.documentElement.dispatchEvent(new page.window.Event('pointerleave')); page.advanceAnimation(1500, 16);
+      assert.equal(deck.style.transform, '', 'back to flat, with no transform left behind'); assert.equal(deck.classList.contains('is-tilting'), false); assert.equal(tactile.tilting, null);
+      move(300, 400, 'touch'); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'a finger has no hover');
+      page.document.documentElement.dataset.motion = 'reduced'; move(490, 110); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'Reduced Motion: never tilts');
+      page.document.documentElement.dataset.motion = 'full'; move(490, 110); page.advanceAnimation(300, 16); assert.ok(deck.style.transform.includes('rotateX')); tactile.dispose(); assert.equal(deck.style.transform, '', 'disposing levels it');
+      const off = installTactileUi({ doc: page.document, win: page.window, hover: false }); move(490, 110); page.advanceAnimation(300, 16); assert.equal(deck.style.transform, '', 'touch-first devices never tilt'); off.dispose();
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
+
+describe('crown, lobby totems, sculpted glyphs and the turnable results', () => {
+  const THREE_THEMES = ['paper', 'sunset', 'primetime'];
+  test('the crown pops in with an overshoot, settles, turns and bobs (and under Reduced Motion only holds still, tilted)', async () => {
+    const { crownPose } = await load('crown.js');
+    assert.equal(crownPose(0, 3).scale, 0); assert.equal(crownPose(5, 3).scale, 1);
+    let peak = 0; for (let a = 0; a <= 0.8; a += 0.01) peak = Math.max(peak, crownPose(a, 1).scale); assert.ok(peak > 1.03 && peak < 1.2, `overshoot ${peak}`);
+    assert.notEqual(crownPose(1, 1).spin, crownPose(1, 2).spin); assert.ok(Math.abs(crownPose(1, 1.0).bob) <= 4 + 1e-9);
+    const calm = crownPose(1, 99, true); assert.deepEqual([calm.bob, calm.spin], [0, 0.5]);
+  });
+  test('the crown model has five points, five jewels and cleans up after itself, in every world', async () => {
+    const { buildCrown } = await load('crown.js');
+    for (const theme of THREE_THEMES) {
+      const crown = buildCrown(theme); let cones = 0; let balls = 0; crown.traverse(o => { if (o.geometry && o.geometry.type === 'ConeGeometry') cones += 1; if (o.geometry && o.geometry.type === 'SphereGeometry') balls += 1; });
+      assert.equal(cones, 5, `${theme}: five points`); assert.equal(balls, 10, `${theme}: a ball on each tip and a jewel in each face of the band`); assert.ok(crown.userData.height > 30);
+      assert.doesNotThrow(() => crown.userData.dispose());
+    }
+  });
+  test('totems stand on the plinth without overlapping, drop in, glow when connected, shrink away when someone leaves, and clean up', async () => {
+    const { Totems, totemSlot } = await load('totems.js'); const { paletteFor } = await load('palette.js');
+    const slots = [0, 1, 2, 3, 4, 5].map(totemSlot);
+    for (const slot of slots) assert.ok(Math.hypot(slot.x, slot.z) < 250, 'on the plinth top');
+    for (let i = 0; i < 6; i += 1) for (let j = i + 1; j < 6; j += 1) assert.ok(Math.hypot(slots[i].x - slots[j].x, slots[i].z - slots[j].z) >= 74, `totems ${i} and ${j} keep their rings (34 wide each side) apart`);
+    assert.ok(slots[0].x < 0 && slots[1].x > 0, 'they fan out to both sides of the tower');
+    for (const theme of THREE_THEMES) {
+      const totems = new Totems(theme, paletteFor(theme)); const players = [{ id: 'a', name: 'Ann', color: '#E3A33B', ready: true }, { id: 'b', name: 'Bo', color: '#2F8478', ready: false }];
+      let t = 0; const run = (seconds, list, look) => { for (let i = 0; i < Math.round(seconds * 60); i += 1) { t += 1 / 60; totems.sync(list, 1 / 60, t, look); } };
+      run(0.05, players, { x: 0, y: 0 }); assert.equal(totems.items.size, 2); const ann = totems.items.get('a');
+      assert.ok(ann.group.position.y > 100, 'a new arrival drops in from above'); run(1.4, players, { x: 0.6, y: 0.2 }); assert.ok(Math.abs(ann.group.position.y) < 12, 'and lands');
+      assert.ok(ann.glowLevel > 0.9 && totems.items.get('b').glowLevel < 0.1, 'connected players glow, the others do not'); assert.ok(ann.px > 0.2, 'the eyes follow the pointer');
+      players.push({ id: 'c', name: 'Cy', color: '#7FA6BD', ready: true }); run(0.1, players); assert.equal(totems.items.size, 3);
+      run(0.2, players.slice(0, 2)); assert.equal(totems.items.size, 3, 'someone who has just left is still shrinking away'); run(0.6, players.slice(0, 2)); assert.equal(totems.items.size, 2, 'then gone');
+      totems.sync(players.concat([{ id: 'x1' }, { id: 'x2' }, { id: 'x3' }, { id: 'x4' }]), 1 / 60, t + 0.1, { x: 0, y: 0 }, true); assert.ok(totems.items.size <= 6, 'a room holds six');
+      totems.group.traverse(o => { if (o.isMesh) { assert.ok([o.position.x, o.position.y, o.position.z, o.scale.x, o.scale.y].every(Number.isFinite)); } });
+      assert.doesNotThrow(() => totems.dispose()); assert.equal(totems.items.size, 0);
+    }
+  });
+  test('the brand emblem and the speaker are sculpted too, swapped into the page, and put back exactly when the layer is switched off', async () => {
+    const { buildIcon, applyGlyphSprites, restoreFlatIcons, GLYPH_IDS, ICON_IDS } = await load('icons3d.js'); const page = await boot(HTML_PATH);
+    try {
+      assert.deepEqual([...GLYPH_IDS], ['brand', 'speaker-on', 'speaker-off']); assert.ok(!ICON_IDS.some(id => GLYPH_IDS.includes(id)), 'glyphs are not sabotages');
+      for (const theme of THREE_THEMES) for (const id of GLYPH_IDS) { const icon = buildIcon(id, theme); let meshes = 0; icon.traverse(o => { if (o.isMesh) meshes += 1; }); assert.ok(meshes >= 4, `${theme}/${id}: built from several pieces`); icon.userData.dispose(); }
+      const brand = page.document.querySelector('.brand-mark svg'); const speaker = page.document.querySelector('.sound-toggle svg'); const flatBrand = brand.innerHTML; const flatSpeaker = speaker.innerHTML;
+      assert.equal(applyGlyphSprites(page.document, { brand: 'data:image/png;base64,AAAA' }), 1, 'a partial set only replaces what it has');
+      assert.equal(applyGlyphSprites(page.document, { brand: 'data:image/png;base64,AAAA', 'speaker-on': 'data:image/png;base64,BBBB', 'speaker-off': 'data:image/png;base64,CCCC' }), 2);
+      assert.ok(brand.querySelector('image') && !brand.querySelector('path'), 'the flat drawing is replaced'); assert.deepEqual([...speaker.querySelectorAll('image')].map(i => i.getAttribute('class')), ['speaker-on', 'speaker-off']);
+      assert.equal(brand.dataset.flat, flatBrand, 'the original drawing was kept');
+      restoreFlatIcons(page.document); assert.equal(brand.innerHTML, flatBrand); assert.equal(speaker.innerHTML, flatSpeaker); assert.equal(brand.dataset.glyph3d, undefined); assert.equal(brand.dataset.flat, undefined);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('the results turn too: their controls live in the results screen, without the toy dock, and the page styles the glyphs', async () => {
+    const { createOrbitHud } = await load('orbit-hud.js'); const page = await boot(HTML_PATH);
+    try {
+      const hud = createOrbitHud({ doc: page.document, hostId: 'results-screen', id: 'orbit-hud-results', dock: false, storage: { getItem: () => null, setItem() {} } });
+      assert.ok(page.document.getElementById('results-screen').contains(hud.root) && hud.root.id === 'orbit-hud-results');
+      assert.equal(hud.root.querySelectorAll('.toy-key').length, 0, 'no toy dock on the results'); assert.equal(hud.root.querySelectorAll('button[data-orbit]').length, 3);
+      hud.dispose(); assert.equal(page.document.getElementById('orbit-hud-results'), null);
+      assert.equal(createOrbitHud({ doc: page.document, hostId: 'no-such-screen' }), null);
+      assert.match(html, /html\.has-3d \.sound-toggle\[aria-pressed="false"\] \.speaker-on \{ display: none; \}/); assert.match(html, /html\.has-3d \.sound-toggle \.speaker-off \{ display: none; \}/);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
   });
 });
 

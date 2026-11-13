@@ -29,6 +29,20 @@ function kitFor(theme) {
 
 const add = (g, geo, material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; g.add(m); return m; };
 
+function speaker({ p, mat }, waves) {
+  const g = new THREE.Group();
+  add(g, rbox(13, 18, 17, 3), mat(p.ink, { metal: 0.3, rough: 0.4 }), -17, 0, 0);
+  add(g, new THREE.CylinderGeometry(15, 7, 18, 30), mat(p.amber, { metal: 0.45, rough: 0.28 }), -4, 0, 0, 0, 0, -Math.PI / 2);
+  add(g, new THREE.CylinderGeometry(11, 11, 2, 26), mat(p.cream, { rough: 0.6 }), 4.6, 0, 0, 0, 0, -Math.PI / 2);
+  if (waves) {
+    [[15, 2.6], [23, 2.6]].forEach(([r, t], i) => add(g, new THREE.TorusGeometry(r, t, 9, 26, 1.5), mat(i ? p.teal : p.vermilion, { emissive: 0.45 }), 5, 0, 0, 0, 0, -0.75));
+  } else {
+    add(g, rbox(4.4, 28, 5, 1.6), mat(p.vermilion, { emissive: 0.5 }), 22, 0, 3, 0, 0, 0.785);
+    add(g, rbox(4.4, 28, 5, 1.6), mat(p.vermilion, { emissive: 0.5 }), 22, 0, 3, 0, 0, -0.785);
+  }
+  return g;
+}
+
 const BUILD = {
   turbo({ p, mat, glowMat }) {
     const g = new THREE.Group(); const r = new THREE.Group(); g.add(r);
@@ -195,7 +209,18 @@ const BUILD = {
     [[p.teal, 38, -14], [p.amber, 30, -1.5], [p.blue, 22, 11]].forEach(([c, w, y]) => add(g, rbox(w, 11, 22, 3), mat(c, { rough: 0.4 }), 0, y, 0));
     add(g, new THREE.TorusGeometry(5, 1.6, 6, 14, 4.3), mat(p.vermilion, { emissive: 0.4 }), 17, 20, 4);
     return g;
-  }
+  },
+  // the page's own glyphs, sculpted the same way: the brand emblem and the sound speaker (one model for on, one for muted)
+  brand({ p, mat }) {
+    const g = new THREE.Group();
+    [[p.teal, 42, -20], [p.amber, 34, -7.5], [p.vermilion, 26, 5], [p.blue, 18, 17.5]].forEach(([c, w, y], i) => { const b = add(g, rbox(w, 11.5, 25, 3), mat(c, { rough: 0.4 }), i % 2 ? 2 : -2, y, 0); b.rotation.y = i % 2 ? 0.05 : -0.06; });
+    add(g, new THREE.OctahedronGeometry(5.2, 0), mat('#FFC83D', { metal: 0.5, rough: 0.25, emissive: 0.7 }), 17, 31, 5).rotation.set(0.4, 0.6, 0.2);
+    add(g, rbox(9, 2.6, 2.6, 1), mat('#FFC83D', { emissive: 0.7 }), 26, 22, 4, 0, 0, 0.7);
+    add(g, rbox(8, 2.6, 2.6, 1), mat('#FFC83D', { emissive: 0.7 }), 29, 31, 4, 0, 0, -0.2);
+    return g;
+  },
+  'speaker-on'({ p, mat }) { return speaker({ p, mat }, true); },
+  'speaker-off'({ p, mat }) { return speaker({ p, mat }, false); }
 };
 
 export function buildIcon(id, theme = 'paper') {
@@ -210,7 +235,9 @@ export function buildIcon(id, theme = 'paper') {
 }
 
 // Bakes every icon to a PNG data URL with a throw-away renderer (its own WebGL context, released immediately after).
-export function renderIconSprites(theme = 'paper', { size = 192, ids = [...ICON_IDS, 'empty'] } = {}) {
+// the page's own glyphs that are sculpted too (not sabotages, so not in ICON_IDS): the brand emblem and the speaker, on and muted
+export const GLYPH_IDS = Object.freeze(['brand', 'speaker-on', 'speaker-off']);
+export function renderIconSprites(theme = 'paper', { size = 192, ids = [...ICON_IDS, 'empty', ...GLYPH_IDS] } = {}) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, premultipliedAlpha: false });
   renderer.setPixelRatio(1); renderer.setSize(size, size, false); renderer.setClearColor(0x000000, 0);
@@ -246,6 +273,16 @@ export function applyIconSprites(doc, sprites) {
   }
   return count;
 }
+// The brand emblem and the speaker are inline <svg>s in the page (no <symbol> to swap): their drawing is kept, and put back by restoreFlatIcons.
+export function applyGlyphSprites(doc, sprites) {
+  let count = 0;
+  const put = (svg, markup) => { if (!svg) return; if (svg.dataset.flat === undefined) svg.dataset.flat = svg.innerHTML; svg.dataset.glyph3d = '1'; svg.innerHTML = markup; count += 1; };
+  const image = (href, extra = '') => `<image ${extra} href="${href}" x="-3" y="-3" width="30" height="30" preserveAspectRatio="xMidYMid meet"/>`;
+  if (sprites.brand) put(doc.querySelector('.brand-mark svg'), image(sprites.brand));
+  if (sprites['speaker-on'] && sprites['speaker-off']) put(doc.querySelector('.sound-toggle svg'), image(sprites['speaker-on'], 'class="speaker-on"') + image(sprites['speaker-off'], 'class="speaker-off"'));
+  return count;
+}
 export function restoreFlatIcons(doc) {
   for (const symbol of doc.querySelectorAll('symbol[id^="sabotage-symbol-"][data-flat]')) { symbol.innerHTML = symbol.dataset.flat; delete symbol.dataset.flat; }
+  for (const svg of doc.querySelectorAll('svg[data-glyph3d]')) { svg.innerHTML = svg.dataset.flat; delete svg.dataset.flat; delete svg.dataset.glyph3d; }
 }

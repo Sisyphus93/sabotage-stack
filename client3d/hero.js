@@ -9,6 +9,9 @@ import { rng, damp, clamp, smoothstep, TAU, sign } from './util.js';
 import { colorOf } from './world-common.js';
 import { offsetFromPointer } from './hover.js';
 
+export const MANUAL_HOLD = 9; // seconds the toy stays in the visitor's hands after their last drop
+export const MANUAL_PERFECT_WINDOW = 10; // a friendlier perfect window than the real game's 3 px: this is a toy, and perfects are the fun part
+
 const LINE_COLORS = { paper: ['#2A2520', '#D5472F'], sunset: ['#FFC53D', '#FF4FD8'], primetime: ['#FFFFFF', '#FFC83D'] };
 const LEDGE_COLORS = { paper: ['#2F8478', '#E3A33B'], sunset: ['#2B1155', '#2B1155'], primetime: ['#0B1B5C', '#0B1B5C'] };
 
@@ -180,8 +183,13 @@ export class TitleBoard {
 export class AttractDirector {
   constructor(Core, random = rng(5)) {
     this.Core = Core; this.random = random; this.idCounter = 0; this.order = []; this.next = 0; this.ballot = null;
-    this.speedBase = 150; this.reset();
+    this.speedBase = 150;
+    // The title screen is a toy as well as a trailer: after the visitor's own drop the demo hands them the tower (manual: they
+    // drop, nothing drops for them) and takes it back when they have left it alone for MANUAL_HOLD seconds.
+    this.manualLeft = 0; this.lastDrop = null; this.dropCount = 0; this.finaleDrop = false;
+    this.reset();
   }
+  get manual() { return this.manualLeft > 0; }
   nextEffect() {
     const ids = this.Core.SABOTAGE_IDS || ICON_IDS;
     if (!this.order.length || this.next >= this.order.length) { this.order = ids.slice(); for (let i = this.order.length - 1; i > 0; i -= 1) { const j = Math.floor(this.random() * (i + 1)); [this.order[i], this.order[j]] = [this.order[j], this.order[i]]; } this.next = 0; }
@@ -191,7 +199,7 @@ export class AttractDirector {
     this.id = `attract-${++this.idCounter}`; const C = this.Core;
     this.blocks = [C.makeBase()]; this.fallen = []; this.moving = null; this.effect = null; this.phase = 'playing'; this.collapsed = false;
     this.timer = 0; this.stage = 'stack'; this.stageTimer = 0; this.target = 11 + Math.floor(this.random() * 3); this.voteAt = 5 + Math.floor(this.random() * 2);
-    this.ballot = null; this.pendingFail = false; this.voted = false; this.forced = this.forced || null; this.spawnMover(); this.dropOffset = this.pickOffset(); // a sabotage asked for while the old tower was toppling is not lost: it plays on the new one
+    this.ballot = null; this.pendingFail = false; this.voted = false; this.forced = this.forced || null; this.toppleLeft = 0; this.spawnMover(); this.dropOffset = this.pickOffset(); // a sabotage asked for while the old tower was toppling is not lost: it plays on the new one
   }
   pickOffset() { const r = this.random(); if (r < 0.58) return 0; return (this.random() < 0.5 ? -1 : 1) * (6 + this.random() * 26); }
   spawnMover() {
@@ -224,6 +232,8 @@ export class AttractDirector {
   }
   update(dt, reduced = false) {
     this.timer += dt; const C = this.Core;
+    if (this.manualLeft > 0) this.manualLeft = Math.max(0, this.manualLeft - dt);
+    const manual = this.manualLeft > 0;
     if (this.stage === 'collapse') {
       this.stageTimer += dt; if (this.stageTimer > 3.2) this.reset();
       return;
@@ -235,7 +245,7 @@ export class AttractDirector {
       for (let i = 0; i < 3; i += 1) f[i] = clamp(this.ballot.base[i] * (0.4 + t * 0.5) + Math.sin(t * 5 + i * 2) * 0.05, 0.02, 1);
       this.ballot.voted = clamp(t / 1.7);
       if (t > 2.4) { const id = this.ballot.winner; this.ballot = null; this.stage = 'stack'; this.stageTimer = 0; this.startEffect(id); }
-      return;
+      if (!manual) return; // the demo holds its block while chat votes; a visitor keeps playing, as in the real game
     }
     if (this.effect) { this.effect.elapsed += dt; this.effect.remaining -= dt; if (this.effect.remaining <= 0) { this.effect = null; if (this.moving) delete this.moving.decoy; } }
     const m = this.moving; if (!m) return;
@@ -250,13 +260,17 @@ export class AttractDirector {
     const below = this.blocks[this.blocks.length - 1]; const belowC = (below.left + below.right) / 2;
     const center = m.left + m.width / 2; const goal = belowC + this.dropOffset;
     const crossing = (before - goal) * (center - goal) <= 0 && Math.abs(center - before) < 40;
-    const failTime = this.pendingFail && !this.effect && this.blocks.length >= this.voteAt + 1;
+    const failTime = this.pendingFail && !this.effect && this.blocks.length >= this.voteAt + 1 && !manual;
     if (failTime && this.blockClock > 0.6) {
       // the grand finale: let the block run out to the edge of the board and drop it clear of the tower
       if (m.left <= 1 || m.left + m.width >= 359) this.drop(true);
       return;
     }
-    if (this.blockClock > (this.effect ? 0.9 : 1.15) && crossing) this.drop(false);
+    if (this.toppleLeft > 0) { // a tower finished by hand comes down a moment later, like the demo's own finale
+      this.toppleLeft -= dt;
+      if (this.toppleLeft <= 0) { this.finaleDrop = true; this.drop(true); return; }
+    }
+    if (!manual && this.blockClock > (this.effect ? 0.9 : 1.15) && crossing) this.drop(false);
     if (!this.effect && !this.pendingFail && this.blocks.length >= this.voteAt && this.stage === 'stack' && this.blockClock < 0.2 && !this.voted) this.openVote();
   }
   openVote() {
@@ -270,14 +284,29 @@ export class AttractDirector {
     const C = this.Core; const m = this.moving; const below = this.blocks[this.blocks.length - 1];
     const level = this.blocks.length; const effectId = this.effect ? this.effect.id : '';
     const belowCentre = (below.left + below.right) / 2;
-    const outcome = C.placeDrop(below, forceMiss ? { ...m, left: m.left + m.width / 2 < belowCentre ? below.left - m.width - 4 : below.right + 4 } : m, { perfectWindow: effectId === 'superglue' ? 14 : 3, level, color: m.color, placer: 'You', crumble: effectId === 'crumble' });
+    const manual = this.manual;
+    const outcome = C.placeDrop(below, forceMiss ? { ...m, left: m.left + m.width / 2 < belowCentre ? below.left - m.width - 4 : below.right + 4 } : m, { perfectWindow: effectId === 'superglue' ? 14 : manual ? MANUAL_PERFECT_WINDOW : 3, level, color: m.color, placer: 'You', crumble: effectId === 'crumble' });
     for (const piece of outcome.fallen) this.fallen.push({ ...piece });
-    if (outcome.status === 'miss' || (forceMiss && !outcome.placed)) {
-      this.phase = 'collapse'; this.collapsed = true; this.collapseStartLevel = Math.max(0, this.blocks.length - 6); this.moving = null; this.stage = 'collapse'; this.stageTimer = 0; this.effect = null; return;
+    const missed = outcome.status === 'miss' || (forceMiss && !outcome.placed);
+    const result = missed ? 'miss' : outcome.perfect ? 'perfect' : outcome.fallen.length ? 'trim' : 'ok';
+    const finale = Boolean(this.finaleDrop); this.finaleDrop = false;
+    this.lastDrop = { n: ++this.dropCount, result, level, centre: m.left + m.width / 2, manual, finale };
+    if (missed) {
+      this.phase = 'collapse'; this.collapsed = true; this.collapseStartLevel = Math.max(0, this.blocks.length - 6); this.moving = null; this.stage = 'collapse'; this.stageTimer = 0; this.effect = null; return result;
     }
     this.blocks.push(outcome.placed); this.dropOffset = this.pickOffset();
     if (this.blocks.length >= this.target && !this.pendingFail) this.pendingFail = true;
+    if (manual && this.blocks.length >= this.target && !this.toppleLeft) { this.lastDrop.complete = true; this.toppleLeft = 2.1; } // finished: no more blocks, the tower comes down
     this.spawnMover();
+    return result;
+  }
+
+  // The visitor's own drop (the title screen's toy). Returns 'perfect' | 'trim' | 'ok' | 'miss', or '' when there is nothing to drop
+  // right now: the block has only just appeared, or the tower is coming down.
+  playerDrop() {
+    if (this.stage === 'collapse' || !this.moving || this.phase !== 'playing' || this.blockClock < 0.18 || this.toppleLeft > 0) return '';
+    this.manualLeft = MANUAL_HOLD;
+    return this.drop(false);
   }
   state(helpers, reduced) {
     return { id: this.id, blocks: this.blocks, fallen: this.fallen, moving: this.moving, effect: this.effect, helpers, phase: this.phase, collapsed: this.collapsed, collapseStartLevel: this.collapseStartLevel, reduced, teamPlacers: false };

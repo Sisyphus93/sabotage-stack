@@ -15,6 +15,8 @@ import { hasGlyphs } from './text3d.js';
 import { OrbitController } from './orbit.js';
 import { HoverField, offsetFromPointer } from './hover.js';
 import { createOrbitHud } from './orbit-hud.js';
+import { Totems, totemSlot, totemHeight } from './totems.js';
+import { buildCrown, crownPose } from './crown.js';
 import { podiumEntries, podiumMetrics, revealCount, revealedFallen, headlineFor } from './podium.js';
 import { clamp, damp, lerp, smoothstep, easeInOutCubic, easeOutCubic, TAU, rng, Spring } from './util.js';
 
@@ -53,7 +55,7 @@ export class Stage {
     this.heroLayout = ''; this.introDone = false; this.heroHover = -1;
     // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
     this.orbit = new OrbitController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
-    this.hud = null; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
+    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.toyRect = null; this.toySeen = 0; this.calloutSide = 1; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
     this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
     this.scene.add(this.cursorLight);
@@ -67,12 +69,12 @@ export class Stage {
     document.documentElement.addEventListener('pointerleave', this.onPointerLeave = () => { this.pointer.inside = false; });
     window.addEventListener('blur', this.onBlur = () => { this.pointer.inside = false; this.endDrag(true); });
     window.addEventListener('contextmenu', this.onContextMenu = e => {
-      if (this.mode !== 'hero') return;
+      if (!this.canOrbit()) return;
       // a right-drag that began on the scene owns the menu wherever it is released (Windows raises it on mouse-up, over whatever is there)
       const turning = (this.drag && this.drag.button === 2) || performance.now() < this.contextGuardUntil;
       if (turning || (!closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR))) e.preventDefault();
     });
-    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode === 'hero' && !closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR)) this.orbit.reset(); });
+    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.canOrbit() && !closest(e.target, UI_SELECTOR) && !closest(e.target, PANEL_SELECTOR)) this.orbit.reset(); });
     window.addEventListener('keydown', this.onKeyDown = e => this.handleKey(e));
     this.applyTier(this.engine.tier);
   }
@@ -103,6 +105,10 @@ export class Stage {
     this.popups = new Popups(theme, this.palette); this.scene.add(this.popups.group);
     if (this.ruler) { this.scene.remove(this.ruler.group); this.ruler.dispose(); }
     this.ruler = new Ruler(theme, this.palette); this.scene.add(this.ruler.group);
+    if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }
+    this.totems = new Totems(theme, this.palette); this.scene.add(this.totems.group);
+    if (this.crown) { this.scene.remove(this.crown); this.crown.userData.dispose(); }
+    this.crown = buildCrown(theme); this.crown.visible = false; this.scene.add(this.crown); this.lastCrownSpark = 0;
     if (this.title) { this.scene.remove(this.title.group); this.title.dispose(); }
     this.title = new TitleBoard(theme, this.palette, this.fx); this.scene.add(this.title.group); this.heroLayout = '';
     if (this.arsenal) { this.scene.remove(this.arsenal.group); this.arsenal.dispose(); }
@@ -134,7 +140,8 @@ export class Stage {
       this.fx.pulses.pulse({ pos: [position.x, position.y + 1, position.z - 20], color: gold, radius: Math.max(120, width * 0.9), life: 0.8, from: 0.15, strength: 1.5 });
       this.fx.sparks.burst({ pos: [position.x, position.y + 6, position.z], count: 26, speed: 190, spread: 1, color: [c.r * 1.6, c.g * 1.6, c.b * 1.6], size: 6.5, life: 0.95, gravity: -220, up: 0.7, drag: 1.1 });
       this.world.crowd.cheer(0.9);
-      if (name === 'arena' || this.mode === 'hero') return;
+      this.waveDir = -(this.waveDir || 1); this.world.crowd.wave(this.waveDir, { gap: this.mode === 'hero' ? 9 : 3.2 });
+      if (name === 'arena' || (this.mode === 'hero' && !this.toyLive())) return;
       if (!this.reduced) this.flash = Math.max(this.flash, 0.09);
       this.popups.show({ text: 'PERFECT!', position: [clamp(position.x, -90, 90), position.y + 52, 96], size: 30, depth: 9, color: gold, glow: 0.9, style: 'slam', life: 1.15, tilt: (Math.random() - 0.5) * 0.18 });
       if (!this.reduced) this.fx.confetti.burst({ pos: [position.x, position.y + 8, position.z], count: 22, speed: 230, colors: this.confettiColors(), size: 6.5, life: 2.4, cone: 0.9 });
@@ -150,9 +157,16 @@ export class Stage {
       this.fx.sparks.burst({ pos: [t.x, t.y, 40], count: 60, speed: 260, spread: 1, color: [red.r * 1.4, red.g * 1.4, red.b * 1.4], size: 7, life: 1.1, gravity: -300, up: 0.5, drag: 1.2 });
       this.fx.dust([t.x, t.y, 40], 22); this.fx.dust([0, 6, 50], 16);
       this.fx.pulses.pulse({ pos: [0, 2, 0], color: this.palette.vermilion, radius: 330, life: 1.0, from: 0.3, strength: 1.2 });
-      if (name === 'play') this.popups.show({ text: 'TIMBER!', position: [0, t.y + 40, 100], size: 40, depth: 12, color: this.palette.vermilion, glow: 0.9, style: 'slam', life: 1.5, tilt: -0.08 });
+      if (name === 'play' || (name === 'hero' && this.toyLive())) this.popups.show({ text: 'TIMBER!', position: [0, t.y + 40, 100], size: 40, depth: 12, color: this.palette.vermilion, glow: 0.9, style: 'slam', life: 1.5, tilt: -0.08 });
       this.world.crowd.cheer(1.6);
     });
+  }
+
+  // What the crowd is watching, in world space. The galleries turn with an orbited camera (see setViewYaw), so the point is
+  // carried into their frame before the googly eyes are aimed at it (the +90 puts it a little towards the viewer, where the action is).
+  watch(x, y, z = 0, amount = 1, yaw = 0) {
+    const c = Math.cos(yaw); const s = Math.sin(yaw);
+    this.world.crowd.setGaze(c * x - s * z, y, s * x + c * z + 90, amount);
   }
 
   confettiColors() { return this.theme === 'paper' ? ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#C96F8A'] : this.theme === 'sunset' ? ['#FFC53D', '#2EC4B6', '#9B5DE5', '#FF5964', '#FF8FAB'] : ['#FFC83D', '#35D0E8', '#F2F5FF', '#E5322D', '#FF7FA8']; }
@@ -181,7 +195,7 @@ export class Stage {
 
   handleDown(event) {
     this.handlePointer(event); this.idleFor = 0;
-    if (this.mode !== 'hero' || !this.arsenal || this.drag || !event.isPrimary) return;
+    if (!this.canOrbit() || this.drag || !event.isPrimary) return;
     if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
     if (this.pointer.overUi) return;
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp, button: event.button, moved: false, touch: event.pointerType === 'touch' };
@@ -213,18 +227,22 @@ export class Stage {
     const idx = this.arsenal.pick(this.raycaster);
     if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); if (!this.reduced) this.title.wave(this.arsenal.items[idx].holder.position.x); return; }
     const frame = this.heroAnchor && this.pointerOnScreenPlane(this.heroAnchor, this.pointer.ndc, 0);
-    if (frame && this.title.poke(frame) && !this.reduced) this.title.wave(frame.point.x, 1900);
+    if (frame && this.title.poke(frame)) { if (!this.reduced) this.title.wave(frame.point.x, 1900); return; }
+    if (this.overTower(event.clientX, event.clientY)) this.toyDrop();
   }
 
   // Arrow keys turn the scene when nothing else has the keyboard (a focused select or button keeps its own arrows).
   handleKey(event) {
-    if (this.mode !== 'hero' || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (!this.canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     const target = event.target; if (target && target !== document.body && target !== document.documentElement) return;
     const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
     if (event.key === 'ArrowLeft') { this.orbit.rotateBy(-step, 0.35); this.idleFor = 0; event.preventDefault(); }
     else if (event.key === 'ArrowRight') { this.orbit.rotateBy(step, 0.35); this.idleFor = 0; event.preventDefault(); }
     else if (event.key === 'Home') { this.orbit.reset(); event.preventDefault(); }
   }
+
+  // The scenes a visitor may turn all the way round: the home scene, and the solo results (the score sculpture).
+  canOrbit() { return this.mode === 'hero' || this.mode === 'results'; }
 
   setCursor(value) { if (value === this.cursor) return; this.cursor = value; document.documentElement.style.cursor = value; }
 
@@ -240,6 +258,33 @@ export class Stage {
     frame.right.setFromMatrixColumn(cam.matrixWorld, 0); frame.up.setFromMatrixColumn(cam.matrixWorld, 1);
     return frame;
   }
+  // ---- the title screen as a toy: drop the block yourself (click the tower or the dock), call a sabotage down on it
+  toyLive() { return Boolean(this.director && this.director.manual); }
+  overTower(x, y) { const r = this.toyRect; return Boolean(r) && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  toyDrop() {
+    if (this.mode !== 'hero' || !this.director) return '';
+    const result = this.director.playerDrop(); if (result) this.idleFor = 0;
+    return result;
+  }
+  toyTrigger() {
+    const d = this.director; const Core = this.view && this.view.Core; if (this.mode !== 'hero' || !d || !Core) return '';
+    const current = d.effect ? d.effect.id : ''; const pool = (Core.SABOTAGE_IDS || []).filter(id => id !== current && id !== d.forced); if (!pool.length) return '';
+    const id = pool[Math.floor(Math.random() * pool.length)]; this.directorForce(id); this.idleFor = 0; return id;
+  }
+  // Floating 3D callouts: a finished tower, and the name of every sabotage that lands, beside the tower where the headline is not
+  toyCallout(drop) {
+    if (!drop.complete) return;
+    this.calloutSide = -(this.calloutSide || 1); // beside the tower: above a tall one is the headline
+    this.popups.show({ text: 'TOWER COMPLETE!', position: [this.calloutSide * 300, clamp(drop.level * 11 + 120, 140, 260), 118], size: 25, depth: 10, color: this.theme === 'paper' ? this.palette.vermilion : this.palette.amber, glow: 1, style: 'slam', life: 2, tilt: 0.04 });
+    if (!this.reduced) this.fx.confetti.burst({ pos: [0, drop.level * 22 + 30, 60], count: 120, speed: 330, colors: this.confettiColors(), size: 7, life: 3.6, cone: 1.3 });
+    this.world.crowd.cheer(1.6); this.waveDir = -(this.waveDir || 1); this.world.crowd.wave(this.waveDir, { gap: 0 });
+  }
+  heroEffectCallout(id, blocks) {
+    const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id); if (!sab) return;
+    const name = String(sab.name).toUpperCase(); this.calloutSide = -(this.calloutSide || 1);
+    this.popups.show({ text: name, position: [this.calloutSide * 285, clamp(levelY(blocks) * 0.5 + 90, 110, 250), 120], size: clamp(250 / (name.length * 0.7), 15, 30), depth: 9, color: this.theme === 'paper' ? this.palette.ink : this.palette.cream, glow: 0.7, style: 'slam', life: 1.9, tilt: 0.05 * this.calloutSide });
+  }
+
   directorForce(id) { if (this.director) { this.director.voted = false; this.director.force(id); } }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -276,6 +321,7 @@ export class Stage {
     for (const tower of this.activeTowers()) tower.timeScale = this.timeScale;
     this.post = { spots: [] };
     this.engine.resize();
+    this.watch(0, this.rig.focusY || 220, 0, 0.85); // the crowd looks at the tower unless a mode finds something better
     this['update_' + this.mode](dt, view);
     this.updateCommon(dt);
     if (render) { this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts); }
@@ -292,12 +338,15 @@ export class Stage {
     if (this.towers.hero) this.towers.hero.root.visible = hero;
     if (this.towers.play) this.towers.play.root.visible = play;
     if (this.towers.lobby) this.towers.lobby.root.visible = mode === 'lobby';
+    this.totems.group.visible = mode === 'lobby';
+    this.crown.visible = false;
     for (const t of this.arena) t.root.visible = mode === 'arena' || mode === 'celebrate';
     for (const l of this.labels) l.mesh.visible = false;
     this.ruler.group.visible = play;
     if (mode !== 'celebrate') this.world.plinth.scale.set(mode === 'arena' ? 2.3 : 1, 1, mode === 'arena' ? 0.62 : 1);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
     if (hero) this.openHud(); else this.leaveHome();
+    if (mode === 'results') this.openResultsHud();
     if (mode === 'hero' && !this.director) this.director = new AttractDirector(view.Core, rng(Date.now() & 0xffff));
     if (mode === 'results') this.resultsT = 0;
     this.world.crowd.clearBallot();
@@ -309,14 +358,22 @@ export class Stage {
     if (this.hud) return; this.hintAge = 0;
     let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset() });
+    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.hud) this.hud.quiet(); }, onReset: () => this.orbit.reset(), onToy: kind => { if (kind === 'drop') this.toyDrop(); else this.toyTrigger(); } });
+  }
+
+  // The solo results turn too: the same hint and buttons, in the corner of the 3D frame (no toy dock here).
+  openResultsHud() {
+    this.resultsHintAge = 0; if (this.resultsHud) return;
+    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
+    const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    this.resultsHud = createOrbitHud({ doc: document, storage, touch: coarse, hostId: 'results-screen', id: 'orbit-hud-results', dock: false, onTurn: delta => { this.orbit.rotateBy(delta); this.idleFor = 0; if (this.resultsHud) this.resultsHud.quiet(); }, onReset: () => this.orbit.reset() });
   }
 
   // Everything the home view changed that the other views must not inherit.
   leaveHome() {
     this.endDrag(true); this.orbit.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.dragBlend = 0;
     this.setCursor(''); this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
-    this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0);
+    this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0); this.toyRect = null;
     this.engine.bloomPass.strength = this.palette.bloom;
   }
 
@@ -392,7 +449,7 @@ export class Stage {
     ring.position.copy(icon.position); ring.position.z -= 4; this.scene.add(ring);
     this.badge = { icon, ring, born: this.time, progress: 1 };
     this.fx.pulses.pulse({ pos: [0, top + 60, 80], color: this.palette.amber, radius: 220, life: 0.7, from: 0.2, strength: 1, vertical: true });
-    this.world.crowd.cheer(0.6);
+    this.world.crowd.cheer(0.6); this.world.crowd.chaos(1);
   }
   removeBadge() { if (!this.badge) return; this.scene.remove(this.badge.icon, this.badge.ring); this.badge.icon.userData.dispose(); this.badge.ring.geometry.dispose(); this.badge.ring.material.dispose(); this.badge = null; }
   updateBadge(effect, dt, focusY) {
@@ -449,6 +506,8 @@ export class Stage {
       if (effectId === 'earthquake') this.post.ca = 0.0022;
     }
     if (tower.rig.spot && effect) { const spot = this.spotPost(tower, tower.rig.spot, rect); if (spot) this.post.spots.push(spot); }
+    const mover = g.moving; const live = mover && Number.isFinite(mover.left) && Number.isFinite(mover.width);
+    this.watch(live ? mover.left + mover.width / 2 - BOARD_W / 2 : topX, live ? levelY(mover.level || count) : topY, 0, 1); // the crowd follows the moving block
     this.updateWorld(dt, this.rig.focusY, altitude, view, tower);
     this.post.tiltCenter = 0.5; this.post.blur = 5;
   }
@@ -501,6 +560,7 @@ export class Stage {
     director.update(dt * this.timeScale, this.reduced);
     const state = director.state(Core, this.reduced); hero.sync(state, dt, this.time);
     const effect = state.effect; const key = effect ? effect.id : ''; if (key !== this.lastEffectKey) { this.lastEffectKey = key; }
+    const drop = director.lastDrop; if (drop && drop.n !== this.toySeen) { this.toySeen = drop.n; if (drop.manual) this.toyCallout(drop); }
     const reduced = this.reduced; const p = this.pointer; const o = this.orbit; const hover = this.hover;
 
     // ---- camera: the default composition (headline above, demo tower and ring below), then wherever the visitor has turned it
@@ -528,15 +588,20 @@ export class Stage {
     let idx = -1;
     if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.arsenal.pick(this.raycaster); }
     if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx, yaw); } else if (idx >= 0) this.showHoverLabel(idx, yaw, true);
-    this.setCursor(this.drag ? 'grabbing' : idx >= 0 ? 'pointer' : onScene ? 'grab' : '');
+    const overTower = onScene && !this.drag && idx < 0 && this.overTower(p.lastX, p.lastY);
+    this.setCursor(this.drag ? 'grabbing' : idx >= 0 || overTower ? 'pointer' : onScene ? 'grab' : '');
     hover.update(dt, { point: frame ? frame.point : null, speed: p.speed, blocked: Boolean(this.drag), reduced });
     this.hoverLife(dt, frame, anchor, yaw, rect);
+    { // the crowd's eyes: the demo's moving block, or the pointer once it is over the scene
+      const mv = director.moving; const e = hover.energy; const bx = mv ? mv.left + mv.width / 2 - BOARD_W / 2 : 0; const by = mv ? levelY(mv.level) : 150;
+      this.watch(lerp(bx, hover.x, e), lerp(by, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
+    }
     const pointer = this.drag ? null : frame;
     this.title.update(dt, this.time, { pointer, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw });
     this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy });
     // the demo's chat
     const ballot = director.ballot; if (ballot) this.world.crowd.setBallot({ voted: ballot.voted, fractions: ballot.fractions, colors: BALLOT_COLORS[this.theme] }); else this.world.crowd.clearBallot();
-    if (effect && effect.id !== this.heroEffect) { this.heroEffect = effect.id; this.world.crowd.cheer(0.8); } else if (!effect) this.heroEffect = '';
+    if (effect && effect.id !== this.heroEffect) { this.heroEffect = effect.id; this.world.crowd.cheer(0.8); this.world.crowd.chaos(0.8); this.heroEffectCallout(effect.id, state.blocks.length); } else if (!effect) this.heroEffect = '';
     this.ruler.group.visible = false;
     if (this.hud) {
       this.hud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.hud.setRotated(o.rotated);
@@ -547,7 +612,8 @@ export class Stage {
     this.updateWorld(dt, 260, altitude, view, hero);
     const id = effect ? effect.id : '';
     if (!reduced) { if (id === 'slowmo') { this.post.desat = 0.35; this.post.tint = [0.92, 0.98, 1.08]; } if (id === 'turbo') this.post.zoomBlur = 0.25; if (id === 'drunk') this.post.wobble = 0.6; }
-    if (hero.rig.spot && effect) { const sp = this.spotPost(hero, hero.rig.spot, this.heroFieldRect(hero, (state.blocks || []).length)); if (sp) this.post.spots.push(sp); }
+    this.toyRect = this.heroFieldRect(hero, (state.blocks || []).length); // where the tower is on the screen: the click target, and the Spotlight's veil
+    if (hero.rig.spot && effect) { const sp = this.spotPost(hero, hero.rig.spot, this.toyRect); if (sp) this.post.spots.push(sp); }
     // the focus band of the tilt-shift follows the pointer, and the glow swells a little, while it is over the scene
     this.post.tiltCenter = lerp(0.55, clamp((p.ndc.y + 1) / 2, 0.2, 0.85), reduced ? 0 : 0.8 * hover.energy); this.post.blur = 6;
     if (this.engine.bloomPass.enabled) this.post.bloom = this.palette.bloom * (1 + 0.3 * hover.energy);
@@ -614,7 +680,7 @@ export class Stage {
       const fresh = effects.find(e => !(this.lastArenaKey || '').includes(`${e.id}:${e.targetPlayerId || 'all'}`));
       if (fresh && this.mode === 'arena') {
         const sab = window.SabotageStack && window.SabotageStack.sabotages.find(item => item.id === fresh.id);
-        if (sab) { const name = sab.name.toUpperCase(); this.popups.show({ text: name, position: [0, 330, 130], size: clamp(520 / (name.length * 0.7), 18, 46), depth: 12, color: this.palette.cream, glow: 0.7, style: 'slam', life: 1.9, tilt: 0.05 }); this.world.crowd.cheer(0.9); }
+        if (sab) { const name = sab.name.toUpperCase(); this.popups.show({ text: name, position: [0, 330, 130], size: clamp(520 / (name.length * 0.7), 18, 46), depth: 12, color: this.palette.cream, glow: 0.7, style: 'slam', life: 1.9, tilt: 0.05 }); this.world.crowd.cheer(0.9); this.world.crowd.chaos(1); }
       }
       this.lastArenaKey = effectKey;
     }
@@ -631,6 +697,7 @@ export class Stage {
         const sp = this.spotPost(tower, tower.rig.spot, colRect); if (sp && this.post.spots.length < 6) this.post.spots.push(sp);
       }
     });
+    this.watch(Math.sin(this.time * 0.8) * colW * Math.max(0.5, (n - 1) / 2), this.rig.focusY, 0, 1); // the crowd scans the lanes
     for (let i = n; i < this.arena.length; i += 1) this.arena[i].root.visible = false;
     for (let i = n; i < this.labels.length; i += 1) this.labels[i].mesh.visible = false;
     const focusY = 226; const [px, py] = this.parallax(0.7);
@@ -678,10 +745,18 @@ export class Stage {
     this.resultsT = (this.resultsT || 0) + dt;
     const frame = document.querySelector('#solo-result-layout .results-frame'); const rect = this.rectOf(frame, this.rectOf(document.getElementById('results-canvas')));
     const standing = start != null ? start : blocks.length; const topY = standing * 22 + 40;
-    const worldH = Math.max(520, topY + 220); const focusY = worldH / 2 - 50; this.rig.focusY = damp(this.rig.focusY, focusY, 3, dt);
+    const worldH = Math.max(520, topY + 220 + (data.newBest ? 100 : 0)); const focusY = worldH / 2 - 50; this.rig.focusY = damp(this.rig.focusY, focusY, 3, dt);
     const reveal = this.reduced ? 1 : easeInOutCubic(clamp(this.resultsT / 1.8));
-    const [px, py] = this.parallax(1.4);
-    const yaw = (1 - reveal) * 0.0 + Math.sin(this.time * 0.22) * 0.14 + px; const pitch = lerp(0.04, 0.13, reveal) + py;
+    // the sculpture can be walked all the way round: hold left or right and drag (same controller and rules as the home scene)
+    const reduced = this.reduced; const o = this.orbit; const p = this.pointer;
+    const floorPitch = Math.asin(clamp((10 - this.rig.focusY) / (this.camDist || 1700), -0.95, 0.95));
+    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt);
+    if (!reduced && o.rotated && !this.drag && !o.moving) { this.idleFor += dt; if (this.idleFor > 30) { o.reset(2.4); this.idleFor = 0; } } else if (this.drag || o.moving) this.idleFor = 0;
+    this.dragBlend = damp(this.dragBlend, this.drag || o.moving ? 1 : 0, this.drag ? 14 : 2.2, dt);
+    const [px, py] = this.parallax(1.4); const par = 1 - this.dragBlend;
+    const yaw = (Math.sin(this.time * 0.22) * 0.14 + px) * par + o.yaw; const pitch = lerp(0.04, 0.13, reveal) + py * par + o.pitch;
+    this.world.setViewYaw(o.yaw);
+    this.setCursor(this.drag ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
     this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) });
     // the height, as a monument
     if (!this.popups.items.find(i => i.key === 'height') && this.resultsT > 0.4) {
@@ -689,6 +764,19 @@ export class Stage {
       if (data.newBest) this.popups.show({ key: 'best', text: 'NEW BEST', position: [0, standing * 22 + 168, 80], size: 22, depth: 8, color: this.palette.vermilion, glow: 1, style: 'hold', life: 1, tilt: -0.05 });
       if (!this.reduced && (data.newBest || data.height >= 15)) this.fx.confetti.burst({ pos: [0, standing * 22 + 140, 40], count: 130, speed: 360, colors: this.confettiColors(), size: 7.5, life: 4.2, cone: 1.4 });
       this.world.crowd.cheer(data.newBest ? 2.2 : 1);
+    }
+    // a new session best is crowned: a gold crown pops in above the sculpture, turns, bobs and throws off gold
+    if (data.newBest && this.resultsT > 0.5) {
+      const pose = crownPose(this.resultsT - 0.55, this.time, reduced); const y = standing * 22 + 232 + pose.bob; const crown = this.crown;
+      crown.visible = pose.scale > 0.002; crown.position.set(0, y, 80); crown.scale.setScalar(1.75 * Math.max(0.001, pose.scale)); crown.rotation.set(pose.tilt, pose.spin, 0);
+      if (!reduced && crown.visible && this.time - this.lastCrownSpark > 0.3) {
+        this.lastCrownSpark = this.time; const a = Math.random() * TAU;
+        this.fx.sparks.burst({ pos: [Math.cos(a) * 46, y + 20 + Math.random() * 40, 80 + Math.sin(a) * 30], count: 3, speed: 60, spread: 1, color: [1.7, 1.25, 0.3], size: 5.5, life: 1, gravity: -30, up: 0.4, drag: 1.2 });
+      }
+    } else this.crown.visible = false;
+    if (this.resultsHud) {
+      this.resultsHud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.resultsHud.setRotated(o.rotated);
+      this.resultsHintAge += dt; if (this.resultsHintAge > 10) this.resultsHud.fade();
     }
     this.ruler.setHeight(blocks.length); this.world.plinth.position.set(0, 0, 0); this.world.crowd.clearBallot();
     this.updateWorld(dt, this.rig.focusY, clamp(this.rig.focusY / 2200), view, tower);
@@ -776,8 +864,16 @@ export class Stage {
     const rect = this.rectOf(document.querySelector('#room-screen .room-lobby-layout'), { x: 0, y: 0, w: this.engine.cssWidth, h: this.engine.cssHeight });
     const W = this.engine.cssWidth; const H = this.engine.cssHeight; const [px, py] = this.parallax(1.3);
     const free = W >= 900 ? { x: W * 0.36, y: 60, w: W * 0.62, h: H - 80 } : { x: 8, y: 54, w: W - 16, h: H * 0.5 };
-    this.placeCamera({ anchor: new THREE.Vector3(0, 230, 0), screen: { x: free.x + free.w / 2, y: free.y + free.h / 2 }, rect: free, worldW: 620, worldH: 640, yaw: px + Math.sin(this.time * 0.2) * 0.1, pitch: 0.1 + py });
+    // on a desktop the cards cover the upper two thirds, so the stage (tower, totems and their name plates) sits in the band under them
+    const wide = W >= 900; const screenY = wide ? Math.max(free.y + free.h / 2, H * 0.69) : free.y + free.h / 2;
+    this.placeCamera({ anchor: new THREE.Vector3(0, 230, 0), screen: { x: free.x + free.w / 2, y: screenY }, rect: free, worldW: 620, worldH: wide ? 760 : 640, yaw: px + Math.sin(this.time * 0.2) * 0.1, pitch: 0.1 + py });
     this.world.plinth.position.set(0, 0, 0); this.ruler.group.visible = false; this.world.crowd.clearBallot();
+    // the players themselves: a totem each, in their colour, on a beacon ring, with a name plate; their eyes follow the pointer
+    const here = players.slice(0, 6); const p = this.pointer; const tame = p.inside && !p.touch;
+    this.totems.sync(here.map(q => ({ id: q.id, name: q.name, color: q.color, ready: q.connected !== false })), dt, this.time, { x: tame ? p.x : 0, y: tame ? p.y : 0 }, this.reduced);
+    here.forEach((q, i) => this.arenaLabel(i, q, totemSlot(i).x, 1, 0, { status: q.connected === false ? 'OFFLINE' : 'READY', colW: 160, y: totemHeight(this.theme) + 36 + Math.floor(i / 2) * 36 }));
+    for (let i = here.length; i < this.labels.length; i += 1) this.labels[i].mesh.visible = false;
+    this.watch(0, 200, 0, 0.8);
     this.updateWorld(dt, 230, 0, view, tower);
     this.post.tiltCenter = 0.5; this.post.blur = 5;
   }
@@ -788,6 +884,9 @@ export class Stage {
     this.setCursor(''); this.endDrag(true); if (this.hud) { this.hud.dispose(); this.hud = null; }
     document.documentElement.classList.remove('orbiting');
     this.scene.remove(this.cursorLight); this.cursorLight.dispose();
+    if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }
+    if (this.crown) { this.scene.remove(this.crown); this.crown.userData.dispose(); }
+    if (this.resultsHud) { this.resultsHud.dispose(); this.resultsHud = null; }
     this.engine.dispose();
   }
 }

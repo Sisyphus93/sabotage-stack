@@ -42,7 +42,7 @@ by every scene (no shake, no confetti, instant reveals).
 
 ## Turning the home scene
 
-On the home screen the whole scene can be turned a full 360 degrees and looked at from above or below.
+On the home screen (and the solo results) the whole scene can be turned a full 360 degrees and looked at from above or below.
 
 | | |
 |---|---|
@@ -62,6 +62,43 @@ into a single energy that every reaction reads: letters ripple, lean away and sw
 headline when it arrives, the ring's icons lean in like magnets (and the ring slows so the one you are reaching for holds
 still), the crowd cranes towards it and cheers, a warm light follows it, a sparkle trail and floor ripples answer fast
 movement, and the tilt-shift focus follows it. Reduced Motion removes every one of those motions (the light stays).
+
+## Playing with the title screen
+
+The home scene is a toy as well as a trailer. The demo tower plays itself until a visitor takes over.
+
+| | |
+|---|---|
+| **click the tower**, or the **Drop block** key under it | drops the moving block by hand (the first drop hands the tower over; nothing drops for you, votes included, until you have left it alone for 9 s) |
+| **Trigger sabotage** key | calls a random sabotage down on the tower at once (a running one winds down, an open vote goes its way) |
+| click a ring icon | the same, for that icon |
+| callouts | PERFECT! / TIMBER! / TOWER COMPLETE! and the name of every sabotage that lands float beside the tower in extruded 3D letters |
+
+By hand the perfect window is 10 px (the real game's is 3), because perfects are the fun part and this is a toy. Reaching the tower's
+height locks it, celebrates, and brings it down. The game itself, its rules and the protocol are untouched.
+
+## The crowd
+
+Every spectator has googly eyes: white balls with loose pupils on springs. Everyone watches the moving block (the pointer, once it is
+over the home scene; the lanes, in the arena). During a vote the paddles flail, on **Perfect!** a stadium wave runs across the
+galleries (rationed, so a run of perfects is one good wave), and when a sabotage lands there is chaos: paddles everywhere and the
+eyes spin. `Crowd.setGaze / wave / chaos` are the whole interface.
+
+## Tactile UI
+
+While the 3D layer runs, buttons, the vote keys and the Space bar are keycaps: a side wall of real depth (a different wall colour
+per theme), a hover lift and a press that sinks into the wall, by pointer, touch or the key itself (`tactile.js` presses the DROP bar
+for Space and the vote keys for 1 / 2 / 3). The home copy, the lobby cards and the results card tilt up to 2.2 degrees towards the
+pointer (never on touch, never under Reduced Motion). The brand emblem and the speaker are sculpted and baked like the 17 sabotage
+icons and swapped in; Flat view puts the original drawings back. All of it is under `html.has-3d`, so the flat page is unchanged.
+
+## Lobby and results
+
+* **Lobby**: every connected player stands on the plinth as a **totem** in their own colour inside a pulsing beacon ring (a second
+  ring expands from it, a light column hums), with googly eyes that follow the pointer and a name plate. They drop in, glow while
+  connected, and shrink away on leaving (`totems.js`).
+* **Solo results**: the score is a giant extruded sculpture; a new session best is **crowned** with a turning gold crown (`crown.js`).
+  Hold left or right and drag to walk all the way round it, like the home scene (same controller, controls and rules).
 
 ## What is in 3D
 
@@ -89,6 +126,7 @@ movement, and the tilt-shift focus follows it. Reduced Motion removes every one 
 | `effects3d.js`, `particles.js`, `popups.js` | sabotage rigs, sparks/confetti/pulse rings, 3D text popups and the ruler |
 | `hero.js` | headline letters, the self-playing demo (`AttractDirector`), the icon ring (`Arsenal`) |
 | `orbit.js`, `hover.js`, `orbit-hud.js` | pure turn-the-scene and hover rules (unit-tested in Node) and the on-screen hint / turn buttons |
+| `totems.js`, `crown.js`, `tactile.js` | lobby player totems and beacons, the new-best crown, key presses and deck tilt |
 | `once-soon.js` | a "run once, soon" latch (the page's icon sprites are baked with it; a restarting debounce would never fire at 60 fps) |
 | `podium.js` | pure layout/reveal rules for the multiplayer results podium |
 | `icons3d.js`, `text3d.js`, `snapshot.js` | 3D icons and baked sprites, typefaces → geometry, result-card snapshots |

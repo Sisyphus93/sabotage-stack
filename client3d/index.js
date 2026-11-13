@@ -2,9 +2,10 @@
 // which the page itself defines; if anything is missing or fails, the original 2D game keeps running untouched.
 import { Stage } from './stage.js';
 import { webglSupported } from './engine.js';
-import { renderIconSprites, applyIconSprites, restoreFlatIcons } from './icons3d.js';
+import { renderIconSprites, applyIconSprites, applyGlyphSprites, restoreFlatIcons } from './icons3d.js';
 import { snapshotTower } from './snapshot.js';
 import { createOnceSoon } from './once-soon.js';
+import { installTactileUi } from './tactile.js';
 
 const VIEW_KEY = 'sabotage-stack-view-v1';
 
@@ -19,7 +20,7 @@ function boot() {
   let wanted = forcedOff ? 'flat' : params.get('3d') === 'on' ? '3d' : storedView();
   const supported = webglSupported();
   const doc = document; const root = doc.documentElement;
-  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = '';
+  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null;
 
   const toggle = doc.createElement('button');
   toggle.type = 'button'; toggle.id = 'view-toggle'; toggle.className = 'button view-toggle';
@@ -38,7 +39,7 @@ function boot() {
     if (!stage) return;
     const theme = stage.theme; // the theme now, which may not be the one that asked for the bake
     iconTheme = theme; // also when baking fails: stay with the page's own icons rather than retrying every frame
-    try { applyIconSprites(doc, renderIconSprites(theme, { size: 192 })); } catch (error) { console.warn('3D icon sprites unavailable', error); }
+    try { const sprites = renderIconSprites(theme, { size: 192 }); applyIconSprites(doc, sprites); applyGlyphSprites(doc, sprites); } catch (error) { console.warn('3D icon sprites unavailable', error); }
   }, 160);
   function bakeIcons() { if (stage && stage.theme !== iconTheme) iconBake.request(); }
 
@@ -63,12 +64,14 @@ function boot() {
       if (canvas) canvas.remove(); canvas = null; stage = null; return false;
     }
     root.classList.add('has-3d'); host.setActive(true); syncToggle(true);
+    tactile = installTactileUi({ doc, win: window });
     window.__stack3d = stage; cancelAnimationFrame(raf); raf = requestAnimationFrame(tick);
     return true;
   }
 
   function disable(remember) {
     cancelAnimationFrame(raf); iconBake.cancel();
+    if (tactile) { tactile.dispose(); tactile = null; }
     if (stage) { try { stage.dispose(); } catch (_) { /* context already gone */ } }
     if (canvas) canvas.remove();
     stage = null; canvas = null; iconTheme = ''; window.__stack3d = null;

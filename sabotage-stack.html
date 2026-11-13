@@ -862,10 +862,14 @@ html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid va
 }
 /* Turning the home scene: hold the left or right mouse button on it and drag (a finger swipes sideways; vertical swipes still scroll).
    The hint and the buttons are created by the 3D layer inside #title-screen and sit in the corner of the 3D region. */
-html.has-3d #title-screen { touch-action: pan-y pinch-zoom; }
+html.has-3d #title-screen, html.has-3d #solo-result-layout .results-frame { touch-action: pan-y pinch-zoom; }
 html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-select: none !important; }
-.orbit-hud { position: fixed; z-index: 4; transform: translate(-100%, -100%); display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: calc(100vw - 20px); pointer-events: none; }
-.orbit-hud > .orbit-btn { pointer-events: auto; }
+.orbit-hud { position: fixed; z-index: 4; transform: translate(-100%, -100%); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100vw - 20px); pointer-events: none; }
+.orbit-row, .toy-dock { display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
+.orbit-hud .orbit-btn, .orbit-hud .toy-key { pointer-events: auto; }
+.toy-key { min-height: 46px; padding: 0 16px 0 13px; gap: 8px; font-size: 13.5px; white-space: nowrap; }
+.toy-key svg { width: 18px; height: 18px; flex: 0 0 auto; display: block; }
+.toy-short { display: none; }
 .orbit-hint {
   margin: 0; padding: 8px 14px; border: 1px solid var(--edge); border-radius: 999px; background: var(--glass); color: var(--ink);
   -webkit-backdrop-filter: blur(12px) saturate(1.2); backdrop-filter: blur(12px) saturate(1.2);
@@ -881,7 +885,39 @@ html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-sele
 .orbit-btn svg { width: 18px; height: 18px; display: block; }
 .orbit-btn[data-orbit="reset"] { display: none; }
 .orbit-hud.is-rotated .orbit-btn[data-orbit="reset"] { display: inline-flex; }
-@media (max-width: 640px) { .orbit-hint-full { display: none; } .orbit-hint-short { display: inline; } }
+@media (max-width: 640px) { .orbit-hint-full, .toy-full { display: none; } .orbit-hint-short, .toy-short { display: inline; } .toy-key { padding: 0 13px 0 11px; } }
+
+/* Tactile 3D UI (only while the 3D layer runs): buttons, the vote keys and the Space bar are keycaps. Each has a side wall of real
+   depth (a box-shadow in a darker shade, a different one per theme), rests a little proud, lifts on hover and sinks into its wall
+   when pressed: by pointer, by touch, or by the keyboard key it is named after (the layer adds .is-pressed for Space and 1 / 2 / 3). */
+html.has-3d { --cap-depth: 5px; --cap-wall: #2A2520; --cap-strong: #0D0B09; --cap-shine: rgba(255, 255, 255, .42); }
+html.has-3d[data-theme="sunset"] { --cap-wall: #8A1F78; --cap-strong: #170B33; --cap-shine: rgba(255, 255, 255, .3); }
+html.has-3d[data-theme="primetime"] { --cap-wall: #7A5200; --cap-strong: #8A5A00; --cap-shine: rgba(255, 255, 255, .45); }
+html.has-3d .button:not(:disabled), html.has-3d .drop-button:not(:disabled), html.has-3d .vote-key {
+  --cap-now: var(--cap-wall); transform: translateY(-1px);
+  box-shadow: 0 var(--cap-depth) 0 var(--cap-now), 0 calc(var(--cap-depth) + 3px) 10px rgba(12, 6, 2, .28), inset 0 1.5px 0 var(--cap-shine);
+  transition: transform .09s cubic-bezier(.3, .7, .4, 1), box-shadow .09s cubic-bezier(.3, .7, .4, 1), background-color .18s ease, color .18s ease, opacity .16s ease;
+}
+html.has-3d .button-primary:not(:disabled), html.has-3d .drop-button:not(:disabled) { --cap-now: var(--cap-strong); --cap-depth: 6px; }
+html.has-3d .vote-key { --cap-depth: 3px; }
+html.has-3d .button:hover:not(:disabled), html.has-3d .drop-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 calc(var(--cap-depth) + 1px) 0 var(--cap-now), 0 calc(var(--cap-depth) + 5px) 14px rgba(12, 6, 2, .3), inset 0 1.5px 0 var(--cap-shine);
+}
+html.has-3d .button:active:not(:disabled), html.has-3d .drop-button:active:not(:disabled), html.has-3d .button.is-pressed, html.has-3d .drop-button.is-pressed,
+html.has-3d .vote-option:active:not(:disabled) .vote-key, html.has-3d .vote-option.is-pressed .vote-key {
+  transform: translateY(calc(var(--cap-depth) - 1px));
+  box-shadow: 0 1px 0 var(--cap-now), 0 2px 4px rgba(12, 6, 2, .25), inset 0 1.5px 0 var(--cap-shine); transition-duration: .05s;
+}
+html.has-3d .vote-option.is-pressed { transform: translateY(1px); }
+/* the sculpted glyphs (brand emblem, speaker) replace the flat drawings: the speaker shows its waves while sound is on and a cross while it is off */
+html.has-3d .sound-toggle svg { width: 26px; height: 26px; }
+html.has-3d .brand-mark svg { width: 28px; height: 28px; }
+html.has-3d .sound-toggle .speaker-off { display: none; }
+html.has-3d .sound-toggle[aria-pressed="false"] .speaker-on { display: none; }
+html.has-3d .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; }
+/* the deck tilt is applied by the layer while the pointer is over a deck, and removed again when it leaves */
+html.has-3d .is-tilting { will-change: transform; transition: none; }
 </style>
 </head>
 <body>

@@ -5,11 +5,19 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { rng, damp, mod, clamp, smoothstep, TAU, hexToRgb01 } from './util.js';
 import { BALLOT_COLORS } from './palette.js';
 
+// Where the googly eyes sit on each figure's head (figure space, facing +Z): sideways, height, forward, and the eyeball radius.
+export const HEAD = {
+  paper: { x: 4.3, y: 57.4, z: 9.3, r: 3.7 },
+  sunset: { x: 3.9, y: 37.6, z: 7.3, r: 3.0 },
+  primetime: { x: 4.1, y: 49.2, z: 8.8, r: 3.5 },
+};
+const EXTENT = 1500; // a stadium wave runs from x = -EXTENT to +EXTENT
+
 const TIER_H = 104;
 const TIERS = 14;
 const WRAP = TIER_H * TIERS;
 
-function figureGeometry(theme) {
+export function figureGeometry(theme) {
   const parts = [];
   if (theme === 'sunset') {
     const body = new THREE.BoxGeometry(18, 28, 11); body.translate(0, 14, 0);
@@ -107,6 +115,19 @@ export class Crowd {
     for (let i = 0; i < n; i += 1) this.cards.setColorAt(i, c.set('#ffffff'));
     this.cards.instanceColor.needsUpdate = true;
 
+    // Googly eyes: white balls with loose black pupils that slosh about on springs. Everyone is always looking at something (see
+    // setGaze): the moving block while a round is on, the pointer while it hovers, and, in the middle of chaos, in circles.
+    this.eye = HEAD[theme] || HEAD.paper;
+    this.eyeMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.22, emissive: '#ffffff', emissiveIntensity: theme === 'paper' ? 0.2 : 0.45, flatShading: theme === 'sunset' });
+    this.pupilMaterial = new THREE.MeshStandardMaterial({ color: '#15111c', roughness: 0.3, flatShading: theme === 'sunset' });
+    this.eyes = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 7, 5), this.eyeMaterial, n * 2);
+    this.pupils = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 6, 4), this.pupilMaterial, n * 2);
+    for (const mesh of [this.eyes, this.pupils]) { mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+    this.pupilX = new Float32Array(n); this.pupilY = new Float32Array(n); this.pupilVX = new Float32Array(n); this.pupilVY = new Float32Array(n);
+    this.gaze = { x: 0, y: 260, z: 260, amount: 0.85 };
+    this.waves = []; this.lastWave = -99; this.frenzy = 0; this.uproar = 0;
+    this.mFigure = new THREE.Matrix4(); this.mLocal = new THREE.Matrix4(); this.mOut = new THREE.Matrix4(); this.vPos = new THREE.Vector3(); this.vScale = new THREE.Vector3(); this.qNone = new THREE.Quaternion();
+
     const shelfGeometries = new Map(); this.shelfMeshes = [];
     for (const s of shelves) { const key = `${s.w}|${s.d}`; if (!shelfGeometries.has(key)) shelfGeometries.set(key, { geometry: shelfGeometry(theme, s.w, s.d), items: [] }); shelfGeometries.get(key).items.push(s); }
     const shelfMaterial = theme === 'sunset'
@@ -119,7 +140,7 @@ export class Crowd {
       mesh.userData.items = items; this.shelfMeshes.push(mesh); this.group.add(mesh);
     }
     this.dummy = new THREE.Object3D(); this.dummy.rotation.order = 'YXZ'; // the turn is applied last, so a lean stays a lean in the figure's own frame
-    this.group.add(this.figures, this.cards);
+    this.group.add(this.figures, this.cards, this.eyes, this.pupils);
     this.density = 1; this.setDensity(density);
     this.ballot = null; this.ballotKey = '';
     this.shelfMaterial = shelfMaterial; this.figMaterial = figMaterial;
@@ -127,7 +148,7 @@ export class Crowd {
 
   setDensity(d) {
     this.density = d; const n = Math.max(40, Math.round(this.max * d));
-    this.figures.count = n; this.cards.count = n; this.visible = n;
+    this.figures.count = n; this.cards.count = n; this.eyes.count = n * 2; this.pupils.count = n * 2; this.visible = n;
   }
 
   setCenterY(y) { this.centerY = y; }
@@ -156,19 +177,42 @@ export class Crowd {
 
   cheer(power = 1) { this.excite = Math.min(2.5, this.excite + power); }
 
+  // Where everybody is looking, in the crowd's own space; amount 0..1 is how directly (0: straight ahead).
+  setGaze(x, y, z, amount = 1) { const g = this.gaze; g.x = x; g.y = y; g.z = z; g.amount = amount; }
+
+  // A stadium wave: a swell of standing, paddle-waving spectators that runs across the galleries (dir 1: left to right).
+  // Waves are rationed, so a run of perfect drops makes one good wave rather than a constant ripple.
+  wave(dir = 1, { speed = 1250, width = 520, gap = 3.2 } = {}) {
+    if (this.time - this.lastWave < gap) return false;
+    this.lastWave = this.time; if (this.waves.length > 3) this.waves.shift();
+    this.waves.push({ t0: this.time, dir: dir >= 0 ? 1 : -1, speed, width }); return true;
+  }
+
+  // A sabotage lands: pandemonium. Paddles flail, everybody hops and the googly eyes spin.
+  chaos(power = 1) { this.uproar = Math.min(1.4, this.uproar + power); this.excite = Math.min(2.5, this.excite + power * 0.8); }
+
   // x / z: where the pointer is, in the crowd's own space; amount 0..1: how much they look at it; interest 0..1: a steady buzz
   setAttention(x, z, amount, interest = 0) { const a = this.attention; a.x = x; a.z = z; a.amount = amount; a.interest = interest; }
 
   update(dt, time) {
     this.time = time; this.excite = damp(this.excite, 0, 1.6, dt);
+    this.frenzy = damp(this.frenzy, this.ballot ? 1 : 0, 3, dt); this.uproar = damp(this.uproar, 0, 0.8, dt);
+    const fren = Math.min(1.4, this.frenzy + this.uproar); const uproar = this.uproar; const waves = this.waves;
+    for (let k = waves.length - 1; k >= 0; k -= 1) if ((time - waves[k].t0) * waves[k].speed > EXTENT * 2 + waves[k].width + 200) waves.splice(k, 1);
+    const gaze = this.gaze; const eye = this.eye; const sdt = Math.min(dt, 0.033);
     const d = this.dummy; const cy = this.centerY; const n = this.visible;
-    const att = this.attention; const watch = att.amount > 0.004; const excite = this.excite + att.interest * 0.55;
+    const att = this.attention; const watch = att.amount > 0.004; const excite = this.excite + att.interest * 0.55 + this.frenzy * 0.5;
     for (let i = 0; i < n; i += 1) {
       const slot = this.slots[i];
       this.raise[i] = damp(this.raise[i], this.target[i], 7 + (this.seed[i] % 3), dt);
       const wrapY = cy + mod(slot.y - cy + WRAP / 2, WRAP) - WRAP / 2;
       const bob = Math.sin(time * this.speed[i] + this.seed[i]) * 1.4 * (1 + excite);
-      const hop = Math.max(0, Math.sin(time * (7 + this.speed[i]) + this.seed[i] * 3)) * excite * 9;
+      let waveS = 0;
+      for (let k = 0; k < waves.length; k += 1) {
+        const w = waves[k]; const phase = (time - w.t0) * w.speed - (w.dir > 0 ? slot.x + EXTENT : EXTENT - slot.x);
+        if (phase > 0 && phase < w.width) waveS = Math.max(waveS, Math.sin(Math.PI * phase / w.width));
+      }
+      const hop = Math.max(0, Math.sin(time * (7 + this.speed[i]) + this.seed[i] * 3)) * excite * 9 + waveS * 30 * slot.s;
       // They watch the pointer: turn towards it (limited, so nobody turns their back) and crane that way, the nearer ones most.
       // Turning alone would hardly show on figures that are round, so the lean is what you see.
       let look = 0; let crane = 0; let towards = 0;
@@ -180,18 +224,38 @@ export class Crowd {
       const lean = crane * 0.24 * (0.8 + 0.2 * Math.sin(time * 2.1 + this.seed[i]));
       d.position.set(slot.x, wrapY + bob + hop, slot.z);
       d.rotation.set(lean * Math.cos(towards - turn), turn, this.lean[i] + Math.sin(time * 2 * this.speed[i] + this.seed[i]) * 0.03 * (1 + excite) - lean * Math.sin(towards - turn));
-      d.scale.set(slot.s, slot.s * (1 + crane * 0.09), slot.s); d.updateMatrix(); this.figures.setMatrixAt(i, d.matrix);
+      d.scale.set(slot.s, slot.s * (1 + crane * 0.09 + waveS * 0.16), slot.s); d.updateMatrix(); this.figures.setMatrixAt(i, d.matrix);
+      // the eyes ride on the head; each pupil is a loose ball on a spring, aimed at what the figure is looking at
+      {
+        const hx = gaze.x - slot.x; const hz = gaze.z - slot.z; const hy = gaze.y - (wrapY + eye.y * slot.s); const away = Math.hypot(hx, hz) + 1;
+        let tx = Math.sin(Math.atan2(hx, hz) - turn) * gaze.amount; let ty = clamp(hy / away * 1.6, -1, 1) * gaze.amount;
+        if (uproar > 0.02) { const a = time * 15 + this.seed[i] * 3; tx += Math.cos(a) * uproar * 0.9; ty += Math.sin(a) * uproar * 0.9; }
+        tx += Math.sin(time * (4 + this.speed[i]) + this.seed[i]) * 0.07 * (1 + excite); ty += Math.cos(time * (3 + this.speed[i]) + this.seed[i] * 2) * 0.05 * (1 + excite);
+        tx = clamp(tx, -1, 1); ty = clamp(ty, -1, 1);
+        this.pupilVX[i] += ((tx - this.pupilX[i]) * 85 - this.pupilVX[i] * 6.5) * sdt; this.pupilVY[i] += ((ty - this.pupilY[i]) * 85 - this.pupilVY[i] * 6.5) * sdt;
+        this.pupilX[i] += this.pupilVX[i] * sdt; this.pupilY[i] += this.pupilVY[i] * sdt;
+        const ox = clamp(this.pupilX[i], -1.2, 1.2) * 0.5; const oy = clamp(this.pupilY[i], -1.2, 1.2) * 0.5; const oz = Math.sqrt(Math.max(0.12, 1 - ox * ox - oy * oy)) * 0.78;
+        this.mFigure.copy(d.matrix);
+        for (let side = 0; side < 2; side += 1) {
+          const sx = side === 0 ? -eye.x : eye.x;
+          this.vPos.set(sx, eye.y, eye.z); this.vScale.setScalar(eye.r); this.mLocal.compose(this.vPos, this.qNone, this.vScale);
+          this.mOut.multiplyMatrices(this.mFigure, this.mLocal); this.eyes.setMatrixAt(i * 2 + side, this.mOut);
+          this.vPos.set(sx + ox * eye.r, eye.y + oy * eye.r, eye.z + oz * eye.r); this.vScale.setScalar(eye.r * 0.52); this.mLocal.compose(this.vPos, this.qNone, this.vScale);
+          this.mOut.multiplyMatrices(this.mFigure, this.mLocal); this.pupils.setMatrixAt(i * 2 + side, this.mOut);
+        }
+      }
       const r = this.raise[i];
       if (r < 0.01) { d.scale.setScalar(0); }
       else {
-        const lift = 44 * slot.s + r * 18 * slot.s;
-        d.position.set(slot.x + 12 * slot.s, wrapY + bob + hop + lift, slot.z + 8);
-        d.rotation.set(0, this.facing[i] * 0.4, Math.sin(time * 5 + this.seed[i]) * 0.1);
+        const flail = Math.sin(time * (14 + this.speed[i] * 4) + this.seed[i] * 5);
+        const lift = 44 * slot.s + r * 18 * slot.s + (Math.abs(flail) * 11 * fren + waveS * 16) * slot.s;
+        d.position.set(slot.x + (12 + flail * 6 * fren) * slot.s, wrapY + bob + hop + lift, slot.z + 8);
+        d.rotation.set(0, this.facing[i] * 0.4, Math.sin(time * 5 + this.seed[i]) * 0.1 + flail * (0.1 + 0.5 * fren));
         d.scale.setScalar(slot.s * (0.3 + 0.7 * r));
       }
       d.updateMatrix(); this.cards.setMatrixAt(i, d.matrix);
     }
-    this.figures.instanceMatrix.needsUpdate = true; this.cards.instanceMatrix.needsUpdate = true;
+    this.figures.instanceMatrix.needsUpdate = true; this.cards.instanceMatrix.needsUpdate = true; this.eyes.instanceMatrix.needsUpdate = true; this.pupils.instanceMatrix.needsUpdate = true;
     for (const mesh of this.shelfMeshes) {
       const items = mesh.userData.items;
       for (let i = 0; i < items.length; i += 1) {
@@ -204,6 +268,7 @@ export class Crowd {
 
   dispose() {
     this.figures.geometry.dispose(); this.figMaterial.dispose(); this.cards.geometry.dispose(); this.cards.material.dispose();
+    this.eyes.geometry.dispose(); this.pupils.geometry.dispose(); this.eyeMaterial.dispose(); this.pupilMaterial.dispose();
     for (const mesh of this.shelfMeshes) mesh.geometry.dispose(); this.shelfMaterial.dispose();
   }
 }
