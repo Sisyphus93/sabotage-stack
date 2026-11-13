@@ -79,7 +79,7 @@ export class VoteCandidates {
   }
 
   // state: { options: [ids] | null while no vote is open, fractions: [3], y, you: index | -1, winner: id | '', reduced, faceYaw, away: {x, y, z} (where a winner goes) }
-  update(dt, time, { options = null, fractions = null, y = 220, you = -1, winner = '', reduced = false, away = null } = {}) {
+  update(dt, time, { options = null, fractions = null, y = 220, you = -1, winner = '', reduced = false, away = null, faceYaw = 0 } = {}) {
     if (options && options.length && !this.open && !this.closing) this.build(options);
     if (options && this.open && options.join() !== this.cards.map(c => c.id).join()) { this.clear(); this.build(options); }
     if (!options && this.open) { this.open = false; this.closing = true; this.closeT = 0; this.winner = winner || this.winner; }
@@ -95,7 +95,7 @@ export class VoteCandidates {
       const slotX = (i - 1) * this.slot; const bob = reduced ? 0 : Math.sin(time * 1.9 + c.seed) * 5;
       let px = slotX; let py = y + bob; let pz = 96;
       if (isWinner && away) { c.fly = Math.min(1, c.fly + dt / 0.55); const k = easeOutBack(c.fly, 1.1); px = lerp(slotX, away.x, k); py = lerp(y, away.y, k) + bob; pz = lerp(96, away.z, k); }
-      c.holder.position.set(px, py, pz); c.body.scale.setScalar(Math.max(0.0001, c.scale)); c.holder.visible = c.scale > 0.01;
+      c.holder.position.set(px, py, pz); c.holder.rotation.y = faceYaw; c.body.scale.setScalar(Math.max(0.0001, c.scale)); c.holder.visible = c.scale > 0.01; // (turned to face an orbited camera)
       c.label.position.set(0, -34 * c.scale - 30 - (this.label[1] - 35) * 0.5, 20); const lk = Math.min(1, c.scale * 1.4); c.label.scale.set(this.label[0] * lk, this.label[1] * lk, 1);
       c.icon.rotation.y = reduced ? 0.4 : dwellSpin(time + c.seed, 0.7 + c.share * 1.2); c.icon.rotation.x = 0.12;
       const leader = this.open && c.share === Math.max(...shares) && c.share > 0.38; const pulse = leader ? 0.55 + 0.35 * Math.sin(time * 6) : 0;

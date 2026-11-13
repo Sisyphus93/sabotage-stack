@@ -40,22 +40,42 @@ Fallbacks, in order: no usable WebGL2 → the toggle is hidden and the flat game
 the layer disables itself and the flat view takes over mid-run; Reduced Motion (system or the page's Motion menu) is honoured
 by every scene (no shake, no confetti, instant reveals).
 
-## Turning the home scene
+## Turning and zooming the scenes
 
-On the home screen (and the solo results) the whole scene can be turned a full 360 degrees and looked at from above or below.
+Every scene can be turned a full 360 degrees, looked at from above or below, and zoomed with the wheel: the home scene, **the game**
+(solo and the Teamwork host view), **the Competitive arena**, the **lobby**, the solo results and the multiplayer **podium**.
 
-| | |
-|---|---|
-| hold the **left or right mouse button** on the scene and drag | turns it (right-click drags work, the context menu stays out of the way); lets go with a little inertia |
-| a finger on the scene, swiping **sideways** | turns it; vertical swipes still scroll the page |
-| double-click, **Home**, or the reset button | back to the default view (it also returns by itself after 30 s of no input) |
-| **Left / Right arrow** (Shift = quarter turn), or the two arrow buttons | step round the scene |
-| a click that does not move | still pokes the title or calls a sabotage from the ring |
+| | home, lobby, results, podium, arena | the game |
+|---|---|---|
+| hold the **left mouse button** and drag | turns the scene | **DROP** (as it always was: a click on the board or Space) |
+| hold the **right mouse button** and drag | turns the scene (the context menu stays out of the way) | turns the scene, all the way round |
+| **mouse wheel** | zooms in and out (0.5x: the whole world, to 3.2x: a block fills the board) | the same |
+| a finger swiping **sideways** | turns the scene (vertical swipes still scroll the page) | nothing: the board is for the thumb, and there are no view controls on a touch screen |
+| **Left / Right arrow** (Shift = quarter turn), **+** / **-**, **0** or **Home** | turn, zoom, reset | the same |
+| double-click | back to the default view | -- (two clicks are two drops): **double right-click** resets instead |
+| on-screen buttons | in the corner of the scene (the bottom-right corner of the screen in the lobby and beside the podium's cards; hidden in the lobby below 900 px, where the cards cover the scene): zoom out / in, turn left, reset (once turned or zoomed), turn right | the same, bottom right of the play field over the floor, quiet until the pointer is near, with a hint for the first three games |
 
-Drags that start on a button, a link, a menu or one of the page's glass panels are left alone, so text stays selectable and
-controls stay controls. The stage (plinth, floor, title, tower, icons) stays put while the camera circles it; the set
-dressing (crowd galleries, key / rim / fill lights, reflections, the sky and the backdrop) turns with the camera, so every
-angle is composed and lit like the default one. Leaving the home screen always snaps back to the default view.
+The scenes that are *on show* (home, lobby, results, podium) also return to the default view by themselves after 30 s of no input; the game
+and the arena keep whatever view their player chose, until the round ends. Leaving a scene always snaps its view back. Everything above
+is immediate under Reduced Motion.
+
+**The keys** go to the view wherever the focus is, except on a control that reads those keys itself (`KEY_OWNERS` in `stage.js`: a text field, a
+select, a slider, a radio group, a menu, a dialog). A button or a link does not, and that matters: the page leaves the **Drop button** focused in a
+round and a results screen's main action focused on the podium, so a rule of "nothing focused" would silently kill every key exactly where they
+are wanted. `test/view-controls.test.js` pins both halves with real DOM elements.
+
+Drags and wheel turns that start on a button, a link, a menu or one of the page's glass panels are left alone, so text stays selectable,
+panels stay scrollable and controls stay controls (`chromeAt` in `stage.js`; the play field itself is part of the scene even though it sits
+in a panel). Ctrl/Cmd + wheel (the browser's own zoom and a trackpad pinch) and sideways scrolling are never taken, and wheeling on against a zoom
+limit hands the wheel back to the page after a short pause (`view-zoom.js`), so the page can always be scrolled again from over the scene.
+
+How it composes: `userView()` in `stage.js` returns the visitor's turn (`yaw`, `pitch`) and dolly (`zoom`) and every scene adds it **on top of** its own
+camera, so the game's own camera work (the follow, the Pisa roll, the zoom sabotage, shakes) is unchanged and separate. Zooming in closes
+on the top block (game), the middle of the towers (arena) or the totems (lobby) rather than the centre of the sky, so a short tower is never zoomed out of
+the frame. The camera cannot go below the floor, whatever the angle. The name plates, the Teamwork name plaques on the blocks, the lobby's totems (on the
+spot, eyes and all), digits, vote candidates and the ruler turn to face the view, the
+stage (plinth, floor, tower, headline, icons) stays where it is while the camera circles it, and the set dressing (crowd galleries, key /
+rim / fill lights, reflections, the sky and the backdrop) turns with the camera, so every angle is composed and lit like the default one.
 
 While the pointer rests on the scene it is *hovered*: one `HoverField` (`hover.js`) turns "where is the pointer and how fast"
 into a single energy that every reaction reads: the title's letters ripple, lean away and swell near it, a wave runs through
@@ -131,9 +151,13 @@ All of it is under `html.has-3d`, so the flat page is unchanged.
 
 * **Lobby**: every connected player stands on the plinth as a **totem** in their own colour inside a pulsing beacon ring (a second
   ring expands from it, a light column hums), with googly eyes that follow the pointer and a name plate. They drop in, glow while
-  connected, and shrink away on leaving (`totems.js`).
+  connected, and shrink away on leaving (`totems.js`). The lobby turns and zooms like the home scene; the totems turn on the spot to keep
+  their faces to whoever is looking.
 * **Solo results**: the score is a giant extruded sculpture; a new session best is **crowned** with a turning gold crown (`crown.js`).
-  Hold left or right and drag to walk all the way round it, like the home scene (same controller, controls and rules).
+  Hold left or right and drag to walk all the way round it and use the wheel to zoom, like the home scene (same controller, controls and rules: see
+  *Turning and zooming the scenes*).
+* **The podium** (multiplayer results) turns and zooms the same way, with its controls in the screen's bottom-right corner beside the result
+  cards; the cards themselves are a panel, so a wheel over them scrolls the page.
 
 ## During play: the tower stands in the open world
 
@@ -149,6 +173,9 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
   wash them out; its bloom also eases off during the vote). When the vote closes the winner flies to its place beside the tower.
 * **The winner's emblem** floats beside the tower while its sabotage is active: the sculpture in a medallion with a countdown ring,
   turning slowly and lingering face-on (`dwellSpin`). It is off-screen on phones. Only the name shows there.
+* **The view is the player's**: hold the **right** mouse button and drag to walk all the way round the tower (the left button stays DROP), roll the
+  wheel to zoom, and use the small controls in the field's bottom-right corner or the keys. The sabotages keep working on top of that view
+  (Pisa still rolls the camera, Zoom still closes in 1.85x).
 * **The name** of each sabotage slams in above the tower in blocks and shatters (`brick-text.js`).
 * **The height** stands beside the lane as block digits (off-screen on phones). **The final score** floats over the results tower as
   brick digits, with the NEW BEST crown.
@@ -185,12 +212,23 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
 | `title-stack.js`, `title-props.js`, `brick-text.js` | the instanced brick title (rain, poke, shed, rebuild, explode, marquee), its props (portal gates, caliper jaws, turbo streaks, the rail), slam-and-shatter names and digits |
 | `candidates.js`, `icon-voxel.js`, `icon-turn.js`, `reflection.js` | the vote candidates, block sculptures from the icon artwork, thick turning panel icons, the floor mirror |
 | `hero.js` | the ring of 16 sabotage icons (`Arsenal`) |
-| `orbit.js`, `hover.js`, `orbit-hud.js` | pure turn-the-scene and hover rules (unit-tested in Node) and the on-screen hint / turn buttons |
+| `orbit.js`, `view-zoom.js`, `hover.js`, `orbit-hud.js` | pure turn-the-scene, wheel-zoom and hover rules (unit-tested in Node) and the on-screen hint / zoom / turn buttons |
+| `shader-guards.js` | keeps one NaN pixel from blacking out a frame (see below) |
 | `totems.js`, `crown.js`, `tactile.js` | lobby player totems and beacons, the new-best crown, key presses and deck tilt |
 | `once-soon.js` | a "run once, soon" latch (the page's icon sprites are baked with it; a restarting debounce would never fire at 60 fps) |
 | `podium.js` | pure layout/reveal rules for the multiplayer results podium |
 | `icons3d.js`, `text3d.js`, `snapshot.js` | 3D icons and baked sprites, typefaces → geometry, result-card snapshots |
 | `assets/typeface-*.json` | glyph outlines extracted from the fonts already embedded in the page |
+
+## One bad pixel must not black out the frame
+
+The picture is drawn in half-float and the bloom blurs it into a chain of smaller pictures that are added back over the whole view, so a single NaN
+pixel anywhere in the scene turns the entire screen black for as long as it stays. This happened for real once the camera could come to rest
+anywhere: with the view pulled back, a thin cut-off block lying edge-on made three's bump mapping normalise the (exactly zero) screen-space
+derivatives of its surface. `shader-guards.js` patches both ends before the first program is compiled: the bump chunk keeps the surface normal
+instead of normalising a zero vector, and the bloom's high-pass reads NaN / Infinity as black. A browser regression check should look at the
+mirrored floor's render target for non-finite half floats; `test/view-controls.test.js` pins the patches (and fails with a clear message if a three
+upgrade changes the chunk's shape).
 
 ## Keeping it in sync with the game
 

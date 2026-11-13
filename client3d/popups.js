@@ -77,9 +77,14 @@ export class Ruler {
       if (this.labels.has(n)) continue;
       const tick = new THREE.Mesh(this.tickGeo, this.material); tick.position.set(6, n * 22, 0); this.group.add(tick); this.ticks.push(tick);
       const { geometry } = textGeometry(this.palette.fontKey, String(n), { size: 15, depth: 3, align: 'right' });
-      const label = new THREE.Mesh(geometry, this.material); label.position.set(-5, n * 22 + 0, 0); label.castShadow = false; this.group.add(label); this.labels.set(n, label);
+      const label = new THREE.Mesh(geometry, this.material); label.position.set(-5, n * 22 + 0, 0); label.rotation.y = this.facing || 0; label.castShadow = false; this.group.add(label); this.labels.set(n, label);
     }
   }
   setAlpha(a) { this.material.opacity = 0.8 * a; this.group.visible = a > 0.02; }
+  // the numerals turn about the pole to face a camera that has been orbited round the scene (yaw 0, the default view, leaves them as they were)
+  setFacing(yaw) {
+    if (Math.abs(yaw - (this.facing || 0)) < 1e-5) return; this.facing = yaw;
+    for (const label of this.labels.values()) label.rotation.y = yaw;
+  }
   dispose() { this.pole.geometry.dispose(); this.tickGeo.dispose(); this.material.dispose(); }
 }

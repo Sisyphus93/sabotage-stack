@@ -16,7 +16,7 @@ export class Tower {
     this.root = new THREE.Group(); this.root.scale.setScalar(scale);
     this.body = new THREE.Group(); this.debrisGroup = new THREE.Group();
     this.root.add(this.body, this.debrisGroup);
-    this.meshes = []; this.count = 0; this.stateId = null; this.lastFallen = 0; this.lastCollapsed = false; this.collapseDone = false;
+    this.meshes = []; this.facing = 0; this.count = 0; this.stateId = null; this.lastFallen = 0; this.lastCollapsed = false; this.collapseDone = false;
     this.world = new PhysicsWorld({ floorY: stageFloor() });
     this.random = rng(77);
     this.mover = null; this.moverMaterial = null; this.decoy = null; this.portalClones = [];
@@ -84,7 +84,13 @@ export class Tower {
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(52, 14.6), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }));
     const onLeft = block.left > BOARD_W * 0.56; const w = mesh.userData.width;
     plane.position.set(onLeft ? -w / 2 - 28 : w / 2 + 28, 0, this.depth / 2 + 2);
-    mesh.add(plane); mesh.userData.plaque = plane;
+    plane.rotation.y = this.facing; mesh.add(plane); mesh.userData.plaque = plane;
+  }
+
+  // The Teamwork name plaques turn on the spot to face the view the visitor chose (they are flat, so from behind or the side they would vanish or be unreadable).
+  setFacing(yaw) {
+    if (yaw === this.facing) return; this.facing = yaw;
+    for (const mesh of this.meshes) if (mesh && mesh.userData.plaque) mesh.userData.plaque.rotation.y = yaw;
   }
 
   // -------------------------------------------------------------------------------------------------------------------

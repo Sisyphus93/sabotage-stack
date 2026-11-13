@@ -58,8 +58,9 @@ export class Totems {
     this.group.remove(item.group); item.bodyMaterial.dispose(); item.ringMaterial.dispose(); item.pulseMaterial.dispose(); item.beamMaterial.dispose(); this.items.delete(item.id);
   }
 
-  // players: [{ id?, name, color, ready }] in join order. look: the pointer in -1..1 screen units, so the eyes follow it.
-  sync(players, dt, time, look = { x: 0, y: 0 }, reduced = false) {
+  // players: [{ id?, name, color, ready }] in join order. look: the pointer in -1..1 screen units, so the eyes follow it. facing: the yaw of the view the
+  // visitor turned to, so every figure turns on the spot to keep its face (and its eyes) towards them.
+  sync(players, dt, time, look = { x: 0, y: 0 }, reduced = false, facing = 0) {
     const present = new Set();
     players.slice(0, 6).forEach((player, i) => {
       const id = String(player.id || player.playerId || `${i}:${player.name}`); present.add(id);
@@ -79,7 +80,7 @@ export class Totems {
       const hop = reduced ? 0 : (item.ready ? Math.max(0, Math.sin(time * 5.5 + item.seed)) * 9 : 0);
       const bob = reduced ? 0 : Math.sin(time * 2 + item.seed) * 2.2;
       item.group.position.set(item.x, drop + hop + bob * 0.5, item.z); item.group.scale.setScalar(Math.max(0.001, grow));
-      item.group.rotation.y = reduced ? 0 : Math.sin(time * 1.3 + item.seed) * 0.12 + clamp(item.x / 900, -0.3, 0.3) * -1;
+      item.group.rotation.y = (reduced ? 0 : Math.sin(time * 1.3 + item.seed) * 0.12 + clamp(item.x / 900, -0.3, 0.3) * -1) + facing;
       // the beacon: the ring breathes, a second one expands from it and fades, the light column hums
       const breathe = 1 + (reduced ? 0 : 0.07 * Math.sin(time * (3 + item.glowLevel * 2.5) + item.seed));
       item.ring.scale.setScalar(breathe); item.ringMaterial.opacity = (0.5 + 0.2 * item.glowLevel + (reduced ? 0 : 0.15 * Math.sin(time * 3 + item.seed))) * (1 - leave);
