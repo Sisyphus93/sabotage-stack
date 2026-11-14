@@ -794,7 +794,10 @@ export class Stage {
       this.watch(lerp(sweep, hover.x, e), lerp(title.topCenterY, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
     }
     const pointer = this.drag ? null : frame;
-    title.update(dt, this.time, { pointer: p.buttons ? null : pointer, reduced, energy: hover.energy, yaw, effect, floor: title.floor, toCamera: title.toCamera });
+    // (one pointer frame for both layers of the title: the letter reaction reads `pointer` and the speed of the sweep, the scatter reads the same `pointer`.
+    //  It is null while a button is held: nothing reacts mid-drag. Under Reduced Motion title.update() drops it itself.)
+    const pointerNow = p.buttons ? null : pointer;
+    title.update(dt, this.time, { pointer: pointerNow, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw, effect, floor: title.floor, toCamera: title.toCamera });
     this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy, away: title.exploded ? 1 : 0 });
     this.titleProps.update(pose, { time: this.time, layout: Lb, gateX: title.gateX, topMid: title.topCenterY, reduced });
     for (const ev of title.events.splice(0)) this.onTitleEvent(ev);
