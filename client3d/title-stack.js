@@ -8,13 +8,15 @@
 //   loose   a free body (knocked out, shaken off, blown up) tumbling under gravity in world space
 //   rest    lying where it landed, until it is called home
 //   recall  flying back up above its place, to drop in again
-// The tiers (and so everything on them) lean, slide and shake as a whole for the sabotages (title-effects.js).
+// The tiers (and so everything on them) lean, slide and shake as a whole for the sabotages (title-effects.js). The pointer does not move whole
+// letters: bricks near it scatter outward in whole-brick steps and spring back (brick-scatter.js has the numbers, updateScatter() the rest).
 import * as THREE from 'three';
 import { brickWord } from './brick-layout.js';
 import { titlePose } from './title-effects.js';
 import { themedBlockColor } from './palette.js';
 import { clamp, damp, lerp, smoothstep, rng, TAU } from './util.js';
 import { offsetFromPointer } from './hover.js';
+import { SCATTER, scatterTarget, springStep, quantize, asleep, FixedTick } from './brick-scatter.js';
 
 export const BRICK_DEPTH = 34;
 const SLAB_T = [22, 27]; // bottom, top: thickness
@@ -92,6 +94,9 @@ export class TitleStack {
     this.layout = { bottomTop: 0, slabBW: 0, slabTW: 0, topOffsetX: 0, topBase: 0, capHeight: 112, halfTop: 0 };
     this.poseB = { x: 0, y: 0, rz: 0, sx: 1 }; this.poseT = { x: 0, y: 0, rz: 0, sx: 1 };
     this.shedClock = 0; this.recallClock = 0; this.rebuildAt = -1;
+    // the pointer's scatter: bricks that are awake (displaced or still settling), the 30 Hz clock it runs on, and the screen axes the offsets are measured along
+    this.scatterActive = new Set(); this.scatterClock = new FixedTick(SCATTER.hz); this.scatterOff = { dx: 0, dy: 0 }; this.scatterGoal = { x: 0, y: 0 };
+    this.scatterAxes = { right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0) };
   }
 
   // ---- building -------------------------------------------------------------------------------------------------
@@ -102,7 +107,7 @@ export class TitleStack {
     if (this.material) { this.material.dispose(); this.material = null; }
     if (this.ghostMaterial) { this.ghostMaterial.dispose(); this.ghostMaterial = null; }
     if (this.marquee) { this.group.remove(this.marquee.group); for (const g of this.marquee.geos) g.dispose(); for (const m of this.marquee.mats) m.dispose(); this.marquee = null; }
-    this.bricks.length = 0; this.letters.length = 0;
+    this.bricks.length = 0; this.letters.length = 0; this.scatterActive.clear(); this.scatterClock.reset();
   }
 
   // speed > 1 plays the rain faster (coming back to the menu is not the first visit)
@@ -111,11 +116,11 @@ export class TitleStack {
     const key = this.palette.fontKey; const look = this.look; const cap = look.cap;
     const wordB = brickWord(key, 'STACK', { capHeight: cap, rows: look.rows, xScale: look.xScale }); const wordT = brickWord(key, 'SABOTAGE', { capHeight: cap, rows: look.rows, xScale: look.xScale });
     const slabBW = wordB.width + 96; const slabTW = wordT.width + 120;
-    const L = this.layout; L.capHeight = cap; L.slabBW = slabBW; L.slabTW = slabTW;
+    const L = this.layout; L.capHeight = cap; L.slabBW = slabBW; L.slabTW = slabTW; L.cell = wordT.rowHeight; L.brickLength = wordT.brickLength; // (a cell: one course of bricks)
     L.letterCount = wordT.letters.length; L.bottomTop = SLAB_T[0] + cap + 1; L.topOffsetX = -0.04 * slabTW; L.halfTop = slabTW / 2; L.baseB = SLAB_T[0]; L.baseT = SLAB_T[1];
     const R = this.random; const colorOf = hex => new THREE.Color(themedBlockColor(this.theme, hex));
     const bricks = this.bricks;
-    const add = b => { b.i = bricks.length; if (b.state === undefined) b.state = WAIT; b.t = 0; b.oy = 0; b.vy = 0; b.bounces = 0; b.pos = new THREE.Vector3(); b.vel = new THREE.Vector3(); b.quat = new THREE.Quaternion(); b.spin = new THREE.Vector3(); b.rest = 0; b.recallT = 0; b.recallAt = -1; b.from = new THREE.Vector3(); bricks.push(b); return b; };
+    const add = b => { b.i = bricks.length; if (b.state === undefined) b.state = WAIT; b.t = 0; b.oy = 0; b.vy = 0; b.bounces = 0; b.pos = new THREE.Vector3(); b.vel = new THREE.Vector3(); b.quat = new THREE.Quaternion(); b.spin = new THREE.Vector3(); b.rest = 0; b.recallT = 0; b.recallAt = -1; b.from = new THREE.Vector3(); b.sx = 0; b.sy = 0; b.sp = null; b.tx = 0; b.ty = 0; bricks.push(b); return b; };
     // slabs (kind 1): the bottom one first, then the top one
     const slabColor = new THREE.Color(this.look.slab);
     const slabs = [0, 1].map(tier => add({ kind: 1, tier: tier === 0 ? 1 : 0, letter: -1, lx: 0, ly: SLAB_T[tier] / 2, lz: 0, w: tier === 0 ? slabBW : slabTW, h: SLAB_T[tier], d: SLAB_D[tier], color: slabColor.clone(), row: 0, edge: false, delay: 0 }));
@@ -147,6 +152,7 @@ export class TitleStack {
     const lowerDone = Math.max(...bricks.filter(b => b.kind === 0 && b.tier === 1).map(b => b.delay)) + 0.42;
     slabs[0].delay = 0.1; slabs[1].delay = lowerDone - 0.5;
     lay(wordT, 0, SLAB_T[1], look.cycleT, nB, slabs[1].delay + 0.62);
+    for (const l of letters) l.bricks = []; for (const b of bricks) if (b.kind === 0) letters[b.letter].bricks.push(b);
     this.introDuration = Math.max(...bricks.map(b => b.delay)) + 0.5;
     for (const b of bricks) { if (b.kind === 2) continue; b.oy0 = 560 + R() * 720; if (b.kind === 1) b.oy0 = 900; b.vy0 = -240 - R() * 260; }
     // mesh
@@ -192,7 +198,7 @@ export class TitleStack {
   get topCenterY() { return this.layout.bottomTop + SLAB_T[1] + this.layout.capHeight * 0.5; }
 
   // ---- the frame --------------------------------------------------------------------------------------------------
-  update(dt, time, { pointer = null, pointerSpeed = 0, reduced = false, energy = 0, yaw = 0, effect = null, floor = null, toCamera = null } = {}) {
+  update(dt, time, { pointer = null, reduced = false, energy = 0, yaw = 0, effect = null, floor = null, toCamera = null } = {}) {
     if (!this.mesh) return;
     this.age += dt * (this.age < this.introDuration ? this.speed : 1); if (floor) this.floor = floor; if (toCamera) this.toCamera.copy(toCamera);
     const bricks = this.bricks; const L = this.layout;
@@ -222,7 +228,8 @@ export class TitleStack {
     for (const m of [this.material, this.ghostMaterial]) { const u = m.userData.uniforms; u.uGlue.value = pose ? pose.glue : 0; u.uGlueX.value = pose && pose.glue > 0 ? Math.sin(time * 1.5) * L.halfTop * 1.1 : 0; }
     // ---- letters: springs for hops, leans and the pointer
     this.updateMarquee(time, yaw, reduced, energy);
-    this.updateLetters(dt, time, pointer, pointerSpeed, reduced, energy, pose);
+    this.updateLetters(dt, time, reduced, pose);
+    this.updateScatter(dt, pointer, reduced);
     // ---- bricks
     this.updateBricks(dt, time, pose, reduced);
     this.updateMatrices(dt, time, pose);
@@ -233,30 +240,62 @@ export class TitleStack {
   }
   onEffectEnd() { this.rebuild(0.1); }
 
-  updateLetters(dt, time, pointer, pointerSpeed, reduced, energy, pose) {
-    const letters = this.letters; const off = this.off || (this.off = { dx: 0, dy: 0 }); const L = this.layout;
-    const n = letters.length; const wave = pose && pose.letter;
+  // Letters: their springs for the arrival wave, pokes and sabotage poses. The pointer no longer moves whole letters (it used to ripple them,
+  // lean them away and swell them): it scatters bricks instead, see updateScatter().
+  updateLetters(dt, time, reduced, pose) {
+    const letters = this.letters; const n = letters.length; const wave = pose && pose.letter;
     for (let i = 0; i < n; i += 1) {
-      const l = letters[i]; let tz = 0; let tx = 0; let push = 0; let swell = 0;
-      if (pointer && !reduced && this.complete) {
-        tp.set(l.cx, l.baseY + L.capHeight / 2, 0).applyMatrix4(this.tierM[l.tier]);
-        offsetFromPointer(pointer, tp.x, tp.y, tp.z, off);
-        const d = Math.hypot(off.dx, off.dy); const near = smoothstep(190, 0, d);
-        tz = -Math.sign(off.dx || 1) * near * 0.16; tx = -near * 0.1; push = near * (1 + pointerSpeed * 0.01) * 4; swell = near * 0.05;
-        if (near > 0.55 && pointerSpeed > 700 && l.vhop <= 0 && l.hop < 0.5) { l.vhop = Math.min(420, 170 + pointerSpeed * 0.05); l.vrz += -Math.sign(off.dx || 1) * 2.4; }
-      }
+      const l = letters[i];
       if (l.waveDelay >= 0) { l.waveDelay -= dt; if (l.waveDelay < 0) { l.vhop = Math.max(l.vhop, 260); l.vrz += (this.random() - 0.5) * 3.6; l.waveDelay = -1; } }
-      l.swell = damp(l.swell, swell, 12, dt);
       const kz = 150; const cz = 10;
-      l.vrz += ((tz - l.rz) * kz - l.vrz * cz) * dt; l.rz += l.vrz * dt;
-      l.vrx += ((tx - l.rx) * kz - l.vrx * cz) * dt; l.rx += l.vrx * dt;
+      l.vrz += (-l.rz * kz - l.vrz * cz) * dt; l.rz += l.vrz * dt;
+      l.vrx += (-l.rx * kz - l.vrx * cz) * dt; l.rx += l.vrx * dt;
       l.vhop -= 2400 * dt; l.hop += l.vhop * dt; if (l.hop < 0) { if (l.vhop < -160) l.vhop = -l.vhop * 0.3; else { l.hop = 0; l.vhop = 0; } }
       const breathe = reduced ? 0 : Math.sin(time * 1.4 + l.seed) * 0.8;
-      const ripple = reduced ? 0 : energy * (0.5 + 0.5 * Math.sin(time * 4.6 - l.cx * 0.013 + l.tier * 1.3)) * 2.4;
       const w = wave ? wave(i, n) : null;
-      l.y = l.hop + breathe + ripple + push * 0.4 + (w ? w.y : 0);
+      l.y = l.hop + breathe + (w ? w.y : 0);
       l.zr = l.rz + (w ? w.rz : 0); l.xr = l.rx;
       l.visTarget = w ? w.vis : 1; l.vis = damp(l.vis, l.visTarget, 40, dt);
+    }
+  }
+
+  // The pointer's reaction, in whole-brick steps (RASTER/27's scattering pixels). Every brick of the wall within three brick widths of the
+  // pointer (measured across the screen) is pushed straight away from it, by up to 1.5 cells, on a damped spring; what is drawn is that
+  // position rounded to whole cells and refreshed on a fixed 30 Hz tick. Only the letters near the pointer are visited, and the whole thing
+  // sleeps once every brick is back home. Reduced Motion, a blown-up title and Superglue (the bricks hold) switch it off.
+  updateScatter(dt, pointer, reduced) {
+    if (reduced || this.exploded) { if (this.scatterActive.size) this.scatterClear(); this.scatterClock.reset(); return; }
+    const glued = Boolean(this.pose && this.pose.glue > 0.4);
+    const live = Boolean(pointer) && this.complete && !glued;
+    if (!live && !this.scatterActive.size) { this.scatterClock.reset(); return; } // asleep: nothing to do
+    for (let ticks = this.scatterClock.advance(dt); ticks > 0; ticks -= 1) this.scatterTick(live ? pointer : null);
+  }
+
+  scatterClear() { for (const b of this.scatterActive) { b.sx = 0; b.sy = 0; b.sp = null; } this.scatterActive.clear(); }
+
+  scatterTick(pointer) {
+    const L = this.layout; const radius = SCATTER.radiusBricks * L.brickLength; const reach = radius + L.capHeight; // a letter this far off can still have a brick in range
+    const active = this.scatterActive; const off = this.scatterOff; const goal = this.scatterGoal;
+    for (const b of active) { b.tx = 0; b.ty = 0; } // whatever is out of range now heads home
+    if (pointer) {
+      this.scatterAxes.right.copy(pointer.right); this.scatterAxes.up.copy(pointer.up);
+      for (const l of this.letters) {
+        if (l.vis < 0.5 || !l.bricks) continue;
+        tp.set(l.cx, l.baseY + L.capHeight / 2, 0).applyMatrix4(this.tierM[l.tier]); offsetFromPointer(pointer, tp.x, tp.y, tp.z, off);
+        if (Math.hypot(off.dx, off.dy) > reach) continue;
+        for (const b of l.bricks) {
+          if (b.state !== HOME) continue;
+          this.homeWorld(b, tv, 0); offsetFromPointer(pointer, tv.x, tv.y, tv.z, off);
+          if (Math.hypot(off.dx, off.dy) >= radius) continue;
+          scatterTarget(off.dx, off.dy, radius, SCATTER.maxCells, goal, b.i);
+          b.tx = goal.x; b.ty = goal.y; if (!b.sp) b.sp = { x: 0, y: 0, vx: 0, vy: 0 }; active.add(b);
+        }
+      }
+    }
+    for (const b of active) {
+      if (b.state !== HOME) { b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); continue; } // knocked out or shaken loose: a free body now
+      springStep(b.sp, b.tx, b.ty); b.sx = quantize(b.sp.x); b.sy = quantize(b.sp.y);
+      if (asleep(b.sp, b.tx, b.ty)) { b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); }
     }
   }
 
@@ -465,6 +504,10 @@ export class TitleStack {
             const l = this.letters[b.letter]; if (l.vis < 0.02) { visible = false; break; }
             tp.set(b.lx, b.ly + b.oy, b.lz); ts.set(b.w, b.h, b.d); M.compose(tp, IDENT, ts).premultiply(lm[b.letter]);
             if (l.vis < 0.98) M.scale(tv.set(l.vis, l.vis, l.vis));
+            if (b.sx !== 0 || b.sy !== 0) { // scattered by the pointer: whole cells along the screen's own axes
+              const ax = this.scatterAxes; const c = this.layout.cell; const e = M.elements;
+              e[12] += (ax.right.x * b.sx + ax.up.x * b.sy) * c; e[13] += (ax.right.y * b.sx + ax.up.y * b.sy) * c; e[14] += (ax.right.z * b.sx + ax.up.z * b.sy) * c;
+            }
           } else {
             tp.set(b.lx, b.ly + b.oy, b.lz); ts.set(b.w, b.h, b.d); M.compose(tp, IDENT, ts).premultiply(this.tierM[b.tier]);
           }

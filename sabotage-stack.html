@@ -946,6 +946,59 @@ html.has-3d .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; 
 /* the deck tilt is applied by the layer while the pointer is over a deck, and removed again when it leaves */
 html.has-3d .is-tilting { will-change: transform; transition: none; }
 
+/* ===== Pixel-grid feel (3D layer only) =================================================================================
+   Crisp, stepped interaction after RASTER/27: hovers and fills move in whole steps (steps(), never an ease), nothing blurs, and everything
+   new here is square-cornered. The parts that need script are client3d/pixel-ui.js (the cursor trail, the wordmark's jitter, the colour a
+   hovered player row floods with); the rest is this CSS. Pointer-only rules sit in (hover: hover) and (pointer: fine), so a touch screen
+   gets none of it. Reduced Motion needs nothing special: the page's own html[data-motion="reduced"] rule makes every transition instant,
+   and the one delay used below is cleared for it. The tokens are the page's own, per theme; test/pixel-ui.test.js checks every pair against AA. */
+html.has-3d { --wipe-a: var(--amber); --wipe-a-fg: #2A2520; --wipe-b: var(--amber); --wipe-b-fg: #2A2520; --fg-amber: #2A2520; --fg-teal: #000000; --fg-blue: #2A2520; --fg-red: #000000; }
+html.has-3d[data-theme="sunset"] { --wipe-a: var(--teal); --wipe-a-fg: #170B33; --wipe-b: var(--amber); --wipe-b-fg: #170B33; --fg-amber: #170B33; --fg-teal: #170B33; --fg-blue: #000000; --fg-red: #170B33; }
+html.has-3d[data-theme="primetime"] { --wipe-a: var(--teal); --wipe-a-fg: #0A1A55; --wipe-b: var(--amber); --wipe-b-fg: #1A1200; --fg-amber: #0A1A55; --fg-teal: #0A1A55; --fg-blue: #0A1A55; --fg-red: #0A1A55; }
+/* the colour a row floods with, and the text on it: a vote row has its slot's colour (the one its .vote-fill already has), a score tile the theme's amber,
+   a player row its player's own (pixel-ui.js writes that one, from the colour dot, when the pointer arrives; amber until then) */
+html.has-3d :is(.vote-option, .score-tile, .room-player-list li) { --row-accent: var(--amber); --row-fg: var(--fg-amber); }
+html.has-3d .vote-option[data-option-index="0"] { --row-accent: var(--teal); --row-fg: var(--fg-teal); }
+html.has-3d .vote-option[data-option-index="1"] { --row-accent: var(--dusty-blue); --row-fg: var(--fg-blue); }
+html.has-3d .vote-option[data-option-index="2"] { --row-accent: var(--vermilion); --row-fg: var(--fg-red); }
+/* the cursor trail's canvas (made and removed by the layer), and the wordmark's pixels (shown in place of the text for 180 ms) */
+html.has-3d .pixel-trail { position: fixed; inset: 0; z-index: 70; width: 100%; height: 100%; pointer-events: none; image-rendering: pixelated; }
+html.has-3d .brand { position: relative; }
+html.has-3d .brand.is-pixelating .brand-word { visibility: hidden; }
+html.has-3d .brand-pixels { display: block; shape-rendering: crispEdges; }
+/* text links (the page has none today): a 1px underline that is drawn from the left in six steps */
+html.has-3d a[href]:not(.button) { position: relative; text-decoration: none; }
+html.has-3d a[href]:not(.button)::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 0 50%; transition: transform 180ms steps(6); }
+html.has-3d a[href]:not(.button):focus-visible::after { transform: scaleX(1); }
+@media (hover: hover) and (pointer: fine) {
+  html.has-3d a[href]:not(.button):hover::after { transform: scaleX(1); }
+  /* Primary and secondary buttons: the keycap lift and press are the same, only stepped (the DROP bar and the vote keys keep their own feel), and an accent wipes
+     in from the left in six steps, the label flipping at the half-way mark. The host clips the wipe to its own shape; the wipe itself has no corners to round. */
+  html.has-3d :is(.button-primary, .button-secondary):not(:disabled) {
+    position: relative; isolation: isolate; overflow: hidden;
+    transition: transform .09s steps(3), box-shadow .09s steps(3), background-color .09s steps(3), color 0s steps(1) 120ms, opacity .16s steps(4);
+  }
+  html.has-3d .button-primary:not(:disabled) { --wipe: var(--wipe-a); --wipe-fg: var(--wipe-a-fg); }
+  html.has-3d .button-secondary:not(:disabled) { --wipe: var(--wipe-b); --wipe-fg: var(--wipe-b-fg); }
+  html.has-3d :is(.button-primary, .button-secondary):not(:disabled)::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--wipe);
+    transform: scaleX(0); transform-origin: 0 50%; transition: transform 240ms steps(6, start);
+  }
+  html.has-3d :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible)::before { transform: scaleX(1); }
+  html.has-3d :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible) { color: var(--wipe-fg); }
+  /* Rows flood at once, solid, to their own colour (no fade); the text flips to whichever reads, and the progress bar flips with it so it stays seen.
+     Nothing changes size or position. A vote row floods for the keys 1 / 2 / 3 too (tactile.js adds .is-pressed). */
+  html.has-3d :is(.vote-option, .score-tile, .room-player-list li) { transition: none; }
+  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
+  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) :is(.vote-name, .vote-count, .vote-description, .vote-pick) { color: var(--row-fg); }
+  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) .vote-fill { background: var(--row-fg); }
+  html.has-3d .room-player-list li:hover { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
+  html.has-3d .room-player-list li:hover :is(strong, .player-connection) { color: var(--row-fg); }
+  html.has-3d .score-tile:hover { background: var(--row-accent); color: var(--row-fg); }
+  html.has-3d .score-tile:hover :is(span, strong) { color: var(--row-fg); }
+}
+html.has-3d[data-motion="reduced"] :is(.button-primary, .button-secondary) { transition-delay: 0s !important; }
+
 /* ===== Panels and text (3D layer) =====================================================================================
    The menu and every side card are frosted glass that faces slightly inward (the left ones turn their far edge away, the right ones
    the same the other way) and tilts a little with the pointer. Headings are extruded in each theme's own colours. The menu is held

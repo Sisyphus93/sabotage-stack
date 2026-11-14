@@ -78,9 +78,9 @@ stage (plinth, floor, tower, headline, icons) stays where it is while the camera
 rim / fill lights, reflections, the sky and the backdrop) turns with the camera, so every angle is composed and lit like the default one.
 
 While the pointer rests on the scene it is *hovered*: one `HoverField` (`hover.js`) turns "where is the pointer and how fast"
-into a single energy that every reaction reads: the title's letters ripple, lean away and swell near it, a wave runs through
+into a single energy that every reaction reads: the title's bricks scatter away from it in whole-brick steps, a wave runs through
 them when it arrives, the ring's icons lean in like magnets (and the ring slows so the one you are reaching for holds
-still), the crowd cranes towards it and cheers, a warm light follows it, a sparkle trail and floor ripples answer fast
+still), the crowd cranes towards it and cheers, a warm light follows it, floor ripples answer fast
 movement, and the tilt-shift focus follows it. Reduced Motion removes every one of those motions (the light stays).
 
 ## The opening: SABOTAGE STACK, built by the sky
@@ -146,6 +146,32 @@ and the vote keys for 1 / 2 / 3). The page's sabotage icons have **thickness and
 holder with darker copies behind it, kept in step with the real icon, so ids and the page's own queries are untouched). The brand
 emblem and the speaker are sculpted and baked like the 17 sabotage icons and swapped in; Flat view puts the original drawings back.
 All of it is under `html.has-3d`, so the flat page is unchanged.
+
+## The pixel-grid feel
+
+A crisp, stepped way of answering the pointer, after RASTER/27: hovers and fills move in whole steps (`steps()`, never an ease), nothing
+blurs, and everything new is square-cornered. All of it is under `html.has-3d` (Flat view and the jsdom tests see the original page). The logic
+is in pure, unit-tested modules; `pixel-ui.js` (`installPixelUi({ doc, win })` -> `{ dispose }`, installed next to `tactile.js` and
+`icon-turn.js` and disposed with them) is the thin DOM half, and the CSS is one block in `sabotage-stack.html` ("Pixel-grid feel").
+
+| | what | where |
+|---|---|---|
+| **Cursor trail** | the pointer snapped to a 16 px grid drops a square per new cell: 16 x 16 for 140 ms, 8 x 8 (+4) for 140, 4 x 4 (+6) for 140, then gone; at most 14 alive; the six non-cream block colours in turn, in the theme the pointer is in. It replaces the sparkle stream of the home scene (the warm light and floor ripples stay) | `pixel-trail.js`, a click-through canvas in `pixel-ui.js`, `Stage.gridTrail` gates `hover.sparks()` |
+| **Stepped hovers** | primary and secondary buttons keep the keycap lift and press, stepped (3 steps), and an accent wipes in from the left in 6 steps (240 ms) with the label flipping at the half-way mark. Vote rows, player rows and score tiles flood at once, solid, to their own colour, the text flipping to whichever reads (AA, per theme). The DROP bar and vote keys are untouched. Text links get a 1 px underline in 6 steps (the page has none today) | CSS only, except a player row's colour (it is an inline style on a child, so `pixel-ui.js` copies it to the row on arrival) |
+| **Wordmark jitter** | hover swaps the brand's text for an `aria-hidden` SVG of pixel rects (the text rasterised in the theme's font, 2 px cells, hard text shadow kept) for three 60 ms ticks: two knock every rect a cell off, the third puts them back exactly, then the real text returns | `pixel-wordmark.js`, `pixel-ui.js` |
+| **Palette wave** | hovering (or keyboard-focusing) a vote row sweeps a wave over that candidate's block sculpture, top-left to bottom-right in 360 ms, trading its two most common colours (the raised ink lines never change); leaving sweeps it back | `palette-wave.js`, `candidates.js`; `VoxelIcons.build` exposes `userData.mesh` / `bricks` |
+| **Pattern tick** | on a menu screen, a primary button under the pointer nudges the Sunset floor grid / the Prime Time sunburst forward in three jumps 85 ms apart (both run on one time value, so the jump is an offset added to it: `world.update({ tick })`; no shader is touched) | `pattern-tick.js`, `Stage.tickPattern` |
+| **Title scatter** | bricks within three brick widths of the pointer are pushed radially outward by up to 1.5 cells on the damped spring `v = (v + (target - x) * 0.12) * 0.8`; what is drawn is that position rounded to whole cells on a fixed 30 Hz tick; only the letters near the pointer are visited and it sleeps once every brick is home. It replaces the old smooth ripple / lean / swell; the arrival wave, the poke and `titlePose` are untouched | `brick-scatter.js`, `TitleStack.updateScatter` |
+
+**When.** The trail, the jitter and the tick are for menu-type screens (home and how-to-play, lobby, results, podium) and for a *paused* round
+(`pixel-gate.js`); they are off while a round is live, and only the CSS hovers apply. The palette wave is the exception: its vote rows exist only
+during a live vote, so it is gated by Reduced Motion and by the row being enabled, not by the screen. Nothing reacts while a mouse button is down.
+**Input is never touched**: every listener is passive, nothing is prevented or captured, the overlay is `pointer-events: none`.
+**Reduced Motion** (`html[data-motion="reduced"]`, read at the moment of use, so it can flip mid-session and follows a room's setting): no trail,
+no jitter, no tick, no scatter (bricks go home at once), and hover fills simply resolve (the wipe's transitions are instant); the palette wave
+swaps at once. **Touch** gets none of it (the CSS is inside `(hover: hover) and (pointer: fine)`, the script ignores non-mouse pointers).
+Mark anything the trail must not draw over with `data-no-trail` (text fields and selects are skipped already). The overlay is mounted in the
+fullscreen element, or in an open modal dialog (the top layer would hide it otherwise), or on the page.
 
 ## Lobby and results
 
@@ -219,6 +245,9 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
 | `orbit.js`, `view-zoom.js`, `hover.js`, `orbit-hud.js` | pure turn-the-scene, wheel-zoom and hover rules (unit-tested in Node) and the on-screen hint / zoom / turn buttons |
 | `shader-guards.js` | keeps one NaN pixel from blacking out a frame (see below) |
 | `totems.js`, `crown.js`, `tactile.js` | lobby player totems and beacons, the new-best crown, key presses and deck tilt |
+| `pixel-ui.js` | the pixel-grid feel's DOM half: the cursor trail's canvas, the wordmark jitter, player-row colours, and the hover hooks into the stage |
+| `pixel-trail.js`, `pixel-gate.js`, `pixel-contrast.js`, `pixel-wordmark.js`, `pattern-tick.js` | pure and unit-tested: the trail's cells and steps, menu-vs-live, AA text colours, the wordmark's coarse grid and jitter, the backdrop tick |
+| `brick-scatter.js`, `palette-wave.js` | pure and unit-tested: the title's scatter (target, spring, whole cells, 30 Hz clock) and the diagonal palette wave |
 | `once-soon.js` | a "run once, soon" latch (the page's icon sprites are baked with it; a restarting debounce would never fire at 60 fps) |
 | `podium.js` | pure layout/reveal rules for the multiplayer results podium |
 | `icons3d.js`, `text3d.js`, `snapshot.js` | 3D icons and baked sprites, typefaces → geometry, result-card snapshots |
@@ -246,7 +275,7 @@ upgrade changes the chunk's shape).
 ## Tests
 
 `npm test` runs everything. The pure modules (`brick-layout`, `title-effects`, `flight`, `candidates`, `icon-voxel`, `orbit`, `hover`, `podium`)
-are tested in Node (`test/title3d.test.js`, `test/client3d.test.js`); the page and the DOM helpers run in the jsdom harness, which has no
+are tested in Node (`test/title3d.test.js`, `test/client3d.test.js`, and `test/pixel-ui.test.js` for the pixel-grid feel); the page and the DOM helpers run in the jsdom harness, which has no
 WebGL, so those tests also prove the flat fallback. Visual checks need a real browser: the headless QA used for this work drove
 Chromium with software WebGL (SwiftShader), so real-GPU performance is untested.
 
