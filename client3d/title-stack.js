@@ -8,8 +8,13 @@
 //   loose   a free body (knocked out, shaken off, blown up) tumbling under gravity in world space
 //   rest    lying where it landed, until it is called home
 //   recall  flying back up above its place, to drop in again
-// The tiers (and so everything on them) lean, slide and shake as a whole for the sabotages (title-effects.js). The pointer does not move whole
-// letters: bricks near it scatter outward in whole-brick steps and spring back (brick-scatter.js has the numbers, updateScatter() the rest).
+// The tiers (and so everything on them) lean, slide and shake as a whole for the sabotages (title-effects.js).
+//
+// The pointer moves the title in two layers. The smooth one is per letter: a letter near the pointer leans away from it, sinks back and
+// swells on its springs, and hops when the pointer sweeps past fast (letter-reaction.js has the numbers, updateLetters() the springs).
+// The stepped one is per brick: bricks near the pointer scatter outward in whole-brick steps and spring back (brick-scatter.js). A brick
+// ends up at its letter's matrix applied to its home place plus the scatter's offset, so the letter's motion carries the bricks and the
+// scatter rides on top.
 import * as THREE from 'three';
 import { brickWord } from './brick-layout.js';
 import { titlePose } from './title-effects.js';
@@ -17,6 +22,7 @@ import { themedBlockColor } from './palette.js';
 import { clamp, damp, lerp, smoothstep, rng, TAU } from './util.js';
 import { offsetFromPointer } from './hover.js';
 import { SCATTER, scatterTarget, springStep, quantize, asleep, FixedTick } from './brick-scatter.js';
+import { LETTER_REACTION, sampleLetters, LITTLE } from './letter-reaction.js';
 
 export const BRICK_DEPTH = 34;
 const SLAB_T = [22, 27]; // bottom, top: thickness
@@ -24,6 +30,8 @@ const SLAB_D = [112, 128]; // depth
 const GRAVITY = 2500;
 const CHUNKS = 14; // pieces a slab breaks into
 const WAIT = 0; const DROP = 1; const HOME = 2; const LOOSE = 3; const REST = 4; const RECALL = 5; const HIDDEN = 6;
+const STEP_BREATH = 2;
+const NO_BRICKS = new Set(); // (the empty frame: nothing to compose) // letterMoved: the whole letter (1) or just the breathing, which every brick of it shares through the letter's matrix
 
 // The look of the bricks per theme. Colours follow the reference: the same four block colours cycle letter by letter (the page's own
 // palette, mapped to each theme), the lower word starting one colour on from the upper one.
@@ -34,7 +42,7 @@ const BRICK_LOOK = {
   primetime: { rough: 0.34, metal: 0.12, emit: 0.04, line: 1.4, slab: '#10256E', cycleB: CYCLE_B, cycleT: CYCLE_T, rows: 19, cap: 124, xScale: 0.88, tone: [0.04, -0.03] }
 };
 
-const euler = new THREE.Euler(); const tq = new THREE.Quaternion(); const tp = new THREE.Vector3(); const ts = new THREE.Vector3(); const tm = new THREE.Matrix4(); const tv = new THREE.Vector3();
+const euler = new THREE.Euler(); const tq = new THREE.Quaternion(); const tp = new THREE.Vector3(); const ts = new THREE.Vector3(); const tm = new THREE.Matrix4(); const tv = new THREE.Vector3(); const restMat = new THREE.Matrix4(); const restTs = new THREE.Vector3();
 const ONE = new THREE.Vector3(1, 1, 1); const ZERO_SCALE = new THREE.Vector3(0, 0, 0); const IDENT = new THREE.Quaternion();
 
 // The brick material: a standard lit material plus, in the shader, an ink outline round every face of every brick (so the wall
@@ -95,8 +103,11 @@ export class TitleStack {
     this.poseB = { x: 0, y: 0, rz: 0, sx: 1 }; this.poseT = { x: 0, y: 0, rz: 0, sx: 1 };
     this.shedClock = 0; this.recallClock = 0; this.rebuildAt = -1;
     // the pointer's scatter: bricks that are awake (displaced or still settling), the 30 Hz clock it runs on, and the screen axes the offsets are measured along
-    this.scatterActive = new Set(); this.scatterClock = new FixedTick(SCATTER.hz); this.scatterOff = { dx: 0, dy: 0 }; this.scatterGoal = { x: 0, y: 0 };
+    this.scatterActive = new Set(); this.scatterChanged = new Set(); this.scatterClock = new FixedTick(SCATTER.hz); this.scatterOff = { dx: 0, dy: 0 }; this.scatterGoal = { x: 0, y: 0 };
     this.scatterAxes = { right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0) };
+    this.centerOf = (i, out) => this.letterCenterOf(i, out); // (one bound function for sampleLetters)
+    this.scatterVisited = new Set(); // the bricks the last 30 Hz tick left near the pointer
+    this.letterActivity = 0; this.letterNear = []; this.letterPoint = null; this.letterCenter = [0, 0, 0]; // letterNear: how near the pointer each letter was, this frame; 0 letters moving = at rest
   }
 
   // ---- building -------------------------------------------------------------------------------------------------
@@ -134,8 +145,10 @@ export class TitleStack {
     }
     // letters and their bricks
     const letters = this.letters; let letterBase = 0;
+    this.scatterActive.clear(); this.scatterChanged.clear(); this.scatterClock.reset(); this.scatterVisited.clear(); this.scatterDrawn = false; this.letterActivity = 0;
     const lay = (word, tier, baseY, cycle, letterOffset, startDelay) => {
-      word.letters.forEach((l, i) => letters.push({ ch: l.ch, tier, cx: l.cx, rows: l.rows, hop: 0, vhop: 0, rz: 0, vrz: 0, rx: 0, vrx: 0, swell: 0, waveDelay: -1, seed: R() * TAU, baseY, vis: 1, visTarget: 1, ox: 0, line: tier }));
+      word.letters.forEach((l, i) => letters.push({ ch: l.ch, tier, cx: l.cx, rows: l.rows, hop: 0, vhop: 0, rz: 0, vrz: 0, rx: 0, vrx: 0, swell: 0, waveDelay: -1, seed: R() * TAU, baseY, vis: 1, visTarget: 1, ox: 0, line: tier,
+        tz: 0, tx: 0, push: 0, swellTarget: 0, breathe: 0, ripple: 0 })); // (the letter reaction: all at rest)
       const spans = new Map();
       for (const b of word.bricks) { const k = `${b.letter}:${b.row}`; const s = spans.get(k) || []; s.push(b); spans.set(k, s); }
       for (const b of word.bricks) {
@@ -156,6 +169,7 @@ export class TitleStack {
     this.introDuration = Math.max(...bricks.map(b => b.delay)) + 0.5;
     for (const b of bricks) { if (b.kind === 2) continue; b.oy0 = 560 + R() * 720; if (b.kind === 1) b.oy0 = 900; b.vy0 = -240 - R() * 260; }
     // mesh
+    this.tierPrev = null; this.tierDelta = 0; // (a fresh build: the first frame writes everything)
     this.geometry = new THREE.BoxGeometry(1, 1, 1); this.material = makeBrickMaterial(this.theme, this.palette);
     this.mesh = new THREE.InstancedMesh(this.geometry, this.material, bricks.length); this.mesh.name = 'bricks'; this.mesh.frustumCulled = false; this.mesh.castShadow = true; this.mesh.receiveShadow = true;
     bricks.forEach(b => this.mesh.setColorAt(b.i, b.color));
@@ -198,8 +212,9 @@ export class TitleStack {
   get topCenterY() { return this.layout.bottomTop + SLAB_T[1] + this.layout.capHeight * 0.5; }
 
   // ---- the frame --------------------------------------------------------------------------------------------------
-  update(dt, time, { pointer = null, reduced = false, energy = 0, yaw = 0, effect = null, floor = null, toCamera = null } = {}) {
+  update(dt, time, { pointer = null, pointerSpeed = 0, reduced = false, energy = 0, yaw = 0, effect = null, floor = null, toCamera = null } = {}) {
     if (!this.mesh) return;
+    this.letterPoint = pointer && !reduced ? pointer : null; // one frame for both layers; the stage passes null while a button is held
     this.age += dt * (this.age < this.introDuration ? this.speed : 1); if (floor) this.floor = floor; if (toCamera) this.toCamera.copy(toCamera);
     const bricks = this.bricks; const L = this.layout;
     // ---- the sabotage (if any): a pose for each tier and a few knobs
@@ -209,10 +224,19 @@ export class TitleStack {
       if (this.effectKey !== `${effect.id}:${effect.n}`) { this.effectKey = `${effect.id}:${effect.n}`; this.onEffectStart(effect); }
     } else if (this.effectKey) { this.effectKey = ''; this.onEffectEnd(); }
     this.pose = pose;
-    const rzIdle = reduced ? 0 : Math.sin(time * 0.55) * 0.0035; const xIdle = reduced ? 0 : Math.sin(time * 0.41 + 1) * 2.2;
+    // (the idle sway is rounded, as it has been since the pixel-grid pass: 0.001 rad and 0.1 px, so it holds still for most frames. The wall is
+    //  carried by the tiers, so a frame the sway does step re-sends all of it: it steps a few times a second, and not at all otherwise.)
+    const rzIdle = reduced ? 0 : Math.round(Math.sin(time * 0.55) * 3.5) / 1000;
+    const xIdle = reduced ? 0 : Math.round(Math.sin(time * 0.41 + 1) * 22) / 10
     const pb = this.poseB; const pt = this.poseT; const eb = pose ? pose.bottom : null; const et = pose ? pose.top : null;
-    pb.x = eb ? eb.x : 0; pb.y = eb ? eb.y : 0; pb.rz = (eb ? eb.rz : 0) - rzIdle * 0.4; pb.sx = eb ? eb.sx : 1;
-    pt.x = (et ? et.x : 0) + xIdle; pt.y = et ? et.y : 0; pt.rz = (et ? et.rz : 0) + rzIdle; pt.sx = et ? et.sx : 1;
+    // the tiers' eight numbers, compared with last frame's: the world moves them (a sabotage, the intro, the idle sway), and while it does the
+    // matrices keep coming. Composed here, with the idle terms, because those terms change every frame even when nothing else does.
+    const tierNow = this.tierNow || (this.tierNow = new Float64Array(8)); const tierPrev = this.tierPrev || (this.tierPrev = new Float64Array(8));
+    const bottomRz = (eb ? eb.rz : 0) - rzIdle * 0.4; const topX = (et ? et.x : 0) + xIdle; const topRz = (et ? et.rz : 0) + rzIdle;
+    const tierValues = [eb ? eb.x : 0, eb ? eb.y : 0, bottomRz, eb ? eb.sx : 1, topX, et ? et.y : 0, topRz, et ? et.sx : 1];
+    let tierDelta = 0; for (let i = 0; i < 8; i += 1) { tierDelta = Math.max(tierDelta, Math.abs(tierValues[i] - tierPrev[i])); tierPrev[i] = tierValues[i]; } this.tierDelta = tierDelta;
+    pb.x = eb ? eb.x : 0; pb.y = eb ? eb.y : 0; pb.rz = bottomRz; pb.sx = eb ? eb.sx : 1;
+    pt.x = topX; pt.y = et ? et.y : 0; pt.rz = topRz; pt.sx = et ? et.sx : 1;
     const settle = this.complete ? 1 : smoothstep(0.4, 1, this.age / this.introDuration);
     if (this.age < this.introDuration) { pt.rz *= settle; pt.x *= settle; }
     // portal: the upper tier travels one full loop between the gates, so it ends where it began
@@ -226,9 +250,9 @@ export class TitleStack {
     else if (pose && pose.ghost > 0.02) { this.ghost.visible = true; this.ghost.position.x = pose.ghostDx || 0; gu.uGhost.value = 1; } // the decoy of the shell game: a duller copy that slides the other way
     else { this.ghost.visible = false; gu.uGhost.value = 0; }
     for (const m of [this.material, this.ghostMaterial]) { const u = m.userData.uniforms; u.uGlue.value = pose ? pose.glue : 0; u.uGlueX.value = pose && pose.glue > 0 ? Math.sin(time * 1.5) * L.halfTop * 1.1 : 0; }
-    // ---- letters: springs for hops, leans and the pointer
+    // ---- letters, then bricks: the smooth layer first (the scatter culls its own work below how near a letter is), then the stepped one
     this.updateMarquee(time, yaw, reduced, energy);
-    this.updateLetters(dt, time, reduced, pose);
+    this.updateLetters(dt, time, pointerSpeed, reduced, energy, pose);
     this.updateScatter(dt, pointer, reduced);
     // ---- bricks
     this.updateBricks(dt, time, pose, reduced);
@@ -240,23 +264,61 @@ export class TitleStack {
   }
   onEffectEnd() { this.rebuild(0.1); }
 
-  // Letters: their springs for the arrival wave, pokes and sabotage poses. The pointer no longer moves whole letters (it used to ripple them,
-  // lean them away and swell them): it scatters bricks instead, see updateScatter().
-  updateLetters(dt, time, reduced, pose) {
-    const letters = this.letters; const n = letters.length; const wave = pose && pose.letter;
+  // Letters: the restored springs (the old per-letter reaction, from before the brick scatter replaced it) plus the ones for the arrival
+  // wave, pokes and sabotage poses. The pointer's targets come from letter-reaction.js: the lean (rz), the sink and its push (rx, y) and the
+  // swell (scale), each on the same damped spring as before (k 150, c 10, the swell damp 12, the hop gravity 2400 and bounce 0.3). All of it
+  // is smooth on purpose: the stepped motion is the brick scatter's, not the letters'.
+  //
+  // Two things make an idle title cost nothing, without changing the motion:
+  //  * one sample for every letter (sampleLetters), and none at all under Reduced Motion with no pointer;
+  //  * the ripple and the breathing as one shared sine and two numbers a letter: sin(4.6 t + P) with every P the same modulo a whole 0.3508 rad
+  //    (the sine's phase is arbitrary), so however many letters there are, three sines a frame cover them all. What is left per letter is
+  //    plain arithmetic, and `letterActivity` counts up to the number of letters that would still see a ripple leg or a scatter brick
+  //    (LITTLE); at 0, every letter is at rest in every way and the whole loop is skipped: no matrices change, and the mesh is not re-uploaded.
+  updateLetters(dt, time, pointerSpeed, reduced, energy, pose) {
+    const letters = this.letters; const n = letters.length; const wave = pose && pose.letter; const R = LETTER_REACTION;
+    this.letterNear = new Float32Array(n);
+    // the pointer, for every letter at once (the numbers are in letter-reaction.js)
+    const centers = this.centerOf; // (bound once: sampleLetters calls it as a plain function)
+    sampleLetters(letters, this.letterPoint, centers, { pointerSpeed, energy, reduced, strength: R.strength, near: this.letterNear, t: time });
+    let legs = 0; const moved = this.letterMoved = this.letterMoved || new Uint8Array(n); moved.fill(0);
     for (let i = 0; i < n; i += 1) {
       const l = letters[i];
+      const w = wave ? wave(i, n) : null; const wHop = w ? w.y : 0; const wRz = w ? w.rz : 0;
+      const breatheLeg = l.breathe; const rippleLeg = l.ripple;
+      // asleep, in every way: no wave, no poke or sabotage spring, no lean or sink, no hop, and nothing visible of the breathing, the ripple or the push
+      if ((this.letterNear[i] || 0) < 1e-3 && Math.abs(l.swellTarget) < 1e-3 && !w && l.waveDelay < 0 && l.vis === 1 && l.vhop === 0 && l.vrz === 0 && l.vrx === 0 && Math.abs(l.rz) < 1e-4 && Math.abs(l.rx) < 1e-4 && Math.abs(l.hop) < 0.01 && Math.abs(l.push) * R.strength < 0.01) {
+        const before = l.rz !== 0 || l.rx !== 0 || l.hop !== 0 || l.swell !== 0;
+        l.swell = damp(l.swell, 0, R.swellDamp, dt); if (l.swell < 1e-4) l.swell = 0;
+        if (l.vis !== 1) { l.visTarget = 1; l.vis = damp(l.vis, l.visTarget, 40, dt); } // (a knockout fading back in, and nothing else)
+        l.hop = 0; l.vhop = 0; l.rz = 0; l.vrz = 0; l.rx = 0; l.vrx = 0; // (each under 1e-4 of an eye's worth: snapping them is invisible)
+        l.y = breatheLeg; l.zr = 0; l.xr = 0; // (at home, still breathing: the same numbers as last time, which is why nothing is re-uploaded)
+        // (a breathing step, or the frame it falls asleep on and gives back its last sliver of lean: either way its bricks are owed one compose)
+        if (l.lastY !== undefined && (l.lastY !== l.y || before)) { legs += 1; moved[i] = STEP_BREATH; }
+        l.lastY = l.y;
+        for (const b of l.bricks) if (b.sp || b.sx !== 0 || b.sy !== 0) { legs += 1; moved[i] = STEP_BREATH; break; } // (the scatter is still pushing its bricks: they are owed a recompose, and the letter still counts as awake for it)
+        continue;
+      }
       if (l.waveDelay >= 0) { l.waveDelay -= dt; if (l.waveDelay < 0) { l.vhop = Math.max(l.vhop, 260); l.vrz += (this.random() - 0.5) * 3.6; l.waveDelay = -1; } }
-      const kz = 150; const cz = 10;
-      l.vrz += (-l.rz * kz - l.vrz * cz) * dt; l.rz += l.vrz * dt;
-      l.vrx += (-l.rx * kz - l.vrx * cz) * dt; l.rx += l.vrx * dt;
-      l.vhop -= 2400 * dt; l.hop += l.vhop * dt; if (l.hop < 0) { if (l.vhop < -160) l.vhop = -l.vhop * 0.3; else { l.hop = 0; l.vhop = 0; } }
-      const breathe = reduced ? 0 : Math.sin(time * 1.4 + l.seed) * 0.8;
-      const w = wave ? wave(i, n) : null;
-      l.y = l.hop + breathe + (w ? w.y : 0);
-      l.zr = l.rz + (w ? w.rz : 0); l.xr = l.rx;
-      l.visTarget = w ? w.vis : 1; l.vis = damp(l.vis, l.visTarget, 40, dt);
+      const kz = R.spring; const cz = R.damping;
+      l.swell = damp(l.swell, l.swellTarget * Math.min(1, R.strength), R.swellDamp, dt);
+      l.vrz += ((l.tz - l.rz) * kz - l.vrz * cz) * dt; l.rz += l.vrz * dt;
+      l.vrx += ((l.tx - l.rx) * kz - l.vrx * cz) * dt; l.rx += l.vrx * dt;
+      if (Math.abs(l.rz) < 1e-6 && Math.abs(l.vrz) < 1e-6 && Math.abs(l.tz) < 1e-6) { l.rz = 0; l.vrz = 0; } // (a spring that has all but settled is settled: an exponential tail is never exactly zero)
+      if (Math.abs(l.rx) < 1e-6 && Math.abs(l.vrx) < 1e-6 && Math.abs(l.tx) < 1e-6) { l.rx = 0; l.vrx = 0; }
+      if (l.vhop !== 0 || l.hop !== 0) { const fall = l.vhop; l.vhop -= R.hopGravity * dt; l.hop += l.vhop * dt; if (l.hop < 0) { if (fall < -R.hopBounceMin) l.vhop = -fall * R.hopBounce; else { l.hop = 0; l.vhop = 0; } } } // (testing the fall's own speed, as the old code did: 160 px/s)
+      if (l.vis !== 1) { l.visTarget = 1; l.vis = damp(l.vis, l.visTarget, 40, dt); }
+      l.y = l.hop + breatheLeg + rippleLeg + l.push * 0.4 * R.strength + (w ? w.y : 0); l.lastY = l.y;
+      l.zr = l.rz + wRz; l.xr = l.rx; legs += 1; moved[i] = 1;
     }
+    this.letterActivity = legs;
+  }
+
+  // where a letter's centre is now, its tier transform included, into out[] (two plane vectors: the pointer's own across-screen dot products)
+  letterCenterOf(i, out = this.letterCenter) {
+    if (!out) out = this.letterCenter;
+    const l = this.letters[i]; if (!l) return out; tp.set(l.cx, l.baseY + this.layout.capHeight / 2, 0).applyMatrix4(this.tierM[l.tier]);
+    out[0] = tp.x; out[1] = tp.y; out[2] = tp.z; return out;
   }
 
   // The pointer's reaction, in whole-brick steps (RASTER/27's scattering pixels). Every brick of the wall within three brick widths of the
@@ -264,38 +326,36 @@ export class TitleStack {
   // position rounded to whole cells and refreshed on a fixed 30 Hz tick. Only the letters near the pointer are visited, and the whole thing
   // sleeps once every brick is back home. Reduced Motion, a blown-up title and Superglue (the bricks hold) switch it off.
   updateScatter(dt, pointer, reduced) {
-    if (reduced || this.exploded) { if (this.scatterActive.size) this.scatterClear(); this.scatterClock.reset(); return; }
+    if (reduced || this.exploded) { if (this.scatterActive.size || this.scatterDrawn) this.scatterClear(); this.scatterClock.reset(); return; }
     const glued = Boolean(this.pose && this.pose.glue > 0.4);
     const live = Boolean(pointer) && this.complete && !glued;
     if (!live && !this.scatterActive.size) { this.scatterClock.reset(); return; } // asleep: nothing to do
     for (let ticks = this.scatterClock.advance(dt); ticks > 0; ticks -= 1) this.scatterTick(live ? pointer : null);
   }
 
-  scatterClear() { for (const b of this.scatterActive) { b.sx = 0; b.sy = 0; b.sp = null; } this.scatterActive.clear(); }
+  scatterClear() { for (const b of this.scatterActive) { if (b.sx !== 0 || b.sy !== 0) this.scatterChanged.add(b); b.sx = 0; b.sy = 0; b.sp = null; } this.scatterActive.clear(); this.scatterVisited.clear(); this.scatterDrawn = false; }
 
   scatterTick(pointer) {
-    const L = this.layout; const radius = SCATTER.radiusBricks * L.brickLength; const reach = radius + L.capHeight; // a letter this far off can still have a brick in range
+    const L = this.layout; const radius = SCATTER.radiusBricks * L.brickLength;
     const active = this.scatterActive; const off = this.scatterOff; const goal = this.scatterGoal;
     for (const b of active) { b.tx = 0; b.ty = 0; } // whatever is out of range now heads home
-    if (pointer) {
-      this.scatterAxes.right.copy(pointer.right); this.scatterAxes.up.copy(pointer.up);
-      for (const l of this.letters) {
-        if (l.vis < 0.5 || !l.bricks) continue;
-        tp.set(l.cx, l.baseY + L.capHeight / 2, 0).applyMatrix4(this.tierM[l.tier]); offsetFromPointer(pointer, tp.x, tp.y, tp.z, off);
-        if (Math.hypot(off.dx, off.dy) > reach) continue;
-        for (const b of l.bricks) {
-          if (b.state !== HOME) continue;
-          this.homeWorld(b, tv, 0); offsetFromPointer(pointer, tv.x, tv.y, tv.z, off);
-          if (Math.hypot(off.dx, off.dy) >= radius) continue;
-          scatterTarget(off.dx, off.dy, radius, SCATTER.maxCells, goal, b.i);
-          b.tx = goal.x; b.ty = goal.y; if (!b.sp) b.sp = { x: 0, y: 0, vx: 0, vy: 0 }; active.add(b);
-        }
+    const visited = this.scatterVisited; visited.clear();
+    for (let i = 0; i < this.letters.length; i += 1) {
+      const l = this.letters[i];
+      if (!pointer || l.vis < 0.5 || !l.bricks || (this.letterNear[i] || 0) < LITTLE) continue; // (letter-reaction.js sampled how near, this frame: no re-measuring)
+      for (const b of l.bricks) {
+        if (b.state !== HOME) continue;
+        this.restWorld(b, tv, 0); offsetFromPointer(pointer, tv.x, tv.y, tv.z, off); // (the rest pose: the letter's own lean, swell, hop and push are not in here, nor are the scatter's offsets)
+        if (Math.hypot(off.dx, off.dy) >= radius) continue;
+        scatterTarget(off.dx, off.dy, radius, SCATTER.maxCells, goal, b.i);
+        b.tx = goal.x; b.ty = goal.y; if (!b.sp) b.sp = { x: 0, y: 0, vx: 0, vy: 0 }; active.add(b); visited.add(b);
       }
     }
     for (const b of active) {
-      if (b.state !== HOME) { b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); continue; } // knocked out or shaken loose: a free body now
-      springStep(b.sp, b.tx, b.ty); b.sx = quantize(b.sp.x); b.sy = quantize(b.sp.y);
-      if (asleep(b.sp, b.tx, b.ty)) { b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); }
+      if (b.state !== HOME) { if (b.sx !== 0 || b.sy !== 0) this.scatterChanged.add(b); b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); continue; } // knocked out or shaken loose: a free body now
+      springStep(b.sp, b.tx, b.ty); const sx = quantize(b.sp.x); const sy = quantize(b.sp.y);
+      if (asleep(b.sp, b.tx, b.ty)) { if (b.sx !== 0 || b.sy !== 0) this.scatterChanged.add(b); b.sx = 0; b.sy = 0; b.sp = null; active.delete(b); }
+      else if (sx !== b.sx || sy !== b.sy) { b.sx = sx; b.sy = sy; this.scatterChanged.add(b); } // (this tick moved it: its matrix is owed a compose)
     }
   }
 
@@ -349,15 +409,27 @@ export class TitleStack {
     if (final && this.fx && this.random() < 0.06) { this.homeWorld(b, tv, 0); this.fx.dust([tv.x, tv.y - b.h / 2, tv.z + 8], 2); }
   }
 
-  // the world position of a brick's place in the wall (plus `lift` straight up)
+  // The world position of a brick's place in the wall (plus `lift` straight up), with the letters exactly as they are now: the lean, the swell,
+  // the hop, the push. Good for releasing and recalling a brick (it must start where it is drawn); NOT for the scatter's measuring, which uses
+  // `restWorld` below, because a brick drifting because its letter leans must not change which bricks the scatter picks (a feedback loop).
   homeWorld(b, out, lift = 0) {
     if (b.kind === 0) {
       const l = this.letters[b.letter]; this.letterMatrix(l, tm); out.set(b.lx, b.ly + lift, b.lz).applyMatrix4(tm);
     } else out.set(b.lx, b.ly + lift, b.lz).applyMatrix4(this.tierM[b.tier]);
     return out;
   }
+  // The same place, with the letters at rest (only the tiers, which move the bricks in the world for real, kept): what the scatter measures
+  // from. Every brick's distance from the pointer, and so its offset, depends on this position and on nothing the letters do.
+  restWorld(b, out, lift = 0) {
+    if (b.kind === 0) {
+      const l = this.letters[b.letter]; tp.set(l.cx, l.baseY, 0); restTs.set(1, 1, 1);
+      restMat.compose(tp, IDENT, restTs).premultiply(this.tierM[l.tier]); out.set(b.lx, b.ly + lift, b.lz).applyMatrix4(restMat);
+    } else out.set(b.lx, b.ly + lift, b.lz).applyMatrix4(this.tierM[b.tier]);
+    return out;
+  }
   letterMatrix(l, out) {
-    euler.set(l.xr || 0, 0, l.zr || 0); tq.setFromEuler(euler); tp.set(l.cx, l.baseY + (l.y || 0), 0); const s = 1 + l.swell; ts.set(s, s, s);
+    euler.set(l.xr || 0, 0, l.zr || 0); tq.setFromEuler(euler); tp.set(l.cx, l.baseY + (l.y || 0) + (l.yr || 0), 0); // (l.yr: a sabotage pose's letter hop, kept apart from the springs)
+ const s = 1 + l.swell; ts.set(s, s, s);
     return out.compose(tp, tq, ts).premultiply(this.tierM[l.tier]);
   }
 
@@ -484,6 +556,18 @@ export class TitleStack {
   }
 
   // ---- matrices -----------------------------------------------------------------------------------------------------
+  // Which bricks can have changed since the last frame: the bricks of every letter that moved (a lean, a hop, a wave, a fade) and every brick
+  // the scatter is pushing. When that set is empty the whole title is at rest and no matrix is touched at all (an idle title costs nothing).
+  dirtySet(moving = false) {
+    if (this.letterMoved === undefined || moving) return this.bricks; // (everything: the frame after a build, or a tier that moved, which carries the whole wall)
+    if (this.letterActivity === 0 && this.scatterChanged.size === 0) return NO_BRICKS; // (at rest: no brick can have changed, so none is even compared)
+    const out = this.dirty || (this.dirty = new Set()); out.clear();
+    for (const b of this.scatterActive) out.add(b); for (const b of this.scatterVisited) out.add(b);
+    // (a letter that took a step is recomposed whole: its breathing, its lean and its bricks' own scatter all ride that one matrix)
+    for (let i = 0; i < this.letters.length; i += 1) if (this.letterMoved[i]) for (const b of this.letters[i].bricks) out.add(b);
+    for (const b of this.scatterChanged) out.add(b); // (bricks the scatter let go of: back to their slot, in one compose)
+    return out;
+  }
   updateMatrices(dt, time, pose) {
     const L = this.layout; const pb = this.poseB; const pt = this.poseT;
     tq.setFromAxisAngle(tv.set(0, 0, 1), pb.rz); tp.set(pb.x, pb.y, 0); ts.set(pb.sx, 1, 1);
@@ -495,7 +579,16 @@ export class TitleStack {
     while (lm.length < this.letters.length) lm.push(new THREE.Matrix4());
     this.letters.forEach((l, i) => this.letterMatrix(l, lm[i]));
     const mesh = this.mesh; const M = this.scratchM || (this.scratchM = new THREE.Matrix4());
-    for (const b of this.bricks) {
+    // An idle title costs a fraction of what it did. Only the bricks that CAN have changed are composed: those riding a letter that took a step
+    // (its lean, its breathing, its hop, its bricks' own scatter all ride that one matrix) and those the scatter is pushing or has just let go of.
+    // A brick whose 16 numbers are unchanged is not written, and what is written is sent to the GPU as runs (not the whole 660-brick buffer), so
+    // a breathing letter uploads a letter's worth. The frames that still walk the whole wall are the ones the tiers move on: the idle sway, which
+    // carries every brick, and it steps a few times a second, not sixty.
+    const moving = (this.tierDelta || 0) > 1e-6; const fresh = this.letterMoved === undefined; // (the frame after a build composes everything, once)
+    if (!moving && !fresh && this.letterActivity === 0 && this.scatterChanged.size === 0) { this.composed = 0; return; } // (rest: nothing to compose)
+    const dirty = this.dirtySet(moving); this.composed = dirty === this.bricks ? dirty.length : dirty.size; // (how many bricks a frame looked at: a stat for the tests)
+    let wrote = 0; const ranges = this.scatterRanges || (this.scatterRanges = []); ranges.length = 0;
+    for (const b of dirty) {
       let visible = true;
       switch (b.state) {
         case WAIT: case HIDDEN: visible = false; break;
@@ -518,9 +611,18 @@ export class TitleStack {
         }
       }
       if (!visible) M.compose(tp.set(0, -9999, 0), IDENT, ZERO_SCALE);
-      mesh.setMatrixAt(b.i, M);
+      const hex = b.hex || (b.hex = new Float64Array(16)); // a brick whose 16 numbers have not changed is not written again (float64: what was composed, not what the GPU rounds it to)
+      let same = true; for (let k = 0; k < 16; k += 1) if (hex[k] !== M.elements[k]) { same = false; break; }
+      if (!same) { // (the buffer is sent in runs, not whole: a breathing letter uploads its own 60 bricks' worth of floats, not the wall's)
+        hex.set(M.elements); mesh.setMatrixAt(b.i, M); wrote += 1;
+        const r = ranges[ranges.length - 1]; if (r && r.start + r.count === b.i) r.count += 1; else ranges.push({ start: b.i, count: 1 });
+      }
     }
-    mesh.instanceMatrix.needsUpdate = true;
+    this.scatterChanged.clear();
+    if (wrote) {
+      const buf = mesh.instanceMatrix; if (buf.clearUpdateRanges) { buf.clearUpdateRanges(); for (const r of ranges) buf.addUpdateRange(r.start * 16, r.count * 16); }
+      buf.needsUpdate = true; mesh.updateMatrixWorld(); // (the instance pixels were rewritten: picking has to see them even when nothing else in the world moves)
+    }
   }
 
   dispose() { this.clear(); }

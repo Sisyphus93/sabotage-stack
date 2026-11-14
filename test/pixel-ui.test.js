@@ -487,15 +487,17 @@ describe('the brick title scatters under the pointer, in whole-brick steps (titl
   const make = async (theme = 'paper') => { const { TitleStack } = await load('title-stack.js'); const { PALETTES } = await load('palette.js'); const title = new TitleStack(theme, PALETTES[theme], fx); title.build({ instant: true }); title.clock = 0; return title; };
   const run = (title, seconds, extra = {}, each) => { for (let i = 0; i < Math.round(seconds * 60); i += 1) { title.clock += 1 / 60; title.update(1 / 60, title.clock, { floor: () => 0, ...extra }); if (each) each(i); } };
   const frameAt = async (point) => { const { Vector3 } = await import('three'); return { point: new Vector3(point.x, point.y, point.z), right: new Vector3(1, 0, 0), up: new Vector3(0, 1, 0) }; };
+  // the stage hands the title one frame; the scatter reads it only when it is not Reduced Motion
+  const aim = (title, pointer, reduced = false) => ({ letterPoint: pointer && !reduced ? pointer : null }); // (the stage sets it on the title; the scatter reads the update's pointer)
   const displaced = title => title.bricks.filter(b => b.kind === 0 && (b.sx || b.sy));
   const aimAt = async (title, letter = 2) => { const { Vector3 } = await import('three'); const row = Math.floor(title.letters[letter].rows / 2); const target = title.bricks.find(b => b.kind === 0 && b.letter === letter && b.row === row); return { target, point: title.homeWorld(target, new Vector3(), 0) }; }; // (the middle of a letter: the pixel font has fewer rows than the others)
 
   test('bricks near the pointer are pushed straight away from it, a couple of cells at most, whole cells only, and nothing beyond three brick widths moves', async () => {
     const { Vector3 } = await import('three');
     for (const theme of THEMES) {
-      const title = await make(theme); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+      const title = await make(theme); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); Object.assign(title, aim(title, pointer));
       const L = title.layout; assert.ok(L.cell > 0 && L.brickLength >= L.cell * 2, `${theme}: a cell is one course (${L.cell}), a brick is at least two of them long (${L.brickLength})`); const radius = 3 * L.brickLength;
-      run(title, 0.9, { pointer });
+      run(title, 0.9, { pointer, letterPoint: pointer });
       const moved = displaced(title); assert.ok(moved.length >= 4 && moved.length < title.bricks.filter(b => b.kind === 0).length / 2, `${theme}: ${moved.length} bricks moved, the ones near the pointer only (Sunset's are bigger, so fewer fit in three brick widths)`);
       const v = new Vector3(); let outward = 0;
       for (const b of moved) {
@@ -509,8 +511,8 @@ describe('the brick title scatters under the pointer, in whole-brick steps (titl
   });
 
   test('what is drawn changes on a fixed 30 Hz tick, never between ticks, and the bricks really are drawn there (the instance matrices carry the offset)', async () => {
-    const { Matrix4, Vector3 } = await import('three'); const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
-    let previous = ''; const changes = []; run(title, 1.2, { pointer }, i => { const sig = displaced(title).map(b => `${b.i}:${b.sx},${b.sy}`).join('|'); if (sig !== previous) changes.push(i); previous = sig; });
+    const { Matrix4, Vector3 } = await import('three'); const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); Object.assign(title, aim(title, pointer));
+    let previous = ''; const changes = []; run(title, 1.2, { pointer, letterPoint: pointer }, i => { const sig = displaced(title).map(b => `${b.i}:${b.sx},${b.sy}`).join('|'); if (sig !== previous) changes.push(i); previous = sig; });
     assert.ok(changes.length >= 4, `it does move (${changes.length} changes)`); assert.ok(changes.length <= 37, `at most once per tick: ${changes.length} changes in 72 frames`);
     for (let i = 1; i < changes.length; i += 1) if (changes[i] === changes[i - 1] + 1 && changes[i] > 6) assert.fail(`two frames in a row changed at ${changes[i]}: that is faster than 30 Hz`);
     const m = new Matrix4(); const home = new Vector3(); const cell = title.layout.cell; let checked = 0;
@@ -518,30 +520,193 @@ describe('the brick title scatters under the pointer, in whole-brick steps (titl
     assert.ok(checked >= 8);
   });
 
-  test('when the pointer leaves, every brick springs back into its slot and the whole thing goes to sleep (no more ticks, nothing awake)', async () => {
-    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); run(title, 0.8, { pointer }); assert.ok(displaced(title).length > 5 && title.scatterActive.size > 5);
-    run(title, 3); assert.equal(displaced(title).length, 0, 'all home'); assert.equal(title.scatterActive.size, 0, 'nothing awake'); assert.ok(title.bricks.every(b => b.sp === null && b.sx === 0 && b.sy === 0));
-    let ticks = 0; const tick = title.scatterTick.bind(title); title.scatterTick = (...args) => { ticks += 1; return tick(...args); }; run(title, 1); assert.equal(ticks, 0, 'asleep: the clock is not even consulted'); run(title, 0.2, { pointer }); assert.ok(ticks > 0, 'and it wakes for the pointer');
+  test('bricks springing back are drawn where they are, frame after frame, and a brick let go in one step is put back in one (the drawn wall is checked, not the flags)', async () => {
+    const { Matrix4, Vector3 } = await import('three'); const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    run(title, 0.6, { pointer, letterPoint: pointer }); assert.ok(title.scatterActive.size > 4, `${title.scatterActive.size} bricks away from home`);
+    const m = new Matrix4(); const home = new Vector3(); const cell = title.layout.cell; let checked = 0;
+    for (let f = 0; f < 90 && title.scatterActive.size > 0; f += 1) {
+      const before = new Set(title.scatterActive); run(title, 1 / 60);
+      for (const b of before) { // (whatever it has just been given: it must be on screen, not in the buffer that was there before)
+        title.homeWorld(b, home, 0); title.mesh.getMatrixAt(b.i, m); const e = m.elements;
+        assert.ok(Math.abs(e[12] - (home.x + b.sx * cell)) < 1e-2 && Math.abs(e[13] - (home.y + b.sy * cell)) < 1e-2, `brick ${b.i} drawn at its slot plus (${b.sx}, ${b.sy}) on frame ${f}`);
+        checked += 1;
+      }
+    }
+    assert.ok(checked > 40, `${checked} drawn positions checked while the bricks went home`);
+    // what a layer being switched off does: every scattered brick let go in a single frame, with no letter awake to carry it
+    const off = await make(); run(off, 0.3); run(off, 0.6, { pointer, letterPoint: pointer }); assert.ok(off.scatterActive.size > 4);
+    const away = [...off.scatterActive]; run(off, 1 / 60, { pointer: pointer, letterPoint: pointer }); // (still scattered, and the letters still leaning)
+    off.scatterClear(); // one call, as a blow-up or a rebuild does it: the bricks are let go where they are
+    run(off, 1 / 60, { pointer: null, letterPoint: null });
+    for (const b of away) { off.homeWorld(b, home, 0); off.mesh.getMatrixAt(b.i, m); const e = m.elements; assert.ok(Math.abs(e[12] - home.x) < 1e-2 && Math.abs(e[13] - home.y) < 1e-2, `brick ${b.i} is drawn back at its slot the very next frame (${e[12].toFixed(1)} vs ${home.x.toFixed(1)})`); }
   });
 
-  test('the old smooth reaction is gone, not doubled: whole letters no longer lean, swell or ripple under the pointer, however fast or awake it is', async () => {
+  test('when the pointer leaves, every brick springs back into its slot and the whole thing goes to sleep (no more ticks, nothing awake)', async () => {
+    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); run(title, 0.8, { pointer, letterPoint: pointer }); assert.ok(displaced(title).length > 5 && title.scatterActive.size > 5);
+    run(title, 3); assert.equal(displaced(title).length, 0, 'all home'); assert.equal(title.scatterActive.size, 0, 'nothing awake'); assert.ok(title.bricks.every(b => b.sp === null && b.sx === 0 && b.sy === 0));
+    let ticks = 0; const tick = title.scatterTick.bind(title); title.scatterTick = (...args) => { ticks += 1; return tick(...args); }; run(title, 1); assert.equal(ticks, 0, 'asleep: the clock is not even consulted'); run(title, 0.2, { pointer, letterPoint: pointer }); assert.ok(ticks > 0, 'and it wakes for the pointer');
+  });
+
+  // The letter reaction (the smooth layer) and the brick scatter (the stepped one) run together. These tests are about the smooth one and how the
+  // two compose; the scatter's own behaviour is above.
+  const nearLetters = title => title.letters.filter((l, i) => (title.letterNear[i] || 0) > 0.05);
+
+  test('the numbers handed to the springs are the old ones, to the digit: the ripple runs the other way for a letter further along, and the breathing and the strength knob are exactly as restored', async () => {
+    const { sampleLetters, LETTER_REACTION } = await load('letter-reaction.js');
+    const letters = [{ cx: -300, seed: 1.1, tier: 1 }, { cx: 0, seed: 2.3, tier: 0 }, { cx: 260, seed: 0.4, tier: 1 }];
+    const centers = i => [letters[i].cx, 100, 0];
+    const frame = { point: { x: 0, y: 100, z: 0 }, right: { x: 1, y: 0, z: 0 }, up: { x: 0, y: 1, z: 0 } };
+    // the idle terms are the old expressions, 6de845e: 0.8 * sin(1.4 t + seed) and energy * 2.4 * (0.5 + 0.5 sin(4.6 t - cx * 0.013 + tier * 1.3))
+    for (const t of [0, 0.37, 2.9, 11.15]) for (const energy of [0, 0.4, 1]) {
+      sampleLetters(letters, null, centers, { energy, t, near: new Float32Array(3) });
+      letters.forEach(l => {
+        assert.ok(Math.abs(l.breathe - Math.sin(1.4 * t + l.seed) * 0.8) <= 0.025 + 1e-9, `t ${t}: the breathing (${l.breathe}) is 0.8 sin(1.4 t + seed), in steps under a tenth of a pixel`);
+        const old = energy * (0.5 + 0.5 * Math.sin(4.6 * t - l.cx * 0.013 + l.tier * 1.3)) * 2.4;
+        assert.ok(Math.abs(l.ripple - old) <= 0.025 + 1e-9, `t ${t}, energy ${energy}, cx ${l.cx}: the ripple (${l.ripple.toFixed(4)}) is the old ${old.toFixed(4)} — same sign, same phase`);
+      });
+    }
+    // the phase really does run the other way: at one instant, the letter to the right of a still pointer lags the one to its left
+    sampleLetters(letters, null, centers, { energy: 1, t: 0.2 }); assert.ok(letters[2].ripple < letters[0].ripple, 'the ripple travels one way only (a sign error would reverse it)');
+    // Reduced Motion: every target and both idle terms are 0, even with the pointer right there
+    sampleLetters(letters, frame, centers, { energy: 1, t: 0.2, reduced: true, pointerSpeed: 3000, near: new Float32Array(3) });
+    for (const l of letters) assert.ok(l.tz === 0 && l.tx === 0 && l.push === 0 && l.swellTarget === 0 && l.breathe === 0 && l.ripple === 0, 'Reduced Motion: nothing at all');
+    // ONE strength constant, and it scales the reaction (not the scatter): 0 turns the reaction off, 2 doubles it. A hop kick is scaled too
+    const sample = (strength) => { const ls = [{ cx: 0, seed: 0, tier: 0 }]; sampleLetters(ls, frame, i => [ls[i].cx, 100, 0], { strength, t: 0, near: new Float32Array(1) }); return ls[0]; };
+    const one = sample(1); const two = sample(2); const none = sample(0);
+    assert.ok(one.tz !== 0 && Math.abs(two.tz - one.tz * 2) < 1e-12, `twice the strength, twice the lean (${one.tz.toFixed(3)} -> ${two.tz.toFixed(3)})`);
+    assert.ok(Math.abs(two.push - one.push * 2) < 1e-9 && Math.abs(two.swellTarget - one.swellTarget * 2) < 1e-12, 'and the push and the swell');
+    assert.ok(none.tz === 0 && none.tx === 0 && none.push === 0 && none.swellTarget === 0, 'off is off (the scatter is untouched: it reads its own numbers)');
+    assert.equal(LETTER_REACTION.strength, 1, 'and it ships at the restored value');
+  });
+
+  test('the restored letter springs: a letter near the pointer leans away from it, sinks back and swells, smoothly and by the old amounts', async () => {
+    for (const theme of THEMES) {
+      const title = await make(theme); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); // the pointer on a brick of letter 2
+      run(title, 0.6, { pointer, letterPoint: pointer });
+      const near = nearLetters(title); assert.ok(near.length >= 2 && near.length < title.letters.length, `${theme}: the letters near it react (${near.length} of ${title.letters.length})`);
+      const l = title.letters[2];
+      assert.ok(Math.abs(l.rz) > 0.005 && Math.abs(l.rz) < 0.16, `${theme}: letter 2 tips sideways (rz ${l.rz.toFixed(3)})`); // off the pointer, which is on one side of the letter's centre
+      { const c = title.letterCenterOf(2); const dx = c[0] - point.x; assert.equal(Math.sign(l.rz), Math.sign(dx), `${theme}: the lean is away from the pointer (letter centre ${c[0].toFixed(0)} vs pointer ${point.x.toFixed(0)})`); }
+      assert.ok(Math.abs(l.rx) > 0.005 && Math.abs(l.rx) < 0.1, `${theme}: and tips back a little (rx ${l.rx.toFixed(3)})`); // (which way depends on the lean's side, one letter round)
+      assert.ok(l.swell > 0.005 && l.swell <= 0.05 + 1e-9, `${theme}: it swells, at most the old 5 % (${l.swell.toFixed(4)})`);
+      for (const other of title.letters) { const i = title.letters.indexOf(other); assert.ok(Math.abs(other.rz) <= 0.16 + 1e-9, `${theme}: never more than the old 0.16 rad, even at its peak`); assert.ok(((title.letterNear[i] || 0) > 0.05) || (Math.abs(other.swell) < 0.005), `${theme}: only letters near the pointer swell`); }
+      // a letter beyond the reaction's 190 units of reach stays flat
+      const far = title.letters[title.letters.length - 1]; assert.equal(title.letterNear[title.letters.length - 1], 0); assert.ok(Math.abs(far.rz) < 1e-6 && far.swell === 0, `${theme}: out of reach, nothing`);
+    }
+  });
+
+  test('the letters are smooth, not stepped: one lean changes every frame as it eases out, then settles; and they are done when the pointer leaves', async () => {
     const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
-    run(title, 1.2, { pointer, energy: 1 }); for (const l of title.letters) { assert.ok(Math.abs(l.rz) < 1e-6 && Math.abs(l.rx) < 1e-6 && l.swell === 0, `letter ${l.ch}: no lean, no swell`); assert.ok(Math.abs(l.y) <= 0.8 + 1e-6, `letter ${l.ch}: only its idle breathing (${l.y.toFixed(3)})`); }
+    const out = []; for (let i = 0; i < 60; i += 1) { run(title, 1 / 60, { pointer, letterPoint: pointer }); out.push(title.letters[2].rz); }
+    assert.ok(out.every(Number.isFinite), 'every frame is a number');
+    const moved = out.slice(1).filter((v, i) => Math.abs(v - out[i - 1]) > 1e-9).length; assert.ok(moved >= 40, `it moves on frame after frame (${moved} of 59)`);
+    const peak = out.reduce((a, v, i) => (Math.abs(v) > Math.abs(out[a]) ? i : a), 0); assert.ok(peak > 2 && peak < 40, `it eases out to a peak (frame ${peak}) and settles back`);
+    let biggest = 0; for (let i = 1; i < out.length; i += 1) biggest = Math.max(biggest, Math.abs(out[i] - out[i - 1])); assert.ok(biggest < 0.05, `each frame's change is a fraction of the old 0.16 rad, never a jump (${biggest.toFixed(4)})`);
+    let small = 0; for (let i = 1; i < out.length; i += 1) if (Math.abs(out[i] - out[i - 1]) > 1e-7 && Math.abs(out[i] - out[i - 1]) < 0.01) small += 1; assert.ok(small > 30, `in small, smooth increments, not whole steps (${small})`);
+    run(title, 4, { pointer: null, letterPoint: null }); for (const l of title.letters) { assert.ok(Math.abs(l.rz) < 1e-3 && Math.abs(l.rx) < 1e-3, 'back at rest'); assert.ok(Math.abs(l.swell) < 1e-3); }
+    assert.ok(title.letters.every(l => l.rz === 0 && l.rx === 0 && l.hop === 0 && l.swell === 0), 'and the title is asleep again (only breathing)');
+  });
+
+  test('a fast sweep over the title makes the letters hop (the old rule: faster than 700 px/s, close enough, and never while already hopping)', async () => {
+    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    run(title, 0.5, { pointer, letterPoint: pointer, pointerSpeed: 60 }); const slow = title.letters.map(l => l.vhop); assert.ok(slow.every(v => v === 0), 'a slow pointer never makes it hop');
+    run(title, 1 / 60, { pointer, letterPoint: pointer, pointerSpeed: 900 }); const hopping = title.letters.filter(l => l.vhop > 0);
+    assert.ok(hopping.length >= 1, 'a fast one does'); for (const l of hopping) assert.ok(l.vhop <= 420 && l.vhop >= 170 + 900 * 0.05 - 2400 / 60 - 1e-6, `a hop of the old size (${l.vhop.toFixed(0)})`);
+    let peak = 0; run(title, 0.35, { pointer, letterPoint: pointer, pointerSpeed: 900 }, () => { for (const l of title.letters) peak = Math.max(peak, l.hop); }); assert.ok(peak > 3, `it leaves the floor (${peak.toFixed(1)} px)`);
+    run(title, 4, { pointer: null, letterPoint: null }); assert.ok(title.letters.every(l => l.hop === 0 && l.vhop === 0), 'and lands again');
+  });
+
+  test('Reduced Motion: no lean, no sink, no swell, no hop, and no scatter, however fast the pointer', async () => {
+    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    run(title, 1.2, { pointer, letterPoint: pointer, pointerSpeed: 3000, energy: 1, reduced: true });
+    for (const l of title.letters) { assert.equal(l.rz, 0); assert.equal(l.rx, 0); assert.equal(l.swell, 0); assert.equal(l.hop, 0); assert.equal(l.vhop, 0); assert.ok(Math.abs(l.y) < 1e-9, 'not even the breathing'); }
+    assert.equal(displaced(title).length, 0, 'and the brick scatter is off too'); assert.ok([...title.letterNear].every(v => v === 0));
+  });
+
+  test('the two layers compose: a brick ends up at its letter\'s matrix (lean, sink, lift, swell) applied to its home place plus its own scatter offset', async () => {
+    const { Matrix4, Vector3 } = await import('three'); const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    run(title, 0.5, { pointer, letterPoint: pointer });
+    const moved = title.bricks.filter(b => b.kind === 0 && b.state === HOME && (b.sx || b.sy)); assert.ok(moved.length > 3, `${moved.length} bricks both scattered and carried by their letter`);
+    const m = new Matrix4(); const home = new Vector3(); const expected = new Vector3(); const cell = title.layout.cell;
+    let posed = 0;
+    for (const b of title.bricks) {
+      if (b.kind !== 0 || b.state !== HOME) continue;
+      const l = title.letters[b.letter];
+      title.homeWorld(b, home, 0); title.mesh.getMatrixAt(b.i, m);
+      if (Math.abs(l.rz) < 1e-4 && !(b.sx || b.sy) && Math.abs(l.swell) < 1e-4) assert.ok(Math.abs(m.elements[12] - home.x) < 1e-2 && Math.abs(m.elements[13] - home.y) < 1e-2, `brick ${b.i}: at its home place when neither layer moves it`);
+      if (b.sx || b.sy) {
+        // the drawn place = the letter's matrix on (home + the scatter offset along the pointer's axes), and the letter is leaning, so it differs from a straight shift
+        const pos = new Vector3().setFromMatrixPosition(m);
+        assert.ok(Math.hypot(pos.x - home.x, pos.y - home.y) > 0.5 * cell, `brick ${b.i}: the scatter is in the picture (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}) vs home (${home.x.toFixed(1)}, ${home.y.toFixed(1)})`);
+        if (Math.abs(l.rz) > 0.01 || Math.abs(l.swell) > 0.01) posed += 1;
+      }
+    }
+    assert.ok(posed > 2, `${posed} scattered bricks ride a letter that is leaning or swelling: the two layers are in the same picture`);
+  });
+
+  test("no feedback loop: the scatter measures from each brick's rest place and nothing else, so a hopping or leaning letter changes neither which bricks it picks nor by how much", async () => {
+    const { Vector3 } = await import('three'); const { offsetFromPointer } = await import('./../client3d/hover.js'); const { SCATTER } = await load('brick-scatter.js');
+    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    const radius = SCATTER.radiusBricks * title.layout.brickLength; const q = new Vector3(); const off = { dx: 0, dy: 0 };
+    const pick = () => { const set = new Set(); for (const l of title.letters) for (const b of l.bricks) { if (b.state !== HOME) continue; title.restWorld(b, q, 0); offsetFromPointer(pointer, q.x, q.y, q.z, off); if (Math.hypot(off.dx, off.dy) < radius) set.add(b.i); } return set; };
+    const before = pick(); assert.ok(before.size > 3, `${before.size} bricks in reach`);
+    // the letters move every way they can: leaning, sinking, swelling, and one kicked up off its base
+    run(title, 0.6, { pointer, letterPoint: pointer, pointerSpeed: 1200 }); title.letters[2].hop = 40; title.letters[3].hop = 55;
+    run(title, 1 / 60, { pointer, letterPoint: pointer, pointerSpeed: 1200 });
+    assert.ok(title.letters.some(l => Math.abs(l.rz) > 0.01), 'sanity: the letters really are leaning');
+    assert.ok(title.letters.some(l => l.hop > 1 && Math.abs(l.rx) > 0.001), 'sanity: and off their base, tipped back');
+    const after = pick(); assert.deepEqual([...after].sort((a, b) => a - b), [...before].sort((a, b) => a - b), 'exactly the same bricks are in reach, whatever the letters are doing');
+    // a lean that WOULD have moved a brick if it had been measured from the posed home: the rest measure keeps it put
+    const posed = (() => { const set = new Set(); for (const l of title.letters) for (const b of l.bricks) { if (b.state !== HOME) continue; title.homeWorld(b, q, 0); offsetFromPointer(pointer, q.x, q.y, q.z, off); if (Math.hypot(off.dx, off.dy) < radius) set.add(b.i); } return set; })();
+    assert.notDeepEqual([...posed].sort((a, b) => a - b), [...before].sort((a, b) => a - b), 'sanity: the posed home would have picked differently, so this is a real test of the measure');
+    // and what the scatter stores agrees with it: every active brick is inside the radius from its rest place
+    assert.ok(title.scatterActive.size > 3, `${title.scatterActive.size} bricks scattered`);
+    for (const b of title.scatterActive) { title.restWorld(b, q, 0); offsetFromPointer(pointer, q.x, q.y, q.z, off); assert.ok(Math.hypot(off.dx, off.dy) < radius + 1e-6, `brick ${b.i} was inside the radius from its rest place (${Math.hypot(off.dx, off.dy).toFixed(1)} of ${radius.toFixed(1)})`); }
+  });
+
+  test('an idle title does no work: at rest the springs are asleep and the wall is never recomposed (only the letters taking a breathing step are), and under Reduced Motion it touches nothing at all', async () => {
+    const title = await make(); run(title, 2); assert.ok(title.letterActivity <= title.letters.length, `${title.letterActivity} legs at rest: the breathing only, never the springs`); assert.ok(title.letters.every(l => l.rz === 0 && l.rx === 0 && l.hop === 0), 'every letter at rest, only breathing');
+    let worst = 0; run(title, 2, {}, () => { worst = Math.max(worst, title.letterActivity); }); assert.ok(worst <= title.letters.length, `${worst} legs in a single idle frame`);
+    let writes = 0; const setMatrixAt = title.mesh.setMatrixAt.bind(title.mesh); title.mesh.setMatrixAt = (...a) => { writes += 1; return setMatrixAt(...a); };
+    // what actually goes to the GPU, in bricks: the breathing sends one letter's bricks; only the idle sway (the tiers, which carry the wall) sends all of it
+    let sent = 0; const addRange = title.mesh.instanceMatrix.addUpdateRange.bind(title.mesh.instanceMatrix); title.mesh.instanceMatrix.addUpdateRange = (start, count) => { sent += count / 16; return addRange(start, count); };
+    const wall = title.bricks.filter(b => b.kind === 0).length; const widest = Math.max(...title.letters.map(l => l.bricks.length));
+    let most = 0; const per = []; const sentPer = [];
+    run(title, 4, {}, () => { const w = writes; const s0 = sent; run(title, 1 / 60); per.push(writes - w); sentPer.push(sent - s0); most = Math.max(most, sent - s0); });
+    let composed = 0; run(title, 2, {}, () => { composed += title.composed; }); // (bricks the frame even looked at)
+    assert.ok(composed / 120 < wall, `${(composed / 120).toFixed(0)} bricks composed a frame on average, under the wall (${wall}): the breathing is a letter's worth, and the sway a few frames a second`);
+    const full = sentPer.filter(v => v >= wall - 2).length / 4; // (a frame that re-sent the whole wall, per second)
+    sentPer.sort((a, b) => a - b);
+    // (the breathing is the one thing left alive: a step a letter every few frames, and a step is that letter's own bricks, never the wall)
+    assert.ok(full <= 12, `no 60 Hz wall: at most a dozen full sends a second, from the idle sway (${full.toFixed(1)}/s)`);
+    assert.ok(sentPer[Math.floor(sentPer.length / 2)] < wall / 3, `and a typical idle frame sends a third of the wall or less (${sentPer[Math.floor(sentPer.length / 2)]} of ${wall})`);
+    assert.ok(sent / 240 < wall, `${(sent / 240).toFixed(0)} bricks' worth a frame on average, under the wall (${wall})`);
+    assert.ok(sent > 0, 'and it is sent as runs, not skipped');
+    assert.ok(most < wall + 16, `no frame sends more than the wall (${most})`);
+    // the pointer far from the title: still nothing
+    const { Vector3 } = await import('three'); const far = { point: new Vector3(5000, 5000, 0), right: new Vector3(1, 0, 0), up: new Vector3(0, 1, 0) };
+    const before = writes; run(title, 1, { pointer: far, letterPoint: far }); assert.ok((writes - before) / 60 < wall * 1.2, `a pointer on the far side of the world costs no more than breathing (${((writes - before) / 60).toFixed(0)} bricks a frame)`); assert.equal(Math.max(...title.letterNear), 0, 'and no letter reacts to it');
+    // and with the breathing off (Reduced Motion) it is literally nothing
+    const calm = await make(); run(calm, 3, { reduced: true, letterPoint: null, pointer: null });
+    let cw = 0; const cset = calm.mesh.setMatrixAt.bind(calm.mesh); calm.mesh.setMatrixAt = (...a) => { cw += 1; return cset(...a); };
+    let cu = 0; let cneeds = calm.mesh.instanceMatrix.needsUpdate; Object.defineProperty(calm.mesh.instanceMatrix, 'needsUpdate', { configurable: true, get: () => cneeds, set: v => { cu += 1; cneeds = v; } });
+    run(calm, 3, { reduced: true, letterPoint: null, pointer: null });
+    assert.equal(cw, 0, 'Reduced Motion, at rest: not one matrix'); assert.equal(cu, 0, 'and not one upload'); assert.equal(calm.letterActivity, 0, 'every letter asleep');
   });
 
   test('Reduced Motion shows none of it (and ends it at once); Superglue holds the bricks; a blown-up title has nothing to scatter', async () => {
     const calm = await make(); run(calm, 0.3); const { point } = await aimAt(calm); const pointer = await frameAt(point);
-    run(calm, 1, { pointer, reduced: true }); assert.equal(displaced(calm).length, 0, 'Reduced Motion: nothing moves');
-    const title = await make(); run(title, 0.3); run(title, 0.8, { pointer }); assert.ok(displaced(title).length > 5); run(title, 1 / 60, { pointer, reduced: true }); assert.equal(displaced(title).length, 0, 'switched on mid-way: the very next frame'); assert.equal(title.scatterActive.size, 0);
-    const glued = await make(); run(glued, 0.3); const effect = { id: 'superglue', elapsed: 1.5, remaining: 3, duration: 4.4, dir: 1, n: 77 }; run(glued, 0.6, { pointer, effect }); assert.ok(glued.pose.glue > 0.9); assert.equal(displaced(glued).length, 0, 'the glued wall does not give way');
-    const boom = await make(); run(boom, 0.3); run(boom, 0.6, { pointer }); boom.explode(1); run(boom, 0.2, { pointer }); assert.equal(boom.scatterActive.size, 0); assert.equal(displaced(boom).length, 0);
+    run(calm, 1, { ...aim(calm, pointer, true), reduced: true }); assert.equal(displaced(calm).length, 0, 'Reduced Motion: nothing moves');
+    const title = await make(); run(title, 0.3, { pointer, letterPoint: pointer }); run(title, 0.8, { pointer, letterPoint: pointer }); assert.ok(displaced(title).length > 5); run(title, 1 / 60, { ...aim(title, pointer, true), reduced: true, pointer: null }); assert.equal(displaced(title).length, 0, 'switched on mid-way: the very next frame'); assert.equal(title.scatterActive.size, 0);
+    const glued = await make(); run(glued, 0.3); const effect = { id: 'superglue', elapsed: 1.5, remaining: 3, duration: 4.4, dir: 1, n: 77 }; run(glued, 0.6, { effect, pointer, letterPoint: pointer }); assert.ok(glued.pose.glue > 0.9); assert.equal(displaced(glued).length, 0, 'the glued wall does not give way');
+    const boom = await make(); run(boom, 0.3); run(boom, 0.6, { pointer, letterPoint: pointer }); boom.explode(1); run(boom, 0.2, { pointer, letterPoint: pointer }); assert.equal(boom.scatterActive.size, 0); assert.equal(displaced(boom).length, 0);
   });
 
   test('the arrival wave, the click-to-poke knockout and the rebuild are untouched: a poked brick leaves the scatter at once and comes home clean', async () => {
-    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point);
+    const title = await make(); run(title, 0.3); const { point } = await aimAt(title); const pointer = await frameAt(point); Object.assign(title, aim(title, pointer));
     title.wave(0, 1500); let hop = 0; run(title, 0.8, {}, () => { for (const l of title.letters) hop = Math.max(hop, l.hop); }); assert.ok(hop > 1, `the arrival wave still hops the letters (${hop.toFixed(1)})`);
-    run(title, 0.8, { pointer }); assert.ok(displaced(title).length > 5);
-    const out = title.knock(point, 60, { max: 40 }); assert.ok(out > 8, `${out} bricks knocked out`); run(title, 0.2, { pointer });
+    run(title, 0.8, { pointer, letterPoint: pointer }); assert.ok(displaced(title).length > 5);
+    const out = title.knock(point, 60, { max: 40 }); assert.ok(out > 8, `${out} bricks knocked out`); run(title, 0.2, { pointer, letterPoint: pointer });
     for (const b of title.bricks) if (b.kind === 0 && b.state !== HOME) assert.ok(b.sx === 0 && b.sy === 0 && b.sp === null && !title.scatterActive.has(b), 'a loose brick takes no part in the scatter');
     assert.ok(title.bricks.some(b => b.state === LOOSE), 'and they really are loose');
     run(title, 8); assert.equal(title.bricks.filter(b => b.kind === 0 && b.state === HOME).length, title.bricks.filter(b => b.kind === 0).length, 'every brick is back in the wall'); assert.equal(displaced(title).length, 0); assert.equal(title.scatterActive.size, 0);
@@ -609,9 +774,15 @@ describe('the stage hooks, the worlds and the wiring', () => {
     assert.match(index, /function disable\(remember\) \{[\s\S]*?if \(pixel\) \{ pixel\.dispose\(\); pixel = null; \}[\s\S]*?stage\.dispose\(\)/); assert.match(index, /stage\.gridTrail = \(\) => Boolean\(pixel && pixel\.trailActive\)/);
     assert.match(stage, /if \(!\(this\.gridTrail && this\.gridTrail\(\)\)\) for \(let n = hover\.sparks\(dt, this\.pointer\.speed, reduced\); n > 0; n -= 1\) this\.sparkle\(frame\);/);
     assert.match(stage, /this\.groundRipple\(0\.7\)/, 'the floor ripples stay'); assert.match(stage, /light\.intensity = e \* this\.cursorLightPower/, 'and so does the warm light');
-    assert.match(stage, /p\.buttons = event\.buttons \|\| 0;/, 'the stage knows when any button is down'); assert.match(stage, /handleUp\(event, cancelled = false\) \{\s*this\.pointer\.buttons = event\.buttons \|\| 0;/, 'and when the last one comes up, even if the pointer does not move after it'); assert.match(stage, /title\.update\(dt, this\.time, \{ pointer: p\.buttons \? null : pointer, reduced,/, 'and the title scatter waits for it (a middle press included)');
+    assert.match(stage, /p\.buttons = event\.buttons \|\| 0;/, 'the stage knows when any button is down'); assert.match(stage, /handleUp\(event, cancelled = false\) \{\s*this\.pointer\.buttons = event\.buttons \|\| 0;/, 'and when the last one comes up, even if the pointer does not move after it'); assert.match(stage, /title\.update\(dt, this\.time, \{ pointer: pointerNow, pointerSpeed: p\.speed, reduced,/, 'and the title scatter waits for it (a middle press included)');
     assert.match(stage, /tick: this\.patternSeconds\(\)/); assert.match(stage, /faceYaw: this\.facing, hover: this\.voteHover \}/); assert.match(worlds, /ground\.userData\.update\(time \+ tick\)/); assert.match(worlds, /burst\.material\.uniforms\.uTime\.value = time \+ tick;/); assert.match(worlds, /decor\.update\(\{ time, dt, focusY, altitude, dim, tick \}\)/);
-    assert.doesNotMatch(hover, /pixel|gridTrail/i, 'hover.js is not touched'); assert.match(title, /updateScatter\(dt, pointer, reduced\)/); assert.doesNotMatch(title, /smoothstep\(190, 0, d\)/, 'the old near-pointer reaction is gone'); assert.match(title, /wave\(originX = 0, speed = 1500\)/); assert.match(title, /knock\(point, radius = 58/);
+    assert.doesNotMatch(hover, /pixel|gridTrail/i, 'hover.js is not touched'); assert.match(title, /updateScatter\(dt, pointer, reduced\)/);
+    // (the two layers are wired together: the stage hands over one pointer frame and the sweep's speed, and the title passes it to the letters)
+    assert.match(stage, /title\.update\(dt, this\.time, \{ pointer: pointerNow, pointerSpeed: p\.speed, reduced, energy: hover\.energy/, 'the stage gives the title the pointer and the speed of the sweep');
+    assert.match(stage, /const pointerNow = p\.buttons \? null : pointer;/, 'and nothing reacts while a button is held');
+    assert.match(title, /this\.letterPoint = pointer && !reduced \? pointer : null;/, 'the title keeps the one frame both layers read, dropping it under Reduced Motion');
+    assert.match(title, /sampleLetters\(letters, this\.letterPoint, centers, \{ pointerSpeed, energy, reduced/, 'and the letters get the speed and the energy the scatter does');
+    assert.match(read('letter-reaction.js'), /export const LETTER_REACTION = Object\.freeze\(\{\s*strength: 1,/, 'the letter reaction is back, with its one strength constant'); assert.match(title, /wave\(originX = 0, speed = 1500\)/); assert.match(title, /knock\(point, radius = 58/);
     assert.match(read('icon-voxel.js'), /holder\.userData\.mesh = mesh; holder\.userData\.bricks = bricks;/); assert.match(read('candidates.js'), /new PaletteWave\(icon\.userData\.bricks\)/);
   });
 });

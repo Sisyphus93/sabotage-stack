@@ -161,14 +161,25 @@ is in pure, unit-tested modules; `pixel-ui.js` (`installPixelUi({ doc, win })` -
 | **Wordmark jitter** | hover swaps the brand's text for an `aria-hidden` SVG of pixel rects (the text rasterised in the theme's font, 2 px cells, hard text shadow kept) for three 60 ms ticks: two knock every rect a cell off, the third puts them back exactly, then the real text returns | `pixel-wordmark.js`, `pixel-ui.js` |
 | **Palette wave** | hovering (or keyboard-focusing) a vote row sweeps a wave over that candidate's block sculpture, top-left to bottom-right in 360 ms, trading its two most common colours (the raised ink lines never change); leaving sweeps it back | `palette-wave.js`, `candidates.js`; `VoxelIcons.build` exposes `userData.mesh` / `bricks` |
 | **Pattern tick** | on a menu screen, a primary button under the pointer nudges the Sunset floor grid / the Prime Time sunburst forward in three jumps 85 ms apart (both run on one time value, so the jump is an offset added to it: `world.update({ tick })`; no shader is touched) | `pattern-tick.js`, `Stage.tickPattern` |
-| **Title scatter** | bricks within three brick widths of the pointer are pushed radially outward by up to 1.5 cells on the damped spring `v = (v + (target - x) * 0.12) * 0.8`; what is drawn is that position rounded to whole cells on a fixed 30 Hz tick; only the letters near the pointer are visited and it sleeps once every brick is home. It replaces the old smooth ripple / lean / swell; the arrival wave, the poke and `titlePose` are untouched | `brick-scatter.js`, `TitleStack.updateScatter` |
+| **Title scatter** | bricks within three brick widths of the pointer are pushed radially outward by up to 1.5 cells on the damped spring `v = (v + (target - x) * 0.12) * 0.8`; what is drawn is that position rounded to whole cells on a fixed 30 Hz tick; only the letters near the pointer are visited and it sleeps once every brick is home. The detail layer; the letter reaction below runs underneath it. The arrival wave, the poke and `titlePose` are untouched | `brick-scatter.js`, `TitleStack.updateScatter` |
+| **Title letters** | the smooth layer, restored from before the scatter: a letter within 190 px of the pointer (measured across the screen) leans away from it (`rz` up to 0.16 rad), sinks back (`rx` 0.1) and swells up to 5 %, each on a damped spring (`k` 150, `c` 10); a pointer faster than 700 px/s over a letter near it makes that letter hop (`v` up to 420) with a kick of 2.4 rad/s, gravity 2400 and a 0.3 bounce. It is never quantised: it eases, frame by frame. The idle breathing (0.8 px) and the HoverField ripple (2.4 px) are the old formulas too. `LETTER_REACTION.strength` is the one knob (0 off, 1 as restored, 2 twice as much) and it does not touch the scatter | `letter-reaction.js`, `TitleStack.updateLetters` |
+
+**Two layers, one title.** The letters and the scatter read the same pointer frame and the same HoverField energy in the same tick. A brick is
+drawn at its letter's matrix (lean, sink, hop, swell) applied to its home place plus its own scatter offset, in whole cells along the screen's axes.
+The scatter measures every brick from its **rest** place (the letters at rest; only the tiers, which really move the wall, kept): a brick drifting
+because its letter leans can never change which bricks the scatter picks, so there is no feedback loop between the layers.
+**What an idle title costs.** Only the bricks that can have changed are composed: those riding a letter that took a step (its lean, its breathing,
+its hop, its bricks' own scatter all ride that one matrix) and those the scatter is pushing or has just let go of. A brick whose 16 numbers are
+unchanged is not written, and what is written is sent to the GPU as runs, so a breathing letter uploads a letter's worth rather than all 660. The
+frames that still walk the whole wall are the ones the idle sway moves the tiers on, and that steps a few times a second, not sixty. With no
+pointer and Reduced Motion the title composes nothing and uploads nothing at all.
 
 **When.** The trail, the jitter and the tick are for menu-type screens (home and how-to-play, lobby, results, podium) and for a *paused* round
 (`pixel-gate.js`); they are off while a round is live, and only the CSS hovers apply. The palette wave is the exception: its vote rows exist only
 during a live vote, so it is gated by Reduced Motion and by the row being enabled, not by the screen. Nothing reacts while a mouse button is down.
 **Input is never touched**: every listener is passive, nothing is prevented or captured, the overlay is `pointer-events: none`.
 **Reduced Motion** (`html[data-motion="reduced"]`, read at the moment of use, so it can flip mid-session and follows a room's setting): no trail,
-no jitter, no tick, no scatter (bricks go home at once), and hover fills simply resolve (the wipe's transitions are instant); the palette wave
+no jitter, no tick, no scatter (bricks go home at once), no lean, sink, swell, hop, breathing or ripple, and hover fills simply resolve (the wipe's transitions are instant); the palette wave
 swaps at once. **Touch** gets none of it (the CSS is inside `(hover: hover) and (pointer: fine)`, the script ignores non-mouse pointers).
 Mark anything the trail must not draw over with `data-no-trail` (text fields and selects are skipped already). The overlay is mounted in the
 fullscreen element, or in an open modal dialog (the top layer would hide it otherwise), or on the page.
