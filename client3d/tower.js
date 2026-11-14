@@ -9,6 +9,9 @@ import { clamp, damp, rng, sign, hexToRgb01 } from './util.js';
 export const levelY = level => level * BLOCK_H + BLOCK_H / 2;
 export const boardX = x => x - BOARD_W / 2;
 const MAX_BODIES = 70;
+// The moving block counts as gone below this opacity, exactly as the flat renderer draws nothing at or under it (Peekaboo).
+export const MOVER_MIN_ALPHA = 0.01;
+const EDGE_OPACITY = 0.85; // the Sunset outline of a block
 
 export class Tower {
   constructor(kit, fx, { scale = 1, depth = BLOCK_D, name = '', color = '#2F8478', interactive = false } = {}) {
@@ -156,12 +159,16 @@ export class Tower {
       if (this.mover) this.body.remove(this.mover);
       if (this.moverMaterial) this.moverMaterial.dispose();
       this.moverMaterial = this.kit.uniqueMaterial(color);
+      // Born transparent, and it stays so. three compiles a material whose `transparent` is false into an OPAQUE shader (the fragment alpha is forced
+      // to 1) and does not rebuild it when the flag is flipped later, so a block first drawn while it was visible could never fade out again: Peekaboo only
+      // worked on the blocks that happened to spawn in the hidden half of its cycle. The fade is done with `opacity` and `visible` alone.
+      this.moverMaterial.transparent = true;
       this.mover = new THREE.Mesh(this.kit.geometry(baseWidth, this.depth), this.moverMaterial);
       this.mover.castShadow = true; this.mover.receiveShadow = true;
       const quant = this.mover.geometry.parameters ? this.mover.geometry.parameters.width : baseWidth;
       this.mover.userData = { color, theme: this.kit.theme, baseW: quant, level: m.level };
       if (this.kit.theme === 'sunset') {
-        const edges = new THREE.LineSegments(this.kit.edges(quant, this.depth), new THREE.LineBasicMaterial({ color: this.kit.palette.ink, transparent: true, opacity: 0.85 }));
+        const edges = new THREE.LineSegments(this.kit.edges(quant, this.depth), new THREE.LineBasicMaterial({ color: this.kit.palette.ink, transparent: true, opacity: EDGE_OPACITY }));
         this.mover.add(edges); this.mover.userData.edges = edges;
       }
       this.body.add(this.mover);
@@ -169,7 +176,7 @@ export class Tower {
       this.portalClones.length = 0;
       this.rig.attachMover(this.mover);
     }
-    const mover = this.mover; mover.visible = true;
+    const mover = this.mover;
     const windup = effectId === 'slowmo' && state.helpers ? state.helpers.slowToDartWindup(state.effect.elapsed) : 0;
     const drawnWidth = m.width * (1 - 0.08 * windup);
     const drawnLeft = m.left + (m.width - drawnWidth) / 2;
@@ -180,9 +187,12 @@ export class Tower {
     mover.scale.set(drawnWidth / mover.userData.baseW, 1 + 0.06 * windup, 1);
     mover.position.set(boardX(drawnLeft + drawnWidth / 2), targetY, 0);
     mover.userData.alpha = alpha; mover.userData.drawnWidth = drawnWidth; mover.userData.drawnLeft = drawnLeft;
+    // Peekaboo: below 1 % the block is not drawn at all, and neither are its Sunset outline (a child of the mesh), its shadow or its reflection; in the
+    // 40 ms fades the block and the outline are translucent together. Nothing else marks where it is (the flat view has no marker either).
     const mat = this.moverMaterial;
-    const hidden = alpha < 0.999;
-    mat.transparent = hidden; mat.opacity = alpha; mat.depthWrite = !hidden;
+    mover.visible = alpha > MOVER_MIN_ALPHA;
+    mat.opacity = alpha; mat.depthWrite = alpha >= 0.999;
+    if (mover.userData.edges) mover.userData.edges.material.opacity = EDGE_OPACITY * alpha;
     mover.castShadow = alpha > 0.55 && effectId !== 'spotlight';
     // drunk: a loose, wobbling roll
     mover.rotation.z = effectId === 'drunk' && !this.reduced ? Math.sin(time * 5.2) * 0.07 + Math.sin(time * 2.3) * 0.04 : 0;

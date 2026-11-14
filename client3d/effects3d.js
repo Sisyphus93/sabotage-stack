@@ -293,21 +293,8 @@ const BUILDERS = {
     };
   },
 
-  peekaboo(rig) {
-    const group = new THREE.Group(); const p = rig.palette;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.03, 6, 48), additive(p.teal, 0.6)); group.add(ring);
-    return {
-      group,
-      update({ mover, effect, moving, helpers, time, reduced }) {
-        group.visible = Boolean(mover && mover.visible); if (!group.visible) return;
-        const alpha = mover.userData.alpha;
-        ring.scale.set(mover.userData.drawnWidth / 2 + 14, 20, 1); ring.position.set(mover.position.x, mover.position.y, FRONT);
-        ring.material.opacity = (1 - alpha) * 0.75;
-        if (!reduced && alpha < 0.5 && Math.random() < 0.35) rig.emit(v(mover.position.x + (Math.random() - 0.5) * mover.userData.drawnWidth, mover.position.y + (Math.random() - 0.5) * 14, FRONT), { vel: [0, 12, 0], color: rgb(p.teal), size: 3.4, life: 0.7, alpha: 0.7, drag: 1 });
-      },
-      dispose() { ring.geometry.dispose(); ring.material.dispose(); }
-    };
-  },
+  // Peekaboo has no builder on purpose: while the block is hidden nothing may be drawn where it is. A ring or sparks at the block gave its place away
+  // (the flat view draws no marker either); the fade itself is Tower.syncMover's job. EffectRig skips ids without a builder.
 
   zoom(rig) {
     const group = new THREE.Group(); const p = rig.palette;

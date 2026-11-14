@@ -186,6 +186,10 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
   Earthquake shakes it, Spotlight drops a dark veil over the whole view with one lit circle on the tower's beam (the name lands first,
   then the dark closes in as an iris, and the emblem keeps a pool of light of its own), Portal adds two swirling gates, Turbo
   smears, Drunk wobbles, and so on. Accordion works as in the game and has no special 3D cue.
+  Peekaboo hides the moving block exactly as the flat view does (opacity from the shared `peekabooOpacity` rule, not drawn at all below 1 %,
+  and its Sunset outline, shadow and reflection go with it) and marks nothing where it went: no ring, no sparks. The block's material is
+  transparent from the moment it is made, because three bakes that flag into the shader and never rebuilds it when it is flipped later
+  (a block first drawn while visible could then never fade). `test/peekaboo3d.test.js` guards both.
 
 ## What is in 3D
 
