@@ -287,7 +287,7 @@ export class TitleStack {
       const w = wave ? wave(i, n) : null; const wHop = w ? w.y : 0; const wRz = w ? w.rz : 0;
       const breatheLeg = l.breathe; const rippleLeg = l.ripple;
       // asleep, in every way: no wave, no poke or sabotage spring, no lean or sink, no hop, and nothing visible of the breathing, the ripple or the push
-      if ((this.letterNear[i] || 0) < 1e-3 && Math.abs(l.swellTarget) < 1e-3 && !w && l.waveDelay < 0 && l.vis === 1 && l.vhop === 0 && l.vrz === 0 && l.vrx === 0 && Math.abs(l.rz) < 1e-4 && Math.abs(l.rx) < 1e-4 && Math.abs(l.hop) < 0.01 && Math.abs(l.push) * R.strength < 0.01) {
+      if ((this.letterNear[i] || 0) < 1e-3 && Math.abs(l.swellTarget) < 1e-3 && !w && l.waveDelay < 0 && l.visTarget === 1 && l.vis === 1 && l.vhop === 0 && l.vrz === 0 && l.vrx === 0 && Math.abs(l.rz) < 1e-4 && Math.abs(l.rx) < 1e-4 && Math.abs(l.hop) < 0.01 && Math.abs(l.push) * R.strength < 0.01) {
         const before = l.rz !== 0 || l.rx !== 0 || l.hop !== 0 || l.swell !== 0;
         l.swell = damp(l.swell, 0, R.swellDamp, dt); if (l.swell < 1e-4) l.swell = 0;
         if (l.vis !== 1) { l.visTarget = 1; l.vis = damp(l.vis, l.visTarget, 40, dt); } // (a knockout fading back in, and nothing else)
@@ -307,7 +307,7 @@ export class TitleStack {
       if (Math.abs(l.rz) < 1e-6 && Math.abs(l.vrz) < 1e-6 && Math.abs(l.tz) < 1e-6) { l.rz = 0; l.vrz = 0; } // (a spring that has all but settled is settled: an exponential tail is never exactly zero)
       if (Math.abs(l.rx) < 1e-6 && Math.abs(l.vrx) < 1e-6 && Math.abs(l.tx) < 1e-6) { l.rx = 0; l.vrx = 0; }
       if (l.vhop !== 0 || l.hop !== 0) { const fall = l.vhop; l.vhop -= R.hopGravity * dt; l.hop += l.vhop * dt; if (l.hop < 0) { if (fall < -R.hopBounceMin) l.vhop = -fall * R.hopBounce; else { l.hop = 0; l.vhop = 0; } } } // (testing the fall's own speed, as the old code did: 160 px/s)
-      if (l.vis !== 1) { l.visTarget = 1; l.vis = damp(l.vis, l.visTarget, 40, dt); }
+      l.visTarget = w && w.vis !== undefined ? w.vis : 1; l.vis = damp(l.vis, l.visTarget, 40, dt); // (Peekaboo hides letters: the pose sets how visible each one is)
       l.y = l.hop + breatheLeg + rippleLeg + l.push * 0.4 * R.strength + (w ? w.y : 0); l.lastY = l.y;
       l.zr = l.rz + wRz; l.xr = l.rx; legs += 1; moved[i] = 1;
     }
