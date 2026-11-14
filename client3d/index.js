@@ -7,6 +7,7 @@ import { snapshotTower } from './snapshot.js';
 import { createOnceSoon } from './once-soon.js';
 import { installTactileUi } from './tactile.js';
 import { installIconTurn } from './icon-turn.js';
+import { installPixelUi } from './pixel-ui.js';
 
 const VIEW_KEY = 'sabotage-stack-view-v1';
 
@@ -21,7 +22,7 @@ function boot() {
   let wanted = forcedOff ? 'flat' : params.get('3d') === 'on' ? '3d' : storedView();
   const supported = webglSupported();
   const doc = document; const root = doc.documentElement;
-  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null; let iconTurn = null;
+  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null; let iconTurn = null; let pixel = null;
 
   const toggle = doc.createElement('button');
   toggle.type = 'button'; toggle.id = 'view-toggle'; toggle.className = 'button view-toggle';
@@ -66,6 +67,8 @@ function boot() {
     }
     root.classList.add('has-3d'); host.setActive(true); syncToggle(true);
     tactile = installTactileUi({ doc, win: window }); iconTurn = installIconTurn({ doc });
+    pixel = installPixelUi({ doc, win: window, hooks: { onVoteHover: index => { if (stage) stage.setVoteHover(index); }, onPrimaryHover: () => { if (stage) stage.tickPattern(); } } });
+    stage.gridTrail = () => Boolean(pixel && pixel.trailActive); // one trail, not two: the stage's sparkles step aside while the grid trail is on
     window.__stack3d = stage; cancelAnimationFrame(raf); raf = requestAnimationFrame(tick);
     return true;
   }
@@ -74,6 +77,7 @@ function boot() {
     cancelAnimationFrame(raf); iconBake.cancel();
     if (tactile) { tactile.dispose(); tactile = null; }
     if (iconTurn) { iconTurn.dispose(); iconTurn = null; }
+    if (pixel) { pixel.dispose(); pixel = null; }
     if (stage) { try { stage.dispose(); } catch (_) { /* context already gone */ } }
     if (canvas) canvas.remove();
     stage = null; canvas = null; iconTheme = ''; window.__stack3d = null;

@@ -3,8 +3,17 @@
 import * as THREE from 'three';
 import { clamp, damp, lerp, easeOutBack, TAU } from './util.js';
 import { dwellSpin } from './icon-voxel.js';
+import { PaletteWave } from './palette-wave.js';
 
 const SLOT = 116; // distance between candidates across the lane
+
+// The sculpture's instance colours as its palette wave has them now. Only the bricks that trade places are touched (the raised ink lines and the
+// other colours are never repainted), so a wave costs a few hundred setColorAt calls and an upload.
+const waveColor = new THREE.Color();
+export function paintWave(mesh, wave) {
+  for (let i = 0; i < wave.n; i += 1) if (wave.swappable[i]) mesh.setColorAt(i, waveColor.set(wave.colorOf(i)));
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+}
 
 // the share each candidate has of the vote (a floor keeps an empty vote from dividing by nothing)
 export function sharesOf(fractions) {
@@ -65,7 +74,9 @@ export class VoteCandidates {
       let back = null; if (this.theme !== 'paper') { back = new THREE.Mesh(this.backGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(this.palette.ink), transparent: true, opacity: 0.9, depthWrite: false, fog: false, toneMapped: false })); back.position.z = -16; body.add(back); }
       const p = plate(this.theme, shortName(this.nameOf(id)), 0, color); const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: p.texture, transparent: true, depthWrite: false, fog: false, toneMapped: false })); label.scale.set(...labelSize(this.theme), 1); label.renderOrder = 9; holder.add(label); // the plate keeps a readable size: only the sculpture grows with the vote
       body.scale.setScalar(0.0001); this.group.add(holder);
-      this.cards.push({ id, holder, body, disc, ring, icon, back, label, canvas: p.canvas, texture: p.texture, color, shown: '', scale: 0, seed: i * 2.1, fly: 0, share: 1 / 3 });
+      // a block sculpture (not the toy icon it stands in for while its artwork is still being read) can play the palette wave when its vote row is hovered
+      const wave = icon.userData && icon.userData.mesh && icon.userData.bricks ? new PaletteWave(icon.userData.bricks) : null;
+      this.cards.push({ id, holder, body, disc, ring, icon, back, label, canvas: p.canvas, texture: p.texture, color, shown: '', scale: 0, seed: i * 2.1, fly: 0, share: 1 / 3, wave });
     });
     this.open = true; this.winner = ''; this.closeT = 0;
   }
@@ -78,8 +89,9 @@ export class VoteCandidates {
     this.cards.length = 0; this.open = false;
   }
 
-  // state: { options: [ids] | null while no vote is open, fractions: [3], y, you: index | -1, winner: id | '', reduced, faceYaw, away: {x, y, z} (where a winner goes) }
-  update(dt, time, { options = null, fractions = null, y = 220, you = -1, winner = '', reduced = false, away = null, faceYaw = 0 } = {}) {
+  // state: { options: [ids] | null while no vote is open, fractions: [3], y, you: index | -1, winner: id | '', reduced, faceYaw, away: {x, y, z} (where a winner goes),
+  //          hover: the index of the vote row under the pointer or the keyboard (-1: none), whose sculpture plays its palette wave }
+  update(dt, time, { options = null, fractions = null, y = 220, you = -1, winner = '', reduced = false, away = null, faceYaw = 0, hover = -1 } = {}) {
     if (options && options.length && !this.open && !this.closing) this.build(options);
     if (options && this.open && options.join() !== this.cards.map(c => c.id).join()) { this.clear(); this.build(options); }
     if (!options && this.open) { this.open = false; this.closing = true; this.closeT = 0; this.winner = winner || this.winner; }
@@ -98,6 +110,7 @@ export class VoteCandidates {
       c.holder.position.set(px, py, pz); c.holder.rotation.y = faceYaw; c.body.scale.setScalar(Math.max(0.0001, c.scale)); c.holder.visible = c.scale > 0.01; // (turned to face an orbited camera)
       c.label.position.set(0, -34 * c.scale - 30 - (this.label[1] - 35) * 0.5, 20); const lk = Math.min(1, c.scale * 1.4); c.label.scale.set(this.label[0] * lk, this.label[1] * lk, 1);
       c.icon.rotation.y = reduced ? 0.4 : dwellSpin(time + c.seed, 0.7 + c.share * 1.2); c.icon.rotation.x = 0.12;
+      if (c.wave) { const turned = c.wave.setHover(this.open && hover === i, time, { immediate: reduced }); if (c.wave.update(time) || turned) paintWave(c.icon.userData.mesh, c.wave); } // Reduced Motion: the colours simply change, in setHover itself
       const leader = this.open && c.share === Math.max(...shares) && c.share > 0.38; const pulse = leader ? 0.55 + 0.35 * Math.sin(time * 6) : 0;
       c.ring.material.opacity = damp(c.ring.material.opacity, you === i ? 0.95 : pulse, 10, dt); c.ring.scale.setScalar(1 + (leader && !reduced ? 0.07 * Math.sin(time * 6) : 0));
       const percent = Math.round(c.share * 100); const key = `${percent}`;

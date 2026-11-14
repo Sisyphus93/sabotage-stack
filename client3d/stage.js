@@ -23,6 +23,7 @@ import { hasGlyphs } from './text3d.js';
 import { OrbitController } from './orbit.js';
 import { ZoomController } from './view-zoom.js';
 import { HoverField, offsetFromPointer } from './hover.js';
+import { PatternTick, TICK_STEP } from './pattern-tick.js';
 import { createOrbitHud, ZOOM_STEP } from './orbit-hud.js';
 import { Totems, totemSlot, totemHeight } from './totems.js';
 import { buildCrown, crownPose } from './crown.js';
@@ -79,6 +80,8 @@ export class Stage {
     this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
     // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
     this.orbit = new OrbitController(); this.dolly = new ZoomController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
+    // what the pixel UI (pixel-ui.js) tells the stage: whether its snapped grid trail is on, which vote row is hovered, and primary-button ticks
+    this.gridTrail = null; this.voteHover = -1; this.patternTick = new PatternTick();
     // the view the visitor made (turned, zoomed) is added on top of each scene's own camera (userView); facing = the yaw the labels, digits and plates turn by to keep facing it
     this.facing = 0; this.playHud = null; this.playHintAge = 0; this.lastRightTap = null;
     this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.lobbyHud = null; this.lobbyHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
@@ -219,7 +222,7 @@ export class Stage {
     const speed = Math.hypot(event.clientX - p.lastX, event.clientY - p.lastY) / dt * 1000;
     p.speed = Math.min(5000, Math.max(speed, p.speed * 0.6)); p.lastX = event.clientX; p.lastY = event.clientY; p.lastT = now;
     p.x = event.clientX / w * 2 - 1; p.y = -(event.clientY / h * 2 - 1); p.ndc.set(p.x, p.y); p.inside = true;
-    p.touch = event.pointerType === 'touch';
+    p.touch = event.pointerType === 'touch'; p.buttons = event.buttons || 0; // (the pixel feel waits while any button is down, a middle press included)
     p.overUi = chromeAt(event.target);
   }
 
@@ -249,6 +252,7 @@ export class Stage {
   }
 
   handleUp(event, cancelled = false) {
+    this.pointer.buttons = event.buttons || 0; // (a release with no move after it must not leave the pixel feel waiting)
     const d = this.drag; if (!d || event.pointerId !== d.id) return;
     if (event.pointerType === 'touch') this.pointer.inside = false; // a finger has no hover
     this.endDrag(cancelled, event);
@@ -683,7 +687,7 @@ export class Stage {
     // while chat votes, the three candidates hover over the tower and grow with their share
     { const vote = ballot && g.vote; const remote = Boolean(view.mp.active && g.multiplayer);
       const mine = vote && !remote && vote.votes && vote.votes.has && vote.votes.has('you') ? vote.options.indexOf(vote.votes.get('you')) : -1;
-      this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70), faceYaw: this.facing }); }
+      this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70), faceYaw: this.facing, hover: this.voteHover }); }
     // post: each sabotage has a feel
     if (!this.reduced) {
       if (effectId === 'slowmo') { this.post.desat = 0.5; this.post.tint = [0.9, 0.97, 1.12]; }
@@ -724,7 +728,7 @@ export class Stage {
   emblemLight() { const b = this.badge; if (!b) return null; return this.spotWorld(b.disc.position, 52 * Math.max(0.05, b.pop || 1), [0, 0, 1, 1]); }
 
   updateWorld(dt, focusY, altitude, view, tower) {
-    this.world.update({ time: this.time, dt, focusY, altitude, dim: 1, camera: this.camera, shadowFocus: { x: 0, y: focusY }, fogDist: this.camDist || 1000 });
+    this.world.update({ time: this.time, dt, focusY, altitude, dim: 1, camera: this.camera, shadowFocus: { x: 0, y: focusY }, fogDist: this.camDist || 1000, tick: this.patternSeconds() });
   }
 
   placeIdle(dt, view) {
@@ -790,7 +794,7 @@ export class Stage {
       this.watch(lerp(sweep, hover.x, e), lerp(title.topCenterY, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
     }
     const pointer = this.drag ? null : frame;
-    title.update(dt, this.time, { pointer, pointerSpeed: p.speed, reduced, energy: hover.energy, yaw, effect, floor: title.floor, toCamera: title.toCamera });
+    title.update(dt, this.time, { pointer: p.buttons ? null : pointer, reduced, energy: hover.energy, yaw, effect, floor: title.floor, toCamera: title.toCamera });
     this.arsenal.update(dt, this.time, reduced, { yaw, pointer, energy: hover.energy, away: title.exploded ? 1 : 0 });
     this.titleProps.update(pose, { time: this.time, layout: Lb, gateX: title.gateX, topMid: title.topCenterY, reduced });
     for (const ev of title.events.splice(0)) this.onTitleEvent(ev);
@@ -885,9 +889,15 @@ export class Stage {
     const c = Math.cos(this.orbit.yaw); const s = Math.sin(this.orbit.yaw); // into the crowd's own (turned) space
     crowd.setAttention(c * hover.x - s * hover.z, s * hover.x + c * hover.z + 260, e * 0.85, e * (hover.dwell > 1.2 ? 1 : 0.65));
     if (hover.entered) { this.title.wave(frame.point.x); crowd.cheer(0.55); this.groundRipple(1); }
-    for (let n = hover.sparks(dt, this.pointer.speed, reduced); n > 0; n -= 1) this.sparkle(frame);
+    // while the pixel UI's snapped grid trail is on, it is the trail: the sparkle stream steps aside (the light and the ripples stay)
+    if (!(this.gridTrail && this.gridTrail())) for (let n = hover.sparks(dt, this.pointer.speed, reduced); n > 0; n -= 1) this.sparkle(frame);
     if (this.pointer.speed > 340 && this.time - this.lastRipple > 0.34) { this.lastRipple = this.time; this.groundRipple(0.7); }
   }
+
+  // ---- hooks for the pixel UI: it reads the page and tells the stage (the stage never reads those DOM nodes itself)
+  setVoteHover(index) { this.voteHover = Number.isInteger(index) ? index : -1; } // the vote row under the pointer or the keyboard: that candidate's sculpture plays its palette wave
+  tickPattern() { return this.patternTick.trigger(this.time); } // a primary menu button was hovered: the backdrop's printed pattern jumps three steps
+  patternSeconds() { return this.patternTick.jumps(this.time) * (TICK_STEP[this.theme] || 0); }
 
   sparkle(frame) {
     const colors = this.sparkleColors; const c = colors[Math.floor(Math.random() * colors.length) % colors.length]; const f = this.tmpForward; const k = this.glintBoost;

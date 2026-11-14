@@ -91,6 +91,7 @@ export class VoxelIcons {
     });
     mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; mesh.castShadow = true; mesh.frustumCulled = false;
     const holder = new THREE.Group(); holder.add(mesh); holder.userData.id = id; holder.userData.voxel = true; holder.userData.size = 54;
+    holder.userData.mesh = mesh; holder.userData.bricks = bricks; // (read by candidates.js: the palette wave recolours these instances)
     holder.userData.dispose = () => { mesh.dispose(); this.live.delete(holder); }; this.live.add(holder);
     return holder;
   }

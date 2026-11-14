@@ -1,5 +1,7 @@
 // The three worlds. Each is a self-contained group (sky, lights, set dressing, crowd) built from the theme palette.
-// The shared contract: world.update({ time, dt, focusY, altitude, dim, camera }) every frame, world.dispose() on theme change.
+// The shared contract: world.update({ time, dt, focusY, altitude, dim, camera, tick }) every frame, world.dispose() on theme change.
+// `tick` (seconds, default 0) is added to the time of the two printed patterns that run on one time value and nothing else: the Sunset floor
+// grid's scroll and the Prime Time sunburst's rays. The pixel UI's primary-button hover moves it in three whole steps (pattern-tick.js).
 import * as THREE from 'three';
 import { createSky, createEnvironment, createPlinth, createGround, createMotes, cloudShape, hillGeometry, colorOf } from './world-common.js';
 import { Crowd } from './audience.js';
@@ -176,8 +178,8 @@ function primetimeDecor(root, palette) {
   disposables.push(bulbGeo, bulbMat);
   return {
     group: decor,
-    update({ time, focusY, altitude }) {
-      burst.material.uniforms.uTime.value = time; burst.position.y = 520 + focusY * 0.82; burst.rotation.z = time * 0.02;
+    update({ time, focusY, altitude, tick = 0 }) {
+      burst.material.uniforms.uTime.value = time + tick; burst.position.y = 520 + focusY * 0.82; burst.rotation.z = time * 0.02;
       wall.material.uniforms.uTime.value = time; wall.position.y = 600 + focusY * 0.9; wall.material.uniforms.uShift.value = focusY;
       truss.position.set(0, focusY + 760, -300);
       beams.forEach(b => { const u = b.userData; b.position.set(u.x, focusY + 760, -300); b.rotation.z = Math.sin(time * u.sp + u.ph) * 0.5; b.rotation.x = Math.cos(time * u.sp * 0.8 + u.ph) * 0.18; });
@@ -215,7 +217,7 @@ export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
 
   return {
     theme, root, lights, sky, plinth, ground, crowd, motes, decor, envTexture, fog, palette,
-    update({ time, dt, focusY, altitude, dim = 1, camera, shadowFocus = null, fogDist = 1000 }) {
+    update({ time, dt, focusY, altitude, dim = 1, camera, shadowFocus = null, fogDist = 1000, tick = 0 }) {
       const u = sky.material.uniforms;
       u.uAltitude.value = altitude; u.uTime.value = time; u.uDim.value = dim;
       sky.mesh.position.copy(camera.position);
@@ -232,9 +234,9 @@ export function createWorld(theme, engine, { crowdDensity = 1 } = {}) {
       lights.key.target.position.set(f0.x, f0.y, 0);
       lights.key.position.set(f0.x - 420, f0.y + 640, 760);
       lights.key.target.updateMatrixWorld(); lights.key.updateMatrixWorld();
-      ground.userData.update(time);
+      ground.userData.update(time + tick);
       motes.material.uniforms.uTime.value = time; motes.material.uniforms.uCenter.value.set(0, focusY, 0); motes.material.uniforms.uScale.value = engine.height * 0.9;
-      decor.update({ time, dt, focusY, altitude, dim });
+      decor.update({ time, dt, focusY, altitude, dim, tick });
       crowd.setCenterY(focusY); crowd.update(dt, time);
       lastDim = dim;
     },
