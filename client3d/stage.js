@@ -291,12 +291,27 @@ export class Stage {
   // Back to the default view: turned and zoomed alike.
   resetView(duration = 0.9) { this.orbit.reset(duration); this.dolly.reset(duration); this.idleFor = 0; }
 
+  // Which of the ring's 16 is under the pointer. The ring stands in depth, so the proxy nearest the CAMERA is not the one clicked: of the
+  // icons the ray actually goes through, take the one whose centre is closest to the ray (in the screen's own plane).
+  pickRing() {
+    const hits = this.raycaster.intersectObjects(this.arsenal.proxies, false);
+    let best = -1; let bestD = Infinity;
+    const c = this.ringCentre || (this.ringCentre = new THREE.Vector3()); const sc = this.ringScale || (this.ringScale = new THREE.Vector3());
+    for (const hit of hits) {
+      const o = hit.object; o.getWorldPosition(c); const r = 46 * o.getWorldScale(sc).x;
+      const d = this.raycaster.ray.distanceSqToPoint(c) / (r * r); // (in units of the proxy's own radius: screen distance, depth aside)
+      if (d <= 0.62 * 0.62 && d < bestD) { bestD = d; best = o.userData.index; }
+    }
+    if (best >= 0) return best;
+    return hits.length ? hits[0].object.userData.index : -1;
+  }
+
   handleClick(event) {
     if (this.mode !== 'hero' || !this.arsenal) return;
     if (closest(event.target, UI_SELECTOR)) return;
     this.handlePointer(event);
     this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
-    const idx = this.arsenal.pick(this.raycaster);
+    const idx = this.pickRing();
     if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); if (!this.reduced) this.title.wave(this.arsenal.items[idx].holder.position.x); return; }
     // anywhere on the title: the bricks under the pointer are knocked out (and fall back in)
     if (this.title.complete && this.title.poke(this.raycaster) > 0) { this.world.crowd.cheer(0.5); if (!this.reduced) this.title.wave(this.pointerFrame ? this.pointerFrame.point.x : 0, 1900); }
@@ -783,7 +798,7 @@ export class Stage {
     const inRect = onScene && p.lastX >= rect.x && p.lastX <= rect.x + rect.w && p.lastY >= rect.y && p.lastY <= rect.y + rect.h;
     const frame = inRect ? this.pointerOnScreenPlane(anchor, p.ndc, 0) : null; // its place on a plane through the scene that faces the camera
     let idx = -1;
-    if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.arsenal.pick(this.raycaster); }
+    if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.pickRing(); }
     if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx, yaw); } else if (idx >= 0) this.showHoverLabel(idx, yaw, true);
     const overTitle = onScene && !this.drag && idx < 0 && title.complete && this.overTitle(p.lastX, p.lastY);
     this.setCursor(this.drag ? 'grabbing' : idx >= 0 || overTitle ? 'pointer' : onScene ? 'grab' : '');

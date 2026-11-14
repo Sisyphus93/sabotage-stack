@@ -159,6 +159,36 @@ describe('chat on the title screen (TitleDirector)', () => {
   });
 });
 
+describe('picking one of the sixteen icons on the ring (stage.pickRing)', () => {
+  // The ring stands in depth: two icons can line up on the screen while one is much nearer the camera. The old pick took the nearest proxy,
+  // so clicking the far icon chose the near one (Peekaboo could not be clicked at all: a nearer icon always shadowed it). pickRing chooses by
+  // how close the ray passes to each icon's centre, on the screen, so the icon under the pointer wins wherever it stands in depth.
+  const Stage = () => { const proto = require('fs').readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8'); const body = proto.slice(proto.indexOf('  pickRing() {'), proto.indexOf('  handleClick(event) {')); return body; };
+  test('of the icons a ray passes through, the one it goes through nearest to its centre is picked, not the one nearest the camera', async () => {
+    const THREE = await import('three');
+    const method = Stage(); assert.ok(method.length > 100, 'pickRing is on the stage');
+    const body = method.slice(method.indexOf('{') + 1, method.lastIndexOf('}')); // (its body: a method declaration is not an expression)
+    assert.doesNotMatch(body, /intersectObjects\([^)]*\)\[0\]/, 'it does not just take the first (nearest) hit');
+    assert.match(body, /distanceSqToPoint/, 'it measures how near the ray passes each centre');
+    assert.match(body, /getWorldScale/, 'the proxy is scaled with the ring, so its radius is too');
+    // run the real body against two proxies in a real scene: near one at the side, far one exactly under the pointer
+    const ray = new THREE.Raycaster();
+    const nearProxy = new THREE.Mesh(new THREE.SphereGeometry(46, 8, 6)); nearProxy.userData.index = 0; nearProxy.position.set(-26, 0, 300); nearProxy.scale.setScalar(1.6);
+    const farProxy = new THREE.Mesh(new THREE.SphereGeometry(46, 8, 6)); farProxy.userData.index = 9; farProxy.position.set(0, 0, 0); farProxy.scale.setScalar(1.6);
+    const arsenal = { proxies: [nearProxy, farProxy], items: [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}] };
+    const self = { arsenal, raycaster: ray, ringCentre: new THREE.Vector3(), ringScale: new THREE.Vector3() };
+    nearProxy.updateMatrixWorld(); farProxy.updateMatrixWorld();
+    ray.set(new THREE.Vector3(0, 0, 500), new THREE.Vector3(0, 0, -1)); // straight at the far proxy
+    const hits = ray.intersectObjects(arsenal.proxies, false);
+    assert.equal(hits[0].object.userData.index, 0, 'sanity: the old first-hit rule would say the near one');
+    const pickRing = new Function('THREE', `return function pickRing() {${body}}`)(THREE);
+    assert.equal(pickRing.call(self), 9, 'and the stage picks the one under the pointer');
+    // a ray between the two picks neither's neighbour blindly: it still answers (the nearest is the fallback), never throws
+    ray.set(new THREE.Vector3(400, 400, 500), new THREE.Vector3(0, 0, -1));
+    assert.equal(pickRing.call(self), -1, 'nothing under the pointer: no sabotage');
+  });
+});
+
 describe('camera flights between screens (flight.js)', () => {
   const spec = (o = {}) => ({ ax: 0, ay: 200, az: 0, sx: 600, sy: 400, ppu: 0.7, yaw: 0, pitch: 0.1, roll: 0, ...o });
   test('a flight starts exactly where the old screen had the camera and lands exactly where the new one wants it', async () => {
@@ -265,6 +295,36 @@ describe('the title stack: bricks, rain, poke, shake, rebuild, blow up (title-st
     const title = await make('sunset', { instant: true }); assert.ok(title.marquee, 'sunset only'); assert.equal((await make('paper')).marquee, null);
     step(title, 1, { yaw: 0 }); const front = title.marquee.plateMat.opacity; step(title, 0.1, { yaw: Math.PI }); assert.ok(title.marquee.plateMat.opacity < front * 0.4, 'from behind it no longer hides the bricks');
   });
+  test('Peekaboo on the home title really hides letters a few at a time and brings them back, blinking, and ends with every one shown', async () => {
+    const title = await make('paper', { instant: true }); step(title, 0.2); assert.ok(title.complete);
+    let hidAll = 0; let showedAll = 0; let flickers = 0; let maxVis = 0; let peaked = 0; const prev = title.letters.map(() => false);
+    for (let i = 0; i < 240; i += 1) { // 4 s of the 4.4 s effect (the formula is (t * 1.5 + i * 0.37) % 1 < 0.66, so letters blink together)
+      const effect = { id: 'peekaboo', elapsed: i / 60, remaining: 4.4 - i / 60, duration: 4.4, dir: 1, n: 3 };
+      title.update(1 / 60, 1 + i / 60, { effect, floor: () => 0 });
+      const hidden = title.letters.filter(l => l.vis < 0.5).length; const shown = title.letters.filter(l => l.vis > 0.99).length;
+      if (hidden > 0) hidAll += 1; peaked = Math.max(peaked, hidden); if (shown > 0) showedAll += 1; // (at any instant some letter is out and some are in: that is the peek)
+      for (let k = 0; k < title.letters.length; k += 1) { const h = title.letters[k].vis < 0.5; if (prev[k] !== h) { flickers += 1; } prev[k] = h; }
+      maxVis = Math.max(maxVis, ...title.letters.map(l => l.vis));
+    }
+    assert.ok(hidAll > 8, `some letters hide (${hidAll} frames of 240)`);
+    assert.ok(showedAll > 8, `and letters keep coming back while it runs (${showedAll} frames with a fully shown letter)`);
+    assert.ok(flickers >= 13, `it is a peekaboo: every letter blinks, more than once each over the effect (${flickers} flips of ${title.letters.length} letters)`);
+    assert.ok(maxVis > 0.99, 'vis reaches fully on');
+    let stagger = 0; // (while the effect is at full strength the letters are out of step, a few at a time: the word stays readable)
+    for (let i = 0; i < 200; i += 1) { const effect = { id: 'peekaboo', elapsed: i / 60, remaining: 4.4 - i / 60, duration: 4.4, dir: 1, n: 5 }; title.update(1 / 60, 3 + i / 60, { effect, floor: () => 0 });
+      if (title.pose.env > 0.95) { const h = title.letters.filter(l => l.vis < 0.5).length; stagger = Math.max(stagger, h); } }
+    assert.ok(stagger > 0 && stagger < title.letters.length, `at full strength some letters are out and some are in (${stagger} of ${title.letters.length} out), never a blank word`);
+    // the bricks of a hidden letter are put away, never left where they were
+    // find a moment where letters are well hidden (the effect is staggered, so hold its own beat for a second)
+    let away = []; let trials = 0;
+    for (let i = 0; i < 120 && !away.length; i += 1) { const effect = { id: 'peekaboo', elapsed: 0.5 + i / 60, remaining: 4, duration: 4.4, dir: 1, n: 4 }; title.update(1 / 60, 4 + i / 60, { effect, floor: () => 0 }); away = title.letters.filter(l => l.vis < 0.35); trials = i; }
+    assert.ok(away.length > 0, `some letters are hidden at this instant (found after ${trials} frames)`);
+    const { Matrix4 } = await import('three'); const m = new Matrix4();
+    for (const l of away) for (const b of l.bricks.slice(0, 4)) { title.mesh.getMatrixAt(b.i, m); assert.ok(m.elements[13] < -9000, `brick ${b.i} of a hidden letter is drawn nowhere`); }
+    // it ends: every letter back to fully visible
+    step(title, 1.2); assert.ok(title.letters.every(l => l.vis > 0.99), `all back (${title.letters.map(l => l.vis.toFixed(2)).join(',')})`);
+  });
+
   test('it cleans up after itself', async () => {
     const title = await make('paper', { instant: true }); title.dispose(); assert.equal(title.mesh, null); assert.equal(title.bricks.length, 0); assert.equal(title.group.children.length, 0);
   });
