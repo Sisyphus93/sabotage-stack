@@ -37,10 +37,12 @@ export function createOrbitHud({ doc = document, storage = null, touch = false, 
   };
   hint.innerHTML = touch ? copy.touch : copy.mouse;
 
+  const listeners = [];
+  const listen = (el, handler) => { el.addEventListener('click', handler); listeners.push([el, handler]); };
   const button = (kind, label, handler, attr = 'orbit', icon = kind) => {
     const el = doc.createElement('button'); el.type = 'button'; el.className = 'button orbit-btn'; el.dataset[attr] = kind;
     el.setAttribute('aria-label', label); el.title = label; el.innerHTML = ICON[icon];
-    el.addEventListener('click', handler); return el;
+    listen(el, handler); return el;
   };
   const left = button('left', 'Turn the 3D scene left', () => onTurn(-Math.PI / 4));
   const reset = button('reset', 'Reset the 3D view', () => onReset());
@@ -55,7 +57,7 @@ export function createOrbitHud({ doc = document, storage = null, touch = false, 
   const key = (kind, full, short, title) => {
     const el = doc.createElement('button'); el.type = 'button'; el.className = 'button toy-key'; el.dataset.toy = kind; el.title = title;
     el.innerHTML = `${ICON[kind]}<span class="toy-full">${full}</span><span class="toy-short">${short}</span>`;
-    el.addEventListener('click', () => onToy(kind)); return el;
+    listen(el, () => onToy(kind)); return el;
   };
   dock.append(key('sabotage', 'Trigger sabotage', 'Sabotage', 'Let chat sabotage the title right now'));
   if (layout === 'stage') root.append(hint, row); else if (withDock) root.append(dock, row); else root.append(row);
@@ -74,6 +76,6 @@ export function createOrbitHud({ doc = document, storage = null, touch = false, 
     quiet() { root.classList.add('is-quiet'); rememberHint(storage, hintKey); },
     // The hint steps aside on its own after a while; it is only remembered for good once someone has actually dragged.
     fade() { root.classList.add('is-quiet'); },
-    dispose() { root.remove(); }
+    dispose() { for (const [el, handler] of listeners) el.removeEventListener('click', handler); listeners.length = 0; root.remove(); }
   };
 }
