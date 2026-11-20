@@ -22,6 +22,12 @@ const MESSAGE_ABUSE_CLOSE_AFTER = 400;
 // null and every connection shares the single legacy bucket, so reconnecting still cannot reset the budget.
 const JOIN_FAILURE_LIMIT = 60;
 const JOIN_FAILURE_WINDOW_MS = 60_000;
+// A real client changes its motion preference when the OS setting or the menu changes, a handful of times per
+// session. Anything faster is either a fight over the toggle or an attempt to amplify traffic.
+const PREFERENCE_BURST = 5;
+const PREFERENCE_REFILL_PER_SECOND = 2;
+// Shared buckets are pruned by age; a stale entry is only ever a few hundred bytes and is dropped on write.
+const KEYED_BUDGET_IDLE_MS = 5 * 60 * 1000;
 const JOIN_FAILURE_MAX_KEYS = 10_000;
 const SHARED_CLIENT_KEY = '__shared__';
 // Rooms one client may hold open, and how many it may create in a window. Skipped while the client key is unknown.
@@ -48,9 +54,14 @@ function uniqueDisplayName(value, players) {
 }
 
 function safeSend(socket, message) {
+  return safeSendRaw(socket, JSON.stringify(message));
+}
+
+// The same guard, for a text that was serialised once for many recipients.
+function safeSendRaw(socket, text) {
   if (!socket || typeof socket.send !== 'function' || socket.readyState === 2 || socket.readyState === 3) return false;
   try {
-    socket.send(JSON.stringify(message));
+    socket.send(text);
     return true;
   } catch (_) {
     return false;
@@ -58,7 +69,7 @@ function safeSend(socket, message) {
 }
 
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS, preferenceBurst = PREFERENCE_BURST, preferenceRefillPerSecond = PREFERENCE_REFILL_PER_SECOND } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
@@ -73,6 +84,10 @@ class RoomManager {
     this.roomsPerClient = Math.max(1, roomsPerClient);
     this.roomCreateLimit = Math.max(1, roomCreateLimit);
     this.roomCreateWindowMs = Math.max(1, roomCreateWindowMs);
+    this.preferenceBurst = Math.max(1, preferenceBurst);
+    this.preferenceRefillPerSecond = Math.max(0, preferenceRefillPerSecond);
+    this.preferenceBudgets = new WeakMap();
+    this.keyedMessageBudgets = new Map();
     this.roomCreations = new Map();
     this.clientKeys = new WeakMap();
     this.budgets = new WeakMap();
@@ -157,6 +172,8 @@ class RoomManager {
     return count;
   }
 
+  // A message has to fit both the socket's own bucket and, when the client key is known, a bucket shared by every
+  // socket from that key — otherwise opening a second connection resets a flood budget. Skipped when key is null.
   allowMessage(socket) {
     const now = this.now();
     let budget = this.budgets.get(socket);
@@ -164,12 +181,50 @@ class RoomManager {
     const elapsed = Math.max(0, now - budget.at) / 1000;
     budget.tokens = Math.min(this.messageBurst, budget.tokens + elapsed * this.messageRefillPerSecond);
     budget.at = now;
-    if (budget.tokens >= 1) { budget.tokens -= 1; budget.strikes = 0; return true; }
+    const key = this.clientKeyOf(socket);
+    const shared = key == null ? null : this.sharedMessageBudget(key, now);
+    if (budget.tokens >= 1 && (!shared || shared.tokens >= 1)) {
+      budget.tokens -= 1;
+      if (shared) shared.tokens -= 1;
+      budget.strikes = 0;
+      return true;
+    }
     budget.strikes += 1;
     if (budget.strikes === 1) this.error(socket, 'RATE_LIMITED', 'You are sending messages too quickly.');
     if (budget.strikes >= MESSAGE_ABUSE_CLOSE_AFTER && typeof socket.close === 'function') {
       try { socket.close(1008, 'Message flood'); } catch (_) { /* already closing */ }
     }
+    return false;
+  }
+
+  sharedMessageBudget(key, now) {
+    let budget = this.keyedMessageBudgets.get(key);
+    if (!budget) {
+      if (this.keyedMessageBudgets.size >= JOIN_FAILURE_MAX_KEYS) {
+        for (const [existing, entry] of this.keyedMessageBudgets) {
+          if (now - entry.at >= KEYED_BUDGET_IDLE_MS || now < entry.at) this.keyedMessageBudgets.delete(existing);
+        }
+        while (this.keyedMessageBudgets.size >= JOIN_FAILURE_MAX_KEYS) this.keyedMessageBudgets.delete(this.keyedMessageBudgets.keys().next().value);
+      }
+      budget = { tokens: this.messageBurst, at: now };
+      this.keyedMessageBudgets.set(key, budget);
+    }
+    const elapsed = Math.max(0, now - budget.at) / 1000;
+    budget.tokens = Math.min(this.messageBurst, budget.tokens + elapsed * this.messageRefillPerSecond);
+    budget.at = now;
+    return budget;
+  }
+
+  // Only a message that actually changes the stored preference draws on this budget, so a client that repeats
+  // its current setting forever is free (it costs one reply and no broadcast) while a toggle loop is stopped.
+  allowPreferenceChange(socket) {
+    const now = this.now();
+    let budget = this.preferenceBudgets.get(socket);
+    if (!budget) { budget = { tokens: this.preferenceBurst, at: now }; this.preferenceBudgets.set(socket, budget); }
+    const elapsed = Math.max(0, now - budget.at) / 1000;
+    budget.tokens = Math.min(this.preferenceBurst, budget.tokens + elapsed * this.preferenceRefillPerSecond);
+    budget.at = now;
+    if (budget.tokens >= 1) { budget.tokens -= 1; return true; }
     return false;
   }
 
@@ -318,12 +373,20 @@ class RoomManager {
       safeSend(socket, { type: 'preferences.updated', reducedMotion });
       return;
     }
+    const player = session.role === 'host' ? null : room.players.find(item => item.id === session.playerId);
+    if (session.role !== 'host' && !player) return this.error(socket, 'PLAYER_INACTIVE', 'The player is no longer in this room.');
+    // Repeating the current setting is a no-op: it answers the sender, but it must not broadcast the whole room
+    // state to every seat and must not count as activity, which is what made this a 1,300x amplifier.
+    const current = session.role === 'host' ? room.host.reducedMotion : player.reducedMotion;
+    if (Boolean(current) === reducedMotion) {
+      safeSend(socket, { type: 'preferences.updated', reducedMotion });
+      return;
+    }
+    if (!this.allowPreferenceChange(socket)) return this.error(socket, 'RATE_LIMITED', 'You are changing settings too quickly.');
     if (session.role === 'host') {
       room.host.reducedMotion = reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = reducedMotion;
     } else {
-      const player = room.players.find(item => item.id === session.playerId);
-      if (!player) return this.error(socket, 'PLAYER_INACTIVE', 'The player is no longer in this room.');
       player.reducedMotion = reducedMotion;
     }
     room.lastActivityAt = this.now();
@@ -339,6 +402,11 @@ class RoomManager {
     if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const token = typeof message.resumeToken === 'string' ? message.resumeToken : '';
+    // Real tokens are 32 bytes; anything far larger is an attempt to make us allocate on demand.
+    if (token.length > 128) {
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    }
     const room = this.rooms.get(code);
     if (!room) {
       this.spendJoinFailure(socket, now);
@@ -634,8 +702,13 @@ class RoomManager {
     const state = this.snapshot(room);
     const delta = Replication.createDelta(previous, state);
     room.lastBroadcastState = state;
-    if (JSON.stringify(delta).length >= JSON.stringify({ type: 'room.state', state }).length) this.broadcast(room, { type: 'room.state', state });
-    else this.broadcast(room, delta);
+    // Both texts are built once here, so the size comparison costs two serialisations rather than four, and
+    // whichever one wins is sent as a string (no second pass per recipient inside broadcast).
+    const deltaText = JSON.stringify(delta);
+    const fullState = { type: 'room.state', state };
+    const fullText = JSON.stringify(fullState);
+    if (deltaText.length >= fullText.length) this.broadcast(room, fullState, fullText);
+    else this.broadcast(room, delta, deltaText);
   }
 
   syncState(socket) {
@@ -646,10 +719,20 @@ class RoomManager {
     safeSend(socket, { type: 'room.state', state: room.lastBroadcastState || this.snapshot(room) });
   }
 
-  broadcast(room, message) {
-    safeSend(room.host.socket, message);
-    for (const player of room.players) if (player.connected) safeSend(player.socket, message);
-    for (const spectator of room.spectators) if (spectator.connected) safeSend(spectator.socket, message);
+  // One serialisation, however many seats: every recipient gets the identical text. With 22 seats in a room and a
+  // few rooms ticking at 10 Hz this was the largest per-tick cost after socket I/O itself.
+  // `text` lets a caller that already built the exact bytes (broadcastDelta compares two candidate texts before
+  // choosing) hand them over instead of paying for a second serialisation here.
+  broadcast(room, message, text = null) {
+    this.sendToSeats(room, text === null ? JSON.stringify(message) : text);
+  }
+
+  // The seat walk, for text that is already serialised. Kept separate from broadcast() so the delta path can build
+  // its two candidate texts once and still send through the same one place.
+  sendToSeats(room, text) {
+    safeSendRaw(room.host.socket, text);
+    for (const player of room.players) if (player.connected) safeSendRaw(player.socket, text);
+    for (const spectator of room.spectators) if (spectator.connected) safeSendRaw(spectator.socket, text);
   }
 
   error(socket, code, message, details = null) {
@@ -694,9 +777,14 @@ class RoomManager {
   newToken() { return this.randomBytes(24).toString('base64url'); }
   newId() { return this.randomBytes(12).toString('hex'); }
 
+  // Compared in bytes, not UTF-16 code units: timingSafeEqual throws when the buffers differ in length, and two
+  // strings of equal length can encode to different byte counts (any token with non-ASCII in it).
   tokensMatch(supplied, expected) {
-    if (typeof supplied !== 'string' || typeof expected !== 'string' || supplied.length !== expected.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+    if (typeof supplied !== 'string' || typeof expected !== 'string') return false;
+    const suppliedBytes = Buffer.from(supplied, 'utf8');
+    const expectedBytes = Buffer.from(expected, 'utf8');
+    if (suppliedBytes.length !== expectedBytes.length) return false;
+    return crypto.timingSafeEqual(suppliedBytes, expectedBytes);
   }
 }
 

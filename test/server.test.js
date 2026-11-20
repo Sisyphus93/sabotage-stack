@@ -24,6 +24,62 @@ async function listen() {
   return { app, url: `ws://127.0.0.1:${app.server.address().port}/ws`, port: app.server.address().port };
 }
 
+describe('Cold-start compression is coalesced (P2-3)', () => {
+  test('100 concurrent cold requests share one compression per encoding', async () => {
+    const zlib = require('node:zlib');
+    const counts = { sync: 0, async: 0 };
+    const originals = {};
+    for (const [name, kind] of [['gzipSync', 'sync'], ['brotliCompressSync', 'sync'], ['gzip', 'async'], ['brotliCompress', 'async']]) {
+      originals[name] = zlib[name];
+      zlib[name] = function (...args) { counts[kind] += 1; return originals[name].apply(this, args); };
+    }
+    const app = createGameServer({ onError: () => {} });
+    try {
+      await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+      const port = app.server.address().port;
+      const burst = encoding => Promise.all(Array.from({ length: 100 }, () => new Promise(resolve => {
+        const request = require('node:http').get({ host: '127.0.0.1', port, path: '/public/stack3d.js', headers: { 'accept-encoding': encoding } }, response => {
+          const chunks = []; response.on('data', chunk => chunks.push(chunk));
+          response.on('end', () => resolve({ status: response.statusCode, encoding: response.headers['content-encoding'], bytes: Buffer.concat(chunks).length, length: Number(response.headers['content-length']) }));
+        });
+        request.on('error', () => resolve({ status: 0 }));
+      })));
+      const gzip = await burst('gzip');
+      assert.equal(counts.async, 1, `one gzip for the burst, got ${counts.async}`);
+      assert.equal(counts.sync, 0, 'nothing on the request path is synchronous');
+      assert.ok(gzip.every(r => r.status === 200 && r.encoding === 'gzip'));
+      assert.equal(new Set(gzip.map(r => r.bytes)).size, 1, 'every response is byte-identical');
+      assert.equal(gzip[0].bytes, gzip[0].length, 'Content-Length matches the body');
+      const br = await burst('br');
+      assert.equal(counts.async, 2, 'one brotli for the second burst');
+      assert.ok(br.every(r => r.status === 200 && r.encoding === 'br'));
+      assert.ok(br[0].bytes < gzip[0].bytes, 'brotli is the smaller one');
+      // warm requests never compress again
+      await burst('gzip');
+      assert.equal(counts.async, 2, 'a warm burst compresses nothing');
+      // ETag and HEAD behaviour is unchanged
+      const head = await new Promise(resolve => {
+        const request = require('node:http').request({ host: '127.0.0.1', port, path: '/public/stack3d.js', method: 'HEAD', headers: { 'accept-encoding': 'gzip' } }, response => {
+          response.resume(); resolve({ status: response.statusCode, etag: response.headers.etag, vary: response.headers.vary, length: Number(response.headers['content-length']), encoding: response.headers['content-encoding'] });
+        });
+        request.end();
+      });
+      assert.equal(head.status, 200);
+      assert.equal(head.vary, 'Accept-Encoding');
+      assert.equal(head.encoding, 'gzip');
+      assert.ok(head.length > 0);
+      const notModified = await new Promise(resolve => {
+        const request = require('node:http').get({ host: '127.0.0.1', port, path: '/public/stack3d.js', headers: { 'accept-encoding': 'gzip', 'if-none-match': head.etag } }, response => { response.resume(); resolve(response.statusCode); });
+        request.on('error', () => resolve(0));
+      });
+      assert.equal(notModified, 304);
+    } finally {
+      for (const [name, fn] of Object.entries(originals)) zlib[name] = fn;
+      await app.close();
+    }
+  });
+});
+
 describe('HTTP hardening', () => {
   test('malformed request targets get a 400 and never crash the process', async () => {
     const port = 20000 + Math.floor(Math.random() * 20000);
@@ -224,6 +280,45 @@ describe('abuse limits', () => {
 });
 
 describe('broadcast', () => {
+  test('one serialisation per broadcast, however many seats, and every seat gets identical bytes', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(64), idleLimitMs: 1e12 });
+    const mk = () => ({ readyState: 1, frames: [], send(text) { this.frames.push(text); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'competitive' }));
+    const code = [...rm.rooms.keys()][0];
+    const players = [];
+    for (let i = 0; i < 6; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `P${i}` })); players.push(socket); }
+    const spectators = [];
+    for (let i = 0; i < 15; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `S${i}`, spectate: true })); spectators.push(socket); }
+    const room = rm.rooms.get(code);
+    const seats = [host, ...players, ...spectators];
+    assert.equal(seats.length, 22);
+    const original = JSON.stringify;
+    let calls = 0;
+    const mark = () => seats.forEach(socket => { socket.mark = socket.frames.length; });
+    JSON.stringify = (...args) => { calls += 1; return original(...args); };
+    try {
+      mark();
+      rm.broadcast(room, { type: 'room.state', state: { revision: 1 } });
+      assert.equal(calls, 1, `broadcast serialised ${calls} times`);
+    } finally { JSON.stringify = original; }
+    const delivered = seats.map(socket => socket.frames.slice(socket.mark));
+    assert.ok(delivered.every(frames => frames.length === 1), 'one frame each');
+    assert.equal(new Set(delivered.map(frames => frames[0])).size, 1, 'byte-identical to every seat');
+    // the delta path builds its two candidate texts once. Count only what broadcastDelta itself serialises: a round
+    // snapshot also clones the game with JSON (round-engine.js clone), which is not part of this change.
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    room.engine.changed('game.state');
+    const ownCalls = [];
+    JSON.stringify = (...args) => {
+      // the caller of JSON.stringify itself, not something nested below it (the engine clones its snapshot with JSON)
+      const caller = new Error().stack.split('\n')[2] || '';
+      if (caller.includes('RoomManager.broadcastDelta')) ownCalls.push(caller.trim());
+      return original(...args);
+    };
+    try { room.engine.changed('game.state'); } finally { JSON.stringify = original; }
+    assert.equal(ownCalls.length, 2, `broadcastDelta serialised ${ownCalls.length} times`);
+  });
+
   test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
     let t = 1e9; const rm = new RoomManager({ now: () => t, random: rng(3), idleLimitMs: 1e12 });
     const mk = () => ({ readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)); } });
@@ -495,6 +590,23 @@ describe('Room-code guessing limit (A-03)', () => {
   });
 });
 
+describe('Room codes are always joinable (P2-5)', () => {
+  test('an exhausted code space answers SERVER_BUSY and never mints a digit code', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(71), randomBytes: () => Buffer.alloc(4, 0) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    assert.equal(host.sent.find(m => m.type === 'room.created').code, 'AAAA');
+    // every further attempt collides with AAAA, so the 100 tries run out and the fallback must not be a digit code
+    const second = mk(); rm.connect(second); rm.receive(second, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    assert.equal(second.sent.at(-1).type, 'error');
+    assert.equal(second.sent.at(-1).code, 'SERVER_BUSY');
+    assert.deepEqual([...rm.rooms.keys()], ['AAAA'], 'no room with an unjoinable code was created');
+    for (const code of rm.rooms.keys()) assert.match(code, /^[A-Z]{4}$/);
+    const joiner = mk(); rm.connect(joiner); rm.receive(joiner, JSON.stringify({ type: 'room.join', code: '0001', name: 'Guest' }));
+    assert.equal(joiner.sent.at(-1).code, 'ROOM_NOT_FOUND', 'the old fallback code is not a room, as it never was');
+  });
+});
+
 describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
   const create = (rm, socket, mode = 'teamwork', clientKey = 'owner') => { rm.connect(socket, { clientKey }); rm.receive(socket, JSON.stringify({ type: 'room.create', mode })); return socket; };
@@ -581,6 +693,192 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
     room.lastActivityAt = 0;
     rm.receive(host, JSON.stringify({ type: 'team.skip', turnId: room.engine.game.team.turnId }));
     assert.ok(room.lastActivityAt > 0, 'team.skip refreshed activity');
+  });
+});
+
+describe('Connections and messages are budgeted per client (P1-3)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+
+  test('one key cannot open more sockets than the cap, and its sockets share a message budget', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(51), messageBurst: 5, messageRefillPerSecond: 0 });
+    const first = mk(), second = mk();
+    rm.connect(first, { clientKey: 'A' });
+    rm.connect(second, { clientKey: 'A' });
+    for (let i = 0; i < 5; i += 1) rm.receive(first, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(first.sent.filter(m => m.type === 'server.pong').length, 5, 'the first socket spends its burst');
+    for (let i = 0; i < 5; i += 1) rm.receive(second, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(second.sent.filter(m => m.type === 'server.pong').length, 0, 'a second socket from the same key starts empty');
+    assert.ok(second.sent.some(m => m.code === 'RATE_LIMITED'));
+    const neighbour = mk(); rm.connect(neighbour, { clientKey: 'B' });
+    rm.receive(neighbour, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(neighbour.sent.at(-1).type, 'server.pong', 'another key is unaffected');
+    const unkeyed = new RoomManager({ now: () => 1_000_000, random: rng(52), messageBurst: 5, messageRefillPerSecond: 0 });
+    const a = mk(), b = mk(); unkeyed.connect(a); unkeyed.connect(b);
+    for (let i = 0; i < 5; i += 1) unkeyed.receive(a, JSON.stringify({ type: 'client.ping' }));
+    unkeyed.receive(b, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(b.sent.at(-1).type, 'server.pong', 'with no key each socket keeps its own burst, as before');
+  });
+
+  test('the upgrade handler refuses a key past its cap and another key still connects', async () => {
+    const app = createGameServer({
+      onError: () => {},
+      clientKeyFor: request => request.headers['x-test-ip'] || null,
+      clientsPerKey: 3
+    });
+    await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+    const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+    const attempt = ip => new Promise(resolve => {
+      const ws = new WebSocket(url, { headers: { 'x-test-ip': ip } });
+      ws.on('open', () => resolve({ ok: true, ws }));
+      ws.on('unexpected-response', (request, response) => resolve({ ok: false, status: response.statusCode }));
+      ws.on('error', () => resolve({ ok: false, status: 0 }));
+    });
+    try {
+      const held = [];
+      for (let i = 0; i < 3; i += 1) held.push(await attempt('10.9.0.1'));
+      assert.deepEqual(held.map(r => r.ok), [true, true, true]);
+      const refused = await attempt('10.9.0.1');
+      assert.equal(refused.ok, false);
+      assert.equal(refused.status, 503, 'the fourth socket from one key is refused with 503');
+      const neighbour = await attempt('10.9.0.2');
+      assert.equal(neighbour.ok, true, 'another key is unaffected');
+      for (const result of [...held, neighbour]) result.ws.terminate();
+      await sleep(200);
+      const reopened = await attempt('10.9.0.1');
+      assert.equal(reopened.ok, true, 'the counter is released when sockets close, so nothing leaks');
+      reopened.ws.terminate();
+    } finally { await app.close(); }
+  });
+
+  test('the global socket ceiling always applies, even with no client key', async () => {
+    const app = createGameServer({ onError: () => {}, clientKeyFor: () => null, maxSockets: 2 });
+    await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+    const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+    const attempt = () => new Promise(resolve => {
+      const ws = new WebSocket(url);
+      ws.on('open', () => resolve({ ok: true, ws }));
+      ws.on('unexpected-response', (request, response) => resolve({ ok: false, status: response.statusCode }));
+      ws.on('error', () => resolve({ ok: false, status: 0 }));
+    });
+    try {
+      const results = [await attempt(), await attempt(), await attempt()];
+      assert.deepEqual(results.map(r => r.ok), [true, true, false]);
+      assert.equal(results[2].status, 503);
+      results.filter(r => r.ws).forEach(r => r.ws.terminate());
+    } finally { await app.close(); }
+  });
+});
+
+describe('Resume tokens are compared safely (P1-2)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const roomWithPlayer = () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(41) });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const code = [...rm.rooms.keys()][0];
+    const player = mk(); rm.connect(player); rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+    return { rm, code, player, token: player.sent.find(m => m.type === 'room.joined').resumeToken };
+  };
+
+  test('a non-ASCII token of the same code-unit length is refused, not thrown', () => {
+    const { rm, code } = roomWithPlayer();
+    const attacker = mk(); rm.connect(attacker);
+    assert.doesNotThrow(() => rm.receive(attacker, JSON.stringify({ type: 'room.resume', code, resumeToken: 'é'.repeat(32) })));
+    assert.equal(attacker.sent.at(-1).type, 'error');
+    assert.equal(attacker.sent.at(-1).code, 'INVALID_RESUME');
+    rm.receive(attacker, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(attacker.sent.at(-1).type, 'server.pong', 'the socket is still usable');
+  });
+
+  test('a legitimate resume still succeeds and a wrong token of the same length still fails', () => {
+    const { rm, code, player, token } = roomWithPlayer();
+    rm.disconnect(player);
+    const resumed = mk(); rm.connect(resumed);
+    rm.receive(resumed, JSON.stringify({ type: 'room.resume', code, resumeToken: token }));
+    assert.equal((resumed.sent.find(m => m.type === 'room.resumed') || {}).role, 'player');
+    const wrong = mk(); rm.connect(wrong);
+    const wrongToken = token.replace(/[A-Za-z]/g, ch => (ch === 'A' ? 'B' : 'A'));
+    assert.equal(wrongToken.length, token.length);
+    rm.receive(wrong, JSON.stringify({ type: 'room.resume', code, resumeToken: wrongToken }));
+    assert.equal(wrong.sent.at(-1).code, 'INVALID_RESUME');
+  });
+
+  test('an oversized token is refused before any lookup', () => {
+    const { rm, code } = roomWithPlayer();
+    const socket = mk(); rm.connect(socket);
+    rm.receive(socket, JSON.stringify({ type: 'room.resume', code, resumeToken: 'A'.repeat(5000) }));
+    assert.equal(socket.sent.at(-1).code, 'INVALID_RESUME');
+    const overlong = mk(); rm.connect(overlong);
+    rm.receive(overlong, JSON.stringify({ type: 'room.resume', code: 'ZZZZ', resumeToken: 'A'.repeat(5000) }));
+    assert.equal(overlong.sent.at(-1).code, 'INVALID_RESUME', 'and identically for a room that does not exist');
+  });
+
+  test('tokensMatch compares bytes', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(43) });
+    assert.equal(rm.tokensMatch('éé', 'éé'), true);
+    assert.equal(rm.tokensMatch('é', 'e'), false, 'one UTF-16 unit each, different byte lengths');
+    assert.equal(rm.tokensMatch('éé', 'ee'), false, 'two UTF-16 units each, different byte lengths');
+    assert.equal(rm.tokensMatch(null, 'a'), false);
+  });
+});
+
+describe('Preference messages are not an amplifier (P1-1)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const setup = (mode = 'competitive') => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(31), idleLimitMs: 1e12 });
+    const host = mk(), a = mk(), b = mk();
+    [host, a, b].forEach(socket => rm.connect(socket));
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const code = [...rm.rooms.keys()][0];
+    rm.receive(a, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+    rm.receive(b, JSON.stringify({ type: 'room.join', code, name: 'B' }));
+    const room = rm.rooms.get(code);
+    const calls = { count: 0 };
+    const broadcastState = rm.broadcastState.bind(rm);
+    rm.broadcastState = (...args) => { calls.count += 1; return broadcastState(...args); };
+    return { rm, host, a, b, room, calls, advance: ms => { now += ms; } };
+  };
+
+  test('repeating the current preference never broadcasts the room', () => {
+    const t = setup();
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.calls.count, 0, 'identical preference messages must not fan out to every seat');
+    assert.equal(t.a.sent.filter(m => m.type === 'preferences.updated').length, 150, 'the sender still gets its acknowledgement');
+  });
+
+  test('toggling is rate limited, and what gets through still reaches every seat', () => {
+    const t = setup();
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: i % 2 === 0 }));
+    assert.ok(t.calls.count <= 8, `150 alternating messages caused ${t.calls.count} broadcasts in the first second`);
+    assert.ok(t.a.sent.some(m => m.code === 'RATE_LIMITED'), 'excess toggles are refused');
+    const accepted = t.room.players.find(player => player.socket === t.a).reducedMotion;
+    assert.equal(t.room.reducedMotion === undefined ? accepted : accepted, accepted);
+    t.advance(10_000);
+    const before = t.calls.count;
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: !t.room.players.find(p => p.socket === t.b).reducedMotion }));
+    assert.equal(t.calls.count, before + 1, 'a legitimate toggle broadcasts once');
+    assert.ok([t.host, t.a, t.b].every(socket => socket.sent.at(-1).type === 'room.state' || socket.sent.at(-1).type === 'room.delta'), 'every seat hears about it');
+    assert.equal(typeof t.rm.snapshot(t.room).reducedMotion, 'boolean');
+  });
+
+  test('the reduced-motion snapshot follows the accepted preference only', () => {
+    const t = setup('teamwork');
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, true);
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, true, 'a rejected no-op must not overwrite what the room sees');
+    t.advance(10_000);
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, false, 'a later accepted change is reflected');
+  });
+
+  test('a no-op preference does not keep the room alive', () => {
+    const t = setup();
+    t.room.lastActivityAt = 0;
+    t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.room.lastActivityAt, 0);
+    t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.ok(t.room.lastActivityAt > 0, 'a real change is activity');
   });
 });
 

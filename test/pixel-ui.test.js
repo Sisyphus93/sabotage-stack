@@ -392,6 +392,52 @@ describe('the pixel UI in the real page: rows, the wordmark and the hooks into t
     } finally { page.close(); }
   });
 
+  test('rows the player list dropped are pruned, so nothing detached is held until dispose()', async () => {
+    const { page, doc, over, pixel } = await setup();
+    try {
+      const list = doc.getElementById('room-player-list');
+      const row = color => {
+        const li = doc.createElement('li'); const dot = doc.createElement('span'); dot.className = 'player-color-dot';
+        dot.style.backgroundColor = color; const name = doc.createElement('strong'); name.textContent = 'Mia';
+        li.append(dot, name); list.append(li); return li;
+      };
+      const hovered = ['rgb(213, 71, 47)', 'rgb(47, 132, 120)', 'rgb(227, 163, 59)'].map(row);
+      for (const li of hovered) over(li.querySelector('strong'));
+      assert.ok(hovered.every(li => li.dataset.floodKey), 'all three are painted');
+      // The list is rebuilt: two of the rows are detached, one survives, then a new row is hovered.
+      hovered[0].remove(); hovered[1].remove();
+      const fresh = row('rgb(122, 106, 166)'); over(fresh.querySelector('strong'));
+      // dispose() only touches what the UI still tracks: the surviving row and the fresh one lose their colours,
+      // while the detached rows keep theirs — proof they were dropped from the set rather than held.
+      pixel.dispose();
+      assert.equal(hovered[2].style.getPropertyValue('--row-accent'), '');
+      assert.equal(fresh.style.getPropertyValue('--row-accent'), '');
+      assert.notEqual(hovered[0].style.getPropertyValue('--row-accent'), '', 'the detached row was already pruned');
+      assert.notEqual(hovered[1].style.getPropertyValue('--row-accent'), '', 'both detached rows were pruned');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('detached rows are actually collectable (needs --expose-gc, skipped otherwise)', { skip: !global.gc && 'no global.gc' }, async () => {
+    const { page, doc, over } = await setup();
+    try {
+      const list = doc.getElementById('room-player-list');
+      const gone = []; const registry = new FinalizationRegistry(tag => gone.push(tag));
+      for (let i = 0; i < 60; i += 1) {
+        const li = doc.createElement('li'); const dot = doc.createElement('span'); dot.className = 'player-color-dot';
+        dot.style.backgroundColor = i % 2 ? 'rgb(213, 71, 47)' : 'rgb(47, 132, 120)'; dot.className = 'player-color-dot';
+        const name = doc.createElement('strong'); name.textContent = 'P' + i; li.append(dot, name); list.append(li);
+        over(name); registry.register(li, i); li.remove();
+      }
+      const survivor = doc.createElement('li'); const sdot = doc.createElement('span'); sdot.className = 'player-color-dot';
+      sdot.style.backgroundColor = 'rgb(227, 163, 59)'; survivor.append(sdot); list.append(survivor);
+      over(survivor); // this hover runs the prune
+      for (let round = 0; round < 6; round += 1) { global.gc(); await new Promise(resolve => setTimeout(resolve, 20)); }
+      assert.ok(gone.length > 0, `no detached row was collected (${gone.length})`);
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
   test('the wordmark: hover swaps the text for a pixel picture of it, three ticks 60 ms apart knock every rect a cell off and then back exactly, and the real text returns', async () => {
     const { page, sched, brand, word, over, pixel } = await setup();
     try {

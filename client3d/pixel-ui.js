@@ -92,6 +92,9 @@ export function installPixelUi({ doc = document, win = window, hover, now, hooks
     const key = `${bg}|${theme()}`; if (row.dataset.floodKey === key) return;
     const text = TEXT_COLORS[theme()];
     row.style.setProperty('--row-accent', bg); row.style.setProperty('--row-fg', readableOn(rgb, text.light, text.dark));
+    // The player list is rebuilt often (a join, a leave, a rename); rows it dropped must not stay referenced here until
+    // dispose(). A Set of every row ever hovered would hold each detached one alive for the life of the page.
+    for (const paintedRow of painted) if (!paintedRow.isConnected) painted.delete(paintedRow);
     row.dataset.floodKey = key; painted.add(row);
   }
 

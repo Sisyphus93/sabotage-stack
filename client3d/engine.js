@@ -1,5 +1,6 @@
 // Renderer, post-processing chain and the adaptive quality governor.
 import { Governor } from './governor.js';
+import { disposeComposer } from './composer-dispose.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -83,7 +84,9 @@ export class Engine {
   on(name, fn) { this.listeners[name].add(fn); return () => this.listeners[name].delete(fn); }
 
   buildComposer() {
-    if (this.composer) { this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose(); }
+    // Every pass owns targets and materials of its own (the bloom pass owns eleven), and EffectComposer.dispose()
+    // only frees its two targets and the copy pass, so the old passes have to be released by hand.
+    if (this.composer) disposeComposer(this.composer);
     const target = new THREE.WebGLRenderTarget(this.width, this.height, { type: THREE.HalfFloatType, samples: this.tier.msaa });
     this.composer = new EffectComposer(this.renderer, target);
     this.renderPass = new RenderPass(this.scene, this.camera);
@@ -190,7 +193,7 @@ export class Engine {
   }
 
   dispose() {
-    this.composer.renderTarget1.dispose(); this.composer.renderTarget2.dispose();
+    disposeComposer(this.composer);
     this.renderer.dispose();
   }
 }
