@@ -426,26 +426,72 @@ describe('Incremental room updates (F-023)', () => {
 });
 
 describe('Room-code guessing limit (A-03)', () => {
-  test('failed attempts share a bounded server-wide budget across connections and recover after the window', () => {
+  // The budget used to be one process-wide counter checked before the code was resolved, so any client could stop
+  // every real join. It is now one bucket per client key, and the shared bucket only exists while no key is known.
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const roomWithHost = rm => {
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    return [...rm.rooms.keys()][0];
+  };
+  const attempt = (rm, socket, message) => { rm.receive(socket, JSON.stringify(message)); return socket.sent.at(-1); };
+
+  test('a key that exhausts its budget cannot stop another key from joining, and recovers after the window', () => {
     let now = 1_000_000;
     const rm = new RoomManager({ now: () => now, random: rng(9), joinFailureLimit: 3, joinFailureWindowMs: 60_000 });
-    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
-    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
-    const code = [...rm.rooms.keys()][0];
-    for (let i = 0; i < 3; i++) {
+    const code = roomWithHost(rm);
+    const attacker = mk(); rm.connect(attacker, { clientKey: 'A' });
+    for (let i = 0; i < 3; i++) assert.equal(attempt(rm, attacker, { type: 'room.join', code: 'ZZZZ', name: 'Guest' }).code, 'ROOM_NOT_FOUND');
+    const neighbour = mk(); rm.connect(neighbour, { clientKey: 'B' });
+    attempt(rm, neighbour, { type: 'room.join', code, name: 'Guest' });
+    assert.ok(neighbour.sent.some(message => message.type === 'room.joined'), 'a different key is unaffected');
+    const throttled = mk(); rm.connect(throttled, { clientKey: 'A' });
+    assert.equal(attempt(rm, throttled, { type: 'room.join', code, name: 'Guest' }).code, 'JOIN_RATE_LIMITED', 'the exhausted key is refused even for a real code');
+    now += 60_000;
+    attempt(rm, throttled, { type: 'room.join', code, name: 'Guest' });
+    assert.ok(throttled.sent.some(message => message.type === 'room.joined'), 'the bucket recovers after the window');
+  });
+
+  test('resume probing draws on the same budget and cannot confirm whether a room exists', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(10), joinFailureLimit: 3, joinFailureWindowMs: 60_000 });
+    const code = roomWithHost(rm);
+    const prober = mk(); rm.connect(prober, { clientKey: 'P' });
+    const replies = [];
+    for (let i = 0; i < 5; i++) replies.push(attempt(rm, prober, { type: 'room.resume', code: 'QQQQ', resumeToken: 'AAAA' }).code);
+    assert.deepEqual(replies, ['INVALID_RESUME', 'INVALID_RESUME', 'INVALID_RESUME', 'JOIN_RATE_LIMITED', 'JOIN_RATE_LIMITED']);
+    const unknown = mk(); rm.connect(unknown, { clientKey: 'U' });
+    const existing = mk(); rm.connect(existing, { clientKey: 'E' });
+    const missingToken = mk(); rm.connect(missingToken, { clientKey: 'M' });
+    const a = attempt(rm, unknown, { type: 'room.resume', code: 'ZZZZ', resumeToken: 'AAAA' });
+    const b = attempt(rm, existing, { type: 'room.resume', code, resumeToken: 'AAAA' });
+    const c = attempt(rm, missingToken, { type: 'room.resume', code, resumeToken: '' });
+    assert.equal(a.code, 'INVALID_RESUME');
+    assert.equal(b.code, a.code, 'an existing room with a wrong token must not be distinguishable from a missing room');
+    assert.equal(c.code, a.code, 'a missing token must not be distinguishable either');
+    assert.equal(a.message, b.message);
+  });
+
+  test('with no client key the single shared bucket keeps the old fail-safe behaviour', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(11), joinFailureLimit: 2, joinFailureWindowMs: 60_000 });
+    const code = roomWithHost(rm);
+    for (let i = 0; i < 2; i++) {
       const socket = mk(); rm.connect(socket);
-      rm.receive(socket, JSON.stringify({ type: 'room.join', code: 'ZZZZ', name: 'Guest' }));
-      assert.equal(socket.sent.at(-1).code, 'ROOM_NOT_FOUND');
-      rm.disconnect(socket);
+      assert.equal(attempt(rm, socket, { type: 'room.join', code: 'ZZZZ', name: 'Guest' }).code, 'ROOM_NOT_FOUND');
     }
     const player = mk(); rm.connect(player);
-    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
-    assert.equal(player.sent.at(-1).code, 'JOIN_RATE_LIMITED', 'even a valid guess is blocked while the shared budget is exhausted');
+    assert.equal(attempt(rm, player, { type: 'room.join', code, name: 'Guest' }).code, 'JOIN_RATE_LIMITED');
     assert.equal(rm.rooms.get(code).players.length, 0);
-    now += 60_000;
-    rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'Guest' }));
-    assert.ok(player.sent.some(message => message.type === 'room.joined'));
-    assert.equal(rm.rooms.get(code).players.length, 1);
+  });
+
+  test('the failure map stays bounded when failures arrive from many keys', () => {
+    const now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(12) });
+    for (let i = 0; i < 12_000; i += 1) {
+      const socket = mk(); rm.connect(socket, { clientKey: `key-${i}` });
+      rm.receive(socket, JSON.stringify({ type: 'room.join', code: 'ZZZZ', name: 'Guest' }));
+    }
+    assert.ok(rm.joinFailures.size <= 10_000, `failure map grew to ${rm.joinFailures.size}`);
   });
 });
 

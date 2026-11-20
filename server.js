@@ -93,7 +93,28 @@ function originIsSameHost(request) {
   catch (_) { return false; }
 }
 
-function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error } = {}) {
+// Which client identity the per-client budgets key on. It must come from a source the proxy cannot let a client
+// forge; until one is known the resolver returns null and those budgets fall back to a single shared bucket.
+//   (unset or 'none')  -> null, the fail-safe default
+//   'socket'           -> the TCP peer address (direct connections only, e.g. a LAN or a local run)
+//   'header:<name>'    -> that header, for a proxy known to overwrite it (never the leftmost X-Forwarded-For)
+function clientKeyResolver(source = process.env.CLIENT_IP_SOURCE) {
+  const setting = typeof source === 'string' ? source.trim().toLowerCase() : '';
+  if (setting === 'socket') return request => request.socket.remoteAddress || null;
+  if (setting.startsWith('header:') && setting.length > 'header:'.length) {
+    const name = setting.slice('header:'.length);
+    // A forwarded list may be appended to a client-supplied value, so the leftmost entry is not identity.
+    // Until the deployment's trustworthy header is established (V-1), refuse the list header outright.
+    if (name === 'x-forwarded-for') return () => null;
+    return request => {
+      const value = request.headers[name];
+      return typeof value === 'string' && value ? value.trim() || null : null;
+    };
+  }
+  return () => null;
+}
+
+function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error, clientKeyFor = clientKeyResolver() } = {}) {
   const htmlPath = path.join(root, 'sabotage-stack.html');
   const server = http.createServer((request, response) => {
     const pathname = requestPathname(request);
@@ -131,9 +152,9 @@ function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager()
 
   // A bug triggered by one client's message must not terminate the process and every other room with it.
   const guarded = action => { try { action(); } catch (error) { try { onError(error); } catch (_) { /* logging must not throw */ } } };
-  wss.on('connection', socket => {
+  wss.on('connection', (socket, request) => {
     socket.isAlive = true;
-    guarded(() => roomManager.connect(socket));
+    guarded(() => roomManager.connect(socket, { clientKey: clientKeyFor(request) }));
     socket.on('pong', () => { socket.isAlive = true; });
     socket.on('message', raw => guarded(() => roomManager.receive(socket, raw)));
     socket.on('close', () => guarded(() => roomManager.disconnect(socket)));
@@ -200,4 +221,4 @@ if (require.main === module) {
   process.once('SIGTERM', () => void stop('SIGTERM'));
 }
 
-module.exports = { createGameServer, startServer, lanAddresses, originIsSameHost };
+module.exports = { createGameServer, startServer, lanAddresses, originIsSameHost, clientKeyResolver };

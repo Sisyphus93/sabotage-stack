@@ -18,9 +18,12 @@ const MAX_ROOMS = 1000;
 const MESSAGE_BURST = 200;
 const MESSAGE_REFILL_PER_SECOND = 100;
 const MESSAGE_ABUSE_CLOSE_AFTER = 400;
-// Shared across connections so reconnecting cannot reset the guessing budget.
+// Guess budget, one bucket per client key (see clientKeyOf). With no trustworthy client address the key is
+// null and every connection shares the single legacy bucket, so reconnecting still cannot reset the budget.
 const JOIN_FAILURE_LIMIT = 60;
 const JOIN_FAILURE_WINDOW_MS = 60_000;
+const JOIN_FAILURE_MAX_KEYS = 10_000;
+const SHARED_CLIENT_KEY = '__shared__';
 
 function cleanDisplayName(value) {
   if (typeof value !== 'string') return '';
@@ -61,18 +64,65 @@ class RoomManager {
     this.messageRefillPerSecond = messageRefillPerSecond;
     this.joinFailureLimit = Math.max(1, joinFailureLimit);
     this.joinFailureWindowMs = Math.max(1, joinFailureWindowMs);
-    this.joinFailures = 0;
-    this.joinFailureWindowStarted = this.now();
+    this.joinFailures = new Map();
+    this.clientKeys = new WeakMap();
     this.budgets = new WeakMap();
     this.rooms = new Map();
     this.sessions = new Map();
     this.roomCounter = 0;
   }
 
-  connect(socket) {
+  // clientKey is the trusted per-client identity computed by the connection handler (server.js). It stays null
+  // until a trustworthy source is configured, and null means "do not enforce per-client caps".
+  connect(socket, { clientKey = null } = {}) {
     if (!socket || typeof socket.send !== 'function') throw new TypeError('A WebSocket-like client is required.');
     this.sessions.set(socket, null);
+    this.clientKeys.set(socket, typeof clientKey === 'string' && clientKey ? clientKey : null);
     safeSend(socket, { type: 'connected', protocol: 1 });
+  }
+
+  clientKeyOf(socket) {
+    return this.clientKeys.get(socket) || null;
+  }
+
+  // One failure bucket per client key, or the single shared bucket when the key is unknown. Bounded so a
+  // spread across many addresses cannot grow the map without limit; expired buckets are pruned on write.
+  joinBucket(socket, now = this.now()) {
+    const bucket = this.joinFailures.get(this.clientKeyOf(socket) || SHARED_CLIENT_KEY);
+    if (!bucket) return null;
+    if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) {
+      bucket.count = 0;
+      bucket.windowStart = now;
+    }
+    return bucket;
+  }
+
+  spendJoinFailure(socket, now = this.now()) {
+    const key = this.clientKeyOf(socket) || SHARED_CLIENT_KEY;
+    let bucket = this.joinFailures.get(key);
+    if (!bucket) {
+      if (this.joinFailures.size >= JOIN_FAILURE_MAX_KEYS) this.pruneJoinFailures(now);
+      bucket = { count: 0, windowStart: now };
+      this.joinFailures.set(key, bucket);
+    } else if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) {
+      bucket.count = 0;
+      bucket.windowStart = now;
+    }
+    bucket.count += 1;
+    return bucket.count;
+  }
+
+  pruneJoinFailures(now = this.now()) {
+    for (const [key, bucket] of this.joinFailures) {
+      if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) this.joinFailures.delete(key);
+    }
+    // Every bucket in the window at the cap: drop the oldest so the newest failure is still recorded.
+    while (this.joinFailures.size >= JOIN_FAILURE_MAX_KEYS) this.joinFailures.delete(this.joinFailures.keys().next().value);
+  }
+
+  isJoinThrottled(socket, now = this.now()) {
+    const bucket = this.joinBucket(socket, now);
+    return Boolean(bucket && bucket.count >= this.joinFailureLimit);
   }
 
   allowMessage(socket) {
@@ -186,15 +236,12 @@ class RoomManager {
   joinRoom(socket, message) {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before joining another.');
     const now = this.now();
-    if (now - this.joinFailureWindowStarted >= this.joinFailureWindowMs || now < this.joinFailureWindowStarted) {
-      this.joinFailures = 0;
-      this.joinFailureWindowStarted = now;
-    }
-    if (this.joinFailures >= this.joinFailureLimit) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
+    // The budget is checked before the lookup, so a throttled client cannot tell a real code from an invented one.
+    if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const room = this.rooms.get(code);
     if (!room) {
-      this.joinFailures += 1;
+      this.spendJoinFailure(socket, now);
       return this.error(socket, 'ROOM_NOT_FOUND', 'That room code was not found.');
     }
     if (message.spectate === true) {
@@ -249,11 +296,21 @@ class RoomManager {
 
   resumeRoom(socket, message) {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before reconnecting.');
+    const now = this.now();
+    // Probing resume is a room-existence oracle too, so it draws on the same per-key guess budget. An unknown
+    // room and a wrong token answer identically, otherwise the reply itself would confirm that a code exists.
+    if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const token = typeof message.resumeToken === 'string' ? message.resumeToken : '';
     const room = this.rooms.get(code);
-    if (!room) return this.error(socket, 'ROOM_NOT_FOUND', 'That room has closed or the code is incorrect.');
-    if (!token) return this.error(socket, 'INVALID_RESUME', 'A reconnect token is required.');
+    if (!room) {
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    }
+    if (!token) {
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    }
 
     let role = null;
     let playerId = null;
@@ -288,7 +345,10 @@ class RoomManager {
         }
       }
     }
-    if (!role) return this.error(socket, 'INVALID_RESUME', 'Reconnect token was not recognized for this room.');
+    if (!role) {
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    }
     room.lastActivityAt = this.now();
     this.sessions.set(socket, { roomCode: code, role, playerId, spectatorId });
     if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
