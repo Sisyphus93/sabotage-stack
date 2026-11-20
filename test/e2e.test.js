@@ -452,6 +452,36 @@ describe('Room delta recovery (F-023)', skipReason ? { skip: skipReason } : {}, 
       assert.deepEqual(r.host.errors, []);
     } finally { await r.close(); }
   });
+  test('invalid deltas share one pending sync request until a full baseline arrives', async () => {
+    const r = await startRoom('competitive');
+    try {
+      const socket = r.room.host.socket;
+      const originalSend = socket.send.bind(socket);
+      const originalReceive = r.app.roomManager.receive.bind(r.app.roomManager);
+      let hold = true; let syncRequests = 0;
+      r.app.roomManager.receive = (client, raw) => {
+        if (client === socket && JSON.parse(String(raw)).type === 'room.sync') syncRequests++;
+        return originalReceive(client, raw);
+      };
+      socket.send = (data, ...args) => {
+        const message = JSON.parse(String(data));
+        if (hold && (message.type === 'room.state' || message.type === 'room.delta')) return;
+        return originalSend(data, ...args);
+      };
+      const invalid = JSON.stringify({ type: 'room.delta', baseRevision: -100, revision: 1000000000, changes: [] });
+      originalSend(invalid); originalSend(invalid); originalSend(invalid);
+      await sleep(300);
+      assert.equal(syncRequests, 1, 'only one request while its response is withheld');
+      hold = false;
+      r.app.roomManager.syncState(socket);
+      await sleep(150);
+      r.room.engine.addEffect('turbo', r.room.players[0].id, Date.now());
+      r.room.engine.changed('game.state');
+      await sleep(300);
+      assert.match(r.host.document.getElementById('motion-chip').textContent, /TURBO/i);
+      assert.deepEqual(r.host.errors, []);
+    } finally { await r.close(); }
+  });
 });
 
 describe('Mode-specific HUD copy (F-026)', skipReason ? { skip: skipReason } : {}, () => {

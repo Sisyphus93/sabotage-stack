@@ -12,3 +12,6 @@ A temporary change to the stacking challenge, such as altered movement, visibili
 
 **Decoy**:
 The misleading second moving block shown during the Double sabotage; it is not the block placed on the tower.
+
+**Room**:
+A hosted multiplayer session in which players take part in Teamwork or Competitive rounds and spectators can watch.
