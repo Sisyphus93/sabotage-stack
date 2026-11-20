@@ -584,6 +584,67 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   });
 });
 
+describe('Preference messages are not an amplifier (P1-1)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const setup = (mode = 'competitive') => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(31), idleLimitMs: 1e12 });
+    const host = mk(), a = mk(), b = mk();
+    [host, a, b].forEach(socket => rm.connect(socket));
+    rm.receive(host, JSON.stringify({ type: 'room.create', mode }));
+    const code = [...rm.rooms.keys()][0];
+    rm.receive(a, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+    rm.receive(b, JSON.stringify({ type: 'room.join', code, name: 'B' }));
+    const room = rm.rooms.get(code);
+    const calls = { count: 0 };
+    const broadcastState = rm.broadcastState.bind(rm);
+    rm.broadcastState = (...args) => { calls.count += 1; return broadcastState(...args); };
+    return { rm, host, a, b, room, calls, advance: ms => { now += ms; } };
+  };
+
+  test('repeating the current preference never broadcasts the room', () => {
+    const t = setup();
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.calls.count, 0, 'identical preference messages must not fan out to every seat');
+    assert.equal(t.a.sent.filter(m => m.type === 'preferences.updated').length, 150, 'the sender still gets its acknowledgement');
+  });
+
+  test('toggling is rate limited, and what gets through still reaches every seat', () => {
+    const t = setup();
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: i % 2 === 0 }));
+    assert.ok(t.calls.count <= 8, `150 alternating messages caused ${t.calls.count} broadcasts in the first second`);
+    assert.ok(t.a.sent.some(m => m.code === 'RATE_LIMITED'), 'excess toggles are refused');
+    const accepted = t.room.players.find(player => player.socket === t.a).reducedMotion;
+    assert.equal(t.room.reducedMotion === undefined ? accepted : accepted, accepted);
+    t.advance(10_000);
+    const before = t.calls.count;
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: !t.room.players.find(p => p.socket === t.b).reducedMotion }));
+    assert.equal(t.calls.count, before + 1, 'a legitimate toggle broadcasts once');
+    assert.ok([t.host, t.a, t.b].every(socket => socket.sent.at(-1).type === 'room.state' || socket.sent.at(-1).type === 'room.delta'), 'every seat hears about it');
+    assert.equal(typeof t.rm.snapshot(t.room).reducedMotion, 'boolean');
+  });
+
+  test('the reduced-motion snapshot follows the accepted preference only', () => {
+    const t = setup('teamwork');
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, true);
+    for (let i = 0; i < 150; i += 1) t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, true, 'a rejected no-op must not overwrite what the room sees');
+    t.advance(10_000);
+    t.rm.receive(t.b, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.rm.snapshot(t.room).reducedMotion, false, 'a later accepted change is reflected');
+  });
+
+  test('a no-op preference does not keep the room alive', () => {
+    const t = setup();
+    t.room.lastActivityAt = 0;
+    t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: false }));
+    assert.equal(t.room.lastActivityAt, 0);
+    t.rm.receive(t.a, JSON.stringify({ type: 'client.preferences', reducedMotion: true }));
+    assert.ok(t.room.lastActivityAt > 0, 'a real change is activity');
+  });
+});
+
 describe('Spectator role (A-09)', () => {
   test('late spectators receive updates and resume, but cannot affect the room', () => {
     let now = 1_000_000; const rm = new RoomManager({ now: () => now, random: rng(12) });

@@ -22,6 +22,10 @@ const MESSAGE_ABUSE_CLOSE_AFTER = 400;
 // null and every connection shares the single legacy bucket, so reconnecting still cannot reset the budget.
 const JOIN_FAILURE_LIMIT = 60;
 const JOIN_FAILURE_WINDOW_MS = 60_000;
+// A real client changes its motion preference when the OS setting or the menu changes, a handful of times per
+// session. Anything faster is either a fight over the toggle or an attempt to amplify traffic.
+const PREFERENCE_BURST = 5;
+const PREFERENCE_REFILL_PER_SECOND = 2;
 const JOIN_FAILURE_MAX_KEYS = 10_000;
 const SHARED_CLIENT_KEY = '__shared__';
 // Rooms one client may hold open, and how many it may create in a window. Skipped while the client key is unknown.
@@ -58,7 +62,7 @@ function safeSend(socket, message) {
 }
 
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS, preferenceBurst = PREFERENCE_BURST, preferenceRefillPerSecond = PREFERENCE_REFILL_PER_SECOND } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
@@ -73,6 +77,9 @@ class RoomManager {
     this.roomsPerClient = Math.max(1, roomsPerClient);
     this.roomCreateLimit = Math.max(1, roomCreateLimit);
     this.roomCreateWindowMs = Math.max(1, roomCreateWindowMs);
+    this.preferenceBurst = Math.max(1, preferenceBurst);
+    this.preferenceRefillPerSecond = Math.max(0, preferenceRefillPerSecond);
+    this.preferenceBudgets = new WeakMap();
     this.roomCreations = new Map();
     this.clientKeys = new WeakMap();
     this.budgets = new WeakMap();
@@ -170,6 +177,19 @@ class RoomManager {
     if (budget.strikes >= MESSAGE_ABUSE_CLOSE_AFTER && typeof socket.close === 'function') {
       try { socket.close(1008, 'Message flood'); } catch (_) { /* already closing */ }
     }
+    return false;
+  }
+
+  // Only a message that actually changes the stored preference draws on this budget, so a client that repeats
+  // its current setting forever is free (it costs one reply and no broadcast) while a toggle loop is stopped.
+  allowPreferenceChange(socket) {
+    const now = this.now();
+    let budget = this.preferenceBudgets.get(socket);
+    if (!budget) { budget = { tokens: this.preferenceBurst, at: now }; this.preferenceBudgets.set(socket, budget); }
+    const elapsed = Math.max(0, now - budget.at) / 1000;
+    budget.tokens = Math.min(this.preferenceBurst, budget.tokens + elapsed * this.preferenceRefillPerSecond);
+    budget.at = now;
+    if (budget.tokens >= 1) { budget.tokens -= 1; return true; }
     return false;
   }
 
@@ -318,12 +338,20 @@ class RoomManager {
       safeSend(socket, { type: 'preferences.updated', reducedMotion });
       return;
     }
+    const player = session.role === 'host' ? null : room.players.find(item => item.id === session.playerId);
+    if (session.role !== 'host' && !player) return this.error(socket, 'PLAYER_INACTIVE', 'The player is no longer in this room.');
+    // Repeating the current setting is a no-op: it answers the sender, but it must not broadcast the whole room
+    // state to every seat and must not count as activity, which is what made this a 1,300x amplifier.
+    const current = session.role === 'host' ? room.host.reducedMotion : player.reducedMotion;
+    if (Boolean(current) === reducedMotion) {
+      safeSend(socket, { type: 'preferences.updated', reducedMotion });
+      return;
+    }
+    if (!this.allowPreferenceChange(socket)) return this.error(socket, 'RATE_LIMITED', 'You are changing settings too quickly.');
     if (session.role === 'host') {
       room.host.reducedMotion = reducedMotion;
       if (room.engine) room.engine.motionPrefersReduced = reducedMotion;
     } else {
-      const player = room.players.find(item => item.id === session.playerId);
-      if (!player) return this.error(socket, 'PLAYER_INACTIVE', 'The player is no longer in this room.');
       player.reducedMotion = reducedMotion;
     }
     room.lastActivityAt = this.now();
