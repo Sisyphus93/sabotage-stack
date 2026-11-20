@@ -345,7 +345,109 @@
     return { winner, counts, totalVotes: votes instanceof Map ? votes.size : Object.keys(votes || {}).length };
   }
 
+  // Policies preserve existing execution semantics, not runtime detection. The browser
+  // finishes expired effects before stepping; authoritative simulation reconciles them here.
+  const MOVER_POLICIES = Object.freeze({
+    authoritative: Object.freeze({ clampSamples: true, clampDrunk: true, replaceMoving: true, reconcileInactive: true, decoyWrap: false, writeVelocity: false }),
+    local: Object.freeze({ clampSamples: false, clampDrunk: false, replaceMoving: false, reconcileInactive: false, decoyWrap: true, writeVelocity: true })
+  });
+
+  function moverBehaviorSpeed(actor, height, effects, reduced, policy) {
+    const base = speedForHeight(height);
+    if (effects.turbo) return base * 1.7;
+    if (effects.rollercoaster && !reduced) return base * rollercoasterSpeedMultiplier(effects.rollercoaster.elapsed, actor.moving && actor.moving.rollerPhase);
+    if (effects.slowmo) return base * slowToDartMultiplier(effects.slowmo.elapsed);
+    if (effects.drunk) return base * (policy.clampDrunk ? Math.max(.25, Math.min(1.9, Number(actor.drunkMultiplier) || 1)) : actor.drunkMultiplier);
+    return base;
+  }
+
+  function finishMoverBehavior(actor, below, id, policy) {
+    if (!actor || !actor.moving) return;
+    if (id === 'accordion') {
+      const width = below ? below.right - below.left : actor.moving.width;
+      const restored = resizeMover(actor.moving, width, width);
+      if (policy.replaceMoving) actor.moving = restored;
+      else if (restored) Object.assign(actor.moving, restored);
+      delete actor.moving.accordion;
+      delete actor.moving.accordionReduced;
+      delete actor.moving.accordionPhase;
+    } else if (id === 'portal') {
+      actor.moving.portalWrap = false;
+      const maxLeft = Math.max(0, WIDTH - actor.moving.width);
+      if (actor.moving.left > maxLeft) { actor.moving.left = maxLeft; actor.moving.direction = -1; }
+    } else if (id === 'double') delete actor.moving.decoy;
+  }
+
+  // Mutates the supplied actor, preserving mover identity under the local policy.
+  // Effects are already resolved for this actor and contain elapsed seconds. No
+  // clocks, effect expiry, random defaults, turn rules, or transport live here.
+  // Prediction prepares geometry even when movement is ineligible, then advances
+  // later without preparing twice. Its drunk state is supplied by the server.
+  function stepMoverBehavior(actor, below, height, { dt, effects, reduced, random, policy,
+    prepare = true, advanceDrunk = true, advance = true }) {
+    if (!actor) return false;
+    if (advanceDrunk && effects.drunk) {
+      actor.drunkClock += dt;
+      while (actor.drunkClock >= (Number(actor.drunkHold) || .625)) {
+        actor.drunkClock -= Number(actor.drunkHold) || .625;
+        actor.drunkFrom = policy.clampDrunk ? Number(actor.drunkMultiplier) || 1 : actor.drunkMultiplier;
+        actor.drunkMode = actor.drunkMode === 'lurch' ? 'stumble' : 'lurch';
+        const sample = () => policy.clampSamples ? Math.max(0, Math.min(.999999999, Number(random()) || 0)) : random();
+        const min = actor.drunkMode === 'lurch' ? 1.55 : .25;
+        const max = actor.drunkMode === 'lurch' ? 1.9 : .45;
+        actor.drunkTarget = min + sample() * (max - min);
+        actor.drunkHold = .55 + sample() * (policy.clampSamples ? .15 : .70 - .55);
+      }
+      actor.drunkMultiplier += (actor.drunkTarget - actor.drunkMultiplier) * (1 - Math.exp(-dt / .11));
+      actor.drunkMultiplier = Math.max(.25, Math.min(1.9, actor.drunkMultiplier));
+    }
+    if (!actor.moving || !below) return false;
+    const resize = width => {
+      const resized = resizeMover(actor.moving, width, below.right - below.left);
+      if (policy.replaceMoving) actor.moving = resized;
+      else if (resized) Object.assign(actor.moving, resized);
+    };
+    const portal = Boolean(effects.portal);
+    if (prepare) {
+      const width = below.right - below.left;
+      const accordion = effects.accordion;
+      if (accordion) {
+        const elapsed = accordion.elapsed;
+        if ((!policy.reconcileInactive || !reduced) && (!actor.moving.accordion || (!reduced && actor.moving.accordionReduced))) {
+          actor.moving.accordion = true;
+          actor.moving.accordionReduced = false;
+          actor.moving.accordionPhase = accordionPhaseForWidth(actor.moving.width, width) - elapsed / .8;
+        }
+        if (reduced) {
+          actor.moving.accordion = true;
+          actor.moving.accordionReduced = true;
+          resize(width);
+        } else resize(accordionWidth(elapsed, width, actor.moving.accordionPhase || 0));
+      } else if (policy.reconcileInactive && actor.moving.accordion) {
+        finishMoverBehavior(actor, below, 'accordion', policy);
+      }
+      if (policy.reconcileInactive) {
+        if (portal) actor.moving.portalWrap = true;
+        else if (actor.moving.portalWrap) finishMoverBehavior(actor, below, 'portal', policy);
+      }
+    }
+    if (!advance) return true;
+    const speed = moverBehaviorSpeed(actor, height, effects, reduced, policy);
+    const boundsFor = moving => effects.calipers ? caliperBounds(below, moving) : null;
+    const magnetTarget = effects.magnet ? (below.left + below.right) / 2 : null;
+    const next = advanceMover(actor.moving, dt, speed, magnetTarget, { wrap: portal, bounds: boundsFor(actor.moving) });
+    if (next) { actor.moving.left = next.left; actor.moving.direction = next.direction; }
+    if (effects.double) {
+      if (!actor.moving.decoy) actor.moving.decoy = createShellDecoy(actor.moving);
+      const decoyNext = advanceMover(actor.moving.decoy, dt, speed, null, { wrap: policy.decoyWrap && portal, bounds: boundsFor(actor.moving.decoy) });
+      if (decoyNext) { actor.moving.decoy.left = decoyNext.left; actor.moving.decoy.direction = decoyNext.direction; }
+    } else if (actor.moving.decoy) delete actor.moving.decoy;
+    if (policy.writeVelocity) actor.moving.vx = speed;
+    return true;
+  }
+
   return Object.freeze({
+    MOVER_POLICIES, moverBehaviorSpeed, stepMoverBehavior, finishMoverBehavior,
     WIDTH, HEIGHT, BLOCK_H, BASELINE, MIN_WIDTH, PERFECT_WINDOW,
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,

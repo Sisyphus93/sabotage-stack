@@ -151,16 +151,15 @@ class RoundEngine {
     };
   }
 
+  moverEffects(playerId, now) {
+    return Object.fromEntries(['turbo', 'rollercoaster', 'slowmo', 'drunk', 'accordion', 'portal', 'calipers', 'magnet', 'double'].map(id => {
+      const effect = this.effectFor(id, playerId, now);
+      return [id, effect ? { elapsed: this.effectElapsed(effect, now) } : null];
+    }));
+  }
+
   movementSpeed(stack, actor, playerId, now) {
-    const base = Core.speedForHeight(Math.max(0, stack.length - 1));
-    if (this.hasEffect('turbo', playerId, now)) return base * 1.7;
-    const roller = this.effectFor('rollercoaster', playerId, now);
-    if (roller && !this.motionReductionEnabled()) return base * Core.rollercoasterSpeedMultiplier(this.effectElapsed(roller, now), actor.moving && actor.moving.rollerPhase);
-    const slowToDart = this.effectFor('slowmo', playerId, now);
-    if (slowToDart) return base * Core.slowToDartMultiplier(this.effectElapsed(slowToDart, now));
-    const drunk = this.effectFor('drunk', playerId, now);
-    if (drunk) return base * Math.max(0.25, Math.min(1.9, Number(actor.drunkMultiplier) || 1));
-    return base;
+    return Core.moverBehaviorSpeed(actor, Math.max(0, stack.length - 1), this.moverEffects(playerId, now), this.motionReductionEnabled(), Core.MOVER_POLICIES.authoritative);
   }
 
   effectiveSpeedAt(stack, actor, playerId, now) {
@@ -174,66 +173,12 @@ class RoundEngine {
     return speed;
   }
 
-  updateDrunk(actor, playerId, dt, now) {
-    if (!this.hasEffect('drunk', playerId, now)) return;
-    actor.drunkClock += dt;
-    while (actor.drunkClock >= (Number(actor.drunkHold) || 0.625)) {
-      actor.drunkClock -= Number(actor.drunkHold) || 0.625;
-      actor.drunkFrom = Number(actor.drunkMultiplier) || 1;
-      actor.drunkMode = actor.drunkMode === 'lurch' ? 'stumble' : 'lurch';
-      actor.drunkTarget = randomDrunkTarget(actor.drunkMode, this.random);
-      actor.drunkHold = 0.55 + Math.max(0, Math.min(0.999999999, Number(this.random()) || 0)) * 0.15;
-    }
-    const mix = 1 - Math.exp(-dt / 0.11);
-    actor.drunkMultiplier += (actor.drunkTarget - actor.drunkMultiplier) * mix;
-    actor.drunkMultiplier = Math.max(0.25, Math.min(1.9, actor.drunkMultiplier));
-  }
-
   advanceOneMover(actor, stack, playerId, dt, now) {
     if (!actor || !actor.moving || !Array.isArray(stack) || !stack.length || dt <= 0) return false;
-    this.updateDrunk(actor, playerId, dt, now);
-    const below = stack[stack.length - 1];
-    const belowWidth = below.right - below.left;
-    const accordion = this.effectFor('accordion', playerId, now);
-    if (accordion) {
-      const elapsed = this.effectElapsed(accordion, now);
-      if (this.motionReductionEnabled()) {
-        actor.moving.accordion = true;
-        actor.moving.accordionReduced = true;
-        actor.moving = Core.resizeMover(actor.moving, belowWidth, belowWidth);
-      } else {
-        if (!actor.moving.accordion || actor.moving.accordionReduced) {
-          actor.moving.accordion = true;
-          actor.moving.accordionReduced = false;
-          actor.moving.accordionPhase = Core.accordionPhaseForWidth(actor.moving.width, belowWidth) - elapsed / 0.8;
-        }
-        actor.moving = Core.resizeMover(actor.moving, Core.accordionWidth(elapsed, belowWidth, actor.moving.accordionPhase || 0), belowWidth);
-      }
-    } else if (actor.moving.accordion) {
-      actor.moving = Core.resizeMover(actor.moving, belowWidth, belowWidth);
-      delete actor.moving.accordion;
-      delete actor.moving.accordionReduced;
-      delete actor.moving.accordionPhase;
-    }
-    const portal = this.hasEffect('portal', playerId, now);
-    if (portal) actor.moving.portalWrap = true;
-    else if (actor.moving.portalWrap) {
-      actor.moving.portalWrap = false;
-      const maxLeft = Math.max(0, WORLD_WIDTH - actor.moving.width);
-      if (actor.moving.left > maxLeft) { actor.moving.left = maxLeft; actor.moving.direction = -1; }
-    }
-    const bounds = this.hasEffect('calipers', playerId, now) ? Core.caliperBounds(below, actor.moving) : null;
-    const magnetTarget = this.hasEffect('magnet', playerId, now) ? (below.left + below.right) / 2 : null;
-    const speed = this.movementSpeed(stack, actor, playerId, now);
-    const next = Core.advanceMover(actor.moving, dt, speed, magnetTarget, { wrap: portal, bounds });
-    if (next) { actor.moving.left = next.left; actor.moving.direction = next.direction; }
-    if (this.hasEffect('double', playerId, now)) {
-      if (!actor.moving.decoy) actor.moving.decoy = Core.createShellDecoy(actor.moving);
-      const decoyBounds = this.hasEffect('calipers', playerId, now) ? Core.caliperBounds(below, actor.moving.decoy) : null;
-      const decoyNext = Core.advanceMover(actor.moving.decoy, dt, speed, null, { bounds: decoyBounds });
-      if (decoyNext) { actor.moving.decoy.left = decoyNext.left; actor.moving.decoy.direction = decoyNext.direction; }
-    } else if (actor.moving.decoy) delete actor.moving.decoy;
-    return true;
+    return Core.stepMoverBehavior(actor, stack[stack.length - 1], Math.max(0, stack.length - 1), {
+      dt, effects: this.moverEffects(playerId, now), reduced: this.motionReductionEnabled(),
+      random: this.random, policy: Core.MOVER_POLICIES.authoritative
+    });
   }
 
   positionTolerance(stack, actor, playerId, now) {
