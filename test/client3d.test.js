@@ -154,6 +154,31 @@ describe('pure logic', () => {
   });
 });
 
+describe('post-processing teardown', () => {
+  test('disposeComposer frees every pass once, then the composer, and survives a pass that throws', async () => {
+    const { disposeComposer } = await load('composer-dispose.js');
+    const calls = [];
+    const spy = name => ({ dispose: () => calls.push(name) });
+    disposeComposer({ passes: [spy('render'), spy('bloom'), { noDispose: true }], dispose: () => calls.push('composer') });
+    assert.deepEqual(calls, ['render', 'bloom', 'composer'], 'each pass once, in order, then the composer');
+    const after = [];
+    assert.doesNotThrow(() => disposeComposer({
+      passes: [{ dispose() { throw new Error('boom'); } }, { dispose: () => after.push('second') }],
+      dispose: () => after.push('composer')
+    }));
+    assert.deepEqual(after, ['second', 'composer'], 'one bad pass does not keep the others alive');
+    assert.doesNotThrow(() => disposeComposer(null));
+    assert.doesNotThrow(() => disposeComposer({}));
+  });
+
+  test('the engine uses it on every rebuild and on dispose instead of touching render targets only', () => {
+    const engine = fs.readFileSync(path.join(ROOT, 'client3d', 'engine.js'), 'utf8');
+    assert.match(engine, /if \(this\.composer\) disposeComposer\(this\.composer\)/, 'buildComposer frees the old chain before making a new one');
+    assert.match(engine, /dispose\(\) \{\s*disposeComposer\(this\.composer\);/, 'Engine.dispose frees the passes too');
+    assert.doesNotMatch(engine, /renderTarget1\.dispose/, 'the old two-target teardown is gone');
+  });
+});
+
 describe('home view: turning the scene (orbit) and the hover field', () => {
   const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
   const make = async (options = {}) => { const { OrbitController } = await load('orbit.js'); return new OrbitController(options); };
