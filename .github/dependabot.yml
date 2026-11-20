@@ -1,0 +1,28 @@
+# Weekly Dependabot version updates for the actions used in .github/workflows.
+#
+# The pinned major tags (actions/checkout@v7, actions/setup-node@v7) are what rot: v4 was still in the
+# workflow when GitHub announced the Node 20 deprecation, and the first CI run surfaced it as a warning
+# nobody was watching for. This keeps the tags moving on its own.
+#
+# Every Dependabot pull request runs the full suite, because ci.yml triggers on pull_request and the job
+# only needs `contents: read` — no secrets, so Dependabot's restricted token is enough.
+#
+# Dependabot only reads this file from the default branch, so nothing happens until this is merged to main.
+version: 2
+
+updates:
+  - package-ecosystem: 'github-actions'
+    # For GitHub Actions, '/' means: scan .github/workflows (and an action.yml at the root, if one exists).
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      # Monday, early morning UTC, ahead of the working week rather than in the middle of it.
+      day: 'monday'
+      time: '05:00'
+      timezone: 'UTC'
+    # One action per pull request (there are two today). If a bump breaks the build, the failure points at one
+    # action instead of a bundle, and the other still lands on its own.
+    open-pull-requests-limit: 5
+    # Tests decide whether a bump is good; the label is only for finding these later.
+    labels:
+      - 'dependencies'
