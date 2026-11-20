@@ -3,6 +3,7 @@
 // landings, perfects, votes, sabotages, collapses, results. It never decides gameplay.
 import * as THREE from 'three';
 import { Engine, TIERS } from './engine.js';
+import { SceneInteraction } from './scene-interaction.js';
 import { createWorld } from './worlds.js';
 import { BlockKit } from './blocks.js';
 import { Tower, levelY } from './tower.js';
@@ -20,11 +21,8 @@ import { TitleDirector, titlePose, captionFor, TITLE_EFFECT_IDS } from './title-
 import { normalizeTheme, paletteFor, BALLOT_COLORS, themedBlockColor } from './palette.js';
 import { buildIcon, ICON_IDS } from './icons3d.js';
 import { hasGlyphs } from './text3d.js';
-import { OrbitController } from './orbit.js';
-import { ZoomController } from './view-zoom.js';
 import { HoverField, offsetFromPointer } from './hover.js';
 import { PatternTick, TICK_STEP } from './pattern-tick.js';
-import { createOrbitHud, ZOOM_STEP } from './orbit-hud.js';
 import { Totems, totemSlot, totemHeight } from './totems.js';
 import { buildCrown, crownPose } from './crown.js';
 import { podiumEntries, podiumMetrics, revealCount, revealedFallen, headlineFor } from './podium.js';
@@ -37,14 +35,6 @@ const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits
 const DUST = [0.82, 0.74, 0.6];
 // Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
 const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas)'; // (the game's canvas is a role=button for assistive tech, but it is the scene)
-// Controls that read the arrow keys, Home and the digits themselves keep them: a text field, a select, a slider, a radio group, a menu, a dialog. A button or a link does not, so one that
-// happens to hold the focus (the page focuses the Drop button in a round and the main action of each results screen) must not take the view's keys away.
-const KEY_OWNERS = 'input, textarea, select, dialog, video, audio, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"], [role="spinbutton"], [role="radio"], [role="tab"], [role="listbox"], [role="option"], [role="combobox"], [role="menu"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="tree"], [role="treeitem"], [role="grid"], [role="gridcell"]';
-// The results, podium and lobby controls sit in a corner next to the page's footer note: their hint is short, so it never runs over the note's words.
-const SCENE_HINT = { mouse: '<span class="orbit-hint-full"><b>Drag</b> to turn, <b>scroll</b> to zoom</span><span class="orbit-hint-short"><b>Drag</b> to turn, <b>scroll</b> to zoom</span>' };
-const PANEL_SELECTOR = '.side-card, .play-card, .result-info, .multiplayer-results, .preview-card, .home-copy, .home-bottom, .topbar, .footer-note, .orbit-hud';
-const STAGE_SELECTOR = '#game-stage'; // the play field sits inside a panel (.play-card) but is itself part of the scene
-const PLAY_HINT_KEY = 'sabotage-stack-play-view-hint-v1';
 const FLOOR_CLEARANCE = 14; // the camera never comes lower than this above the plinth, however far the visitor turns it down
 const HOVER_LOOK = {
   paper: { light: '#FFD9A0', power: 52000, sparkles: ['#E3A33B', '#2F8478', '#D5472F', '#FFF1D0', '#C96F8A'] },
@@ -53,8 +43,6 @@ const HOVER_LOOK = {
 };
 const tmpTitle = new THREE.Vector3();
 const closest = (target, selector) => Boolean(target && target.closest && target.closest(selector));
-// Chrome: what the pointer must leave alone (controls, the page's glass panels), as opposed to the scene itself
-const chromeAt = target => closest(target, UI_SELECTOR) || (closest(target, PANEL_SELECTOR) && !closest(target, STAGE_SELECTOR));
 const soloIds = new WeakMap(); let soloCounter = 0;
 const soloId = game => { if (!soloIds.has(game)) soloIds.set(game, ++soloCounter); return soloIds.get(game); };
 
@@ -71,46 +59,35 @@ export class Stage {
       dust: (pos, count = 6) => this.fx.sparks.burst({ pos, count, speed: 70, spread: 1, color: DUST, size: 16, life: 0.9, gravity: 10, up: 0.5, drag: 1.5, alpha: 0.34, growth: 16 })
     };
     this.scene.add(this.fx.sparks.points, this.fx.glints.points, this.fx.confetti.mesh, this.fx.pulses.group);
-    this.pointer = { x: 0, y: 0, px: 0, py: 0, speed: 0, inside: false, lastX: 0, lastY: 0, lastT: 0, ndc: new THREE.Vector2() };
+    this.interaction = new SceneInteraction({
+      onTap: event => this.handleClick(event), onRushIntro: () => this.rushIntro(), onToy: () => this.triggerSabotage()
+    });
     this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 40);
     this.rig = { yaw: 0, pitch: 0.1, zoom: 1, roll: 0, kick: new Spring(0, 220, 14), shakeAmp: 0, shakeT: 0, focusY: 220, intro: 0 };
     this.timeScale = 1; this.slowT = 0; this.flash = 0; this.desatPulse = 0; this.caPulse = 0;
     this.towers = {}; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
     this.sinking = new Map(); this.flight = null; this.camSpec = null; this.plinthGoal = null; this.lastDt = 0.016;
     this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
-    // home view: turning the scene (orbit.js), how awake it is under the pointer (hover.js) and the on-screen controls
-    this.orbit = new OrbitController(); this.dolly = new ZoomController(); this.hover = new HoverField(); this.drag = null; this.dragBlend = 0; this.cursor = '';
+    // Scene reactions use pointer observations; the interaction module owns controls.
+    this.hover = new HoverField();
     // what the pixel UI (pixel-ui.js) tells the stage: whether its snapped grid trail is on, which vote row is hovered, and primary-button ticks
     this.gridTrail = null; this.voteHover = -1; this.patternTick = new PatternTick();
     // the view the visitor made (turned, zoomed) is added on top of each scene's own camera (userView); facing = the yaw the labels, digits and plates turn by to keep facing it
-    this.facing = 0; this.playHud = null; this.playHintAge = 0; this.lastRightTap = null;
-    this.hud = null; this.resultsHud = null; this.resultsHintAge = 0; this.lobbyHud = null; this.lobbyHintAge = 0; this.hintAge = 0; this.idleFor = 0; this.contextGuardUntil = 0; this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
+    this.facing = 0;
+    this.pointerFrame = null; this.lastRipple = 0; this.cameraRay = new THREE.Vector3();
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
     this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
     this.scene.add(this.cursorLight);
     this.buildTheme(this.theme);
     this.engine.on('tier', tier => this.applyTier(tier));
     this.engine.on('restored', () => this.buildTheme(this.theme, true));
-    window.addEventListener('pointermove', this.onPointerMove = e => this.handleMove(e), { passive: true });
-    window.addEventListener('pointerdown', this.onPointerDown = e => this.handleDown(e), { passive: true });
-    window.addEventListener('pointerup', this.onPointerUp = e => this.handleUp(e), { passive: true });
-    window.addEventListener('pointercancel', this.onPointerCancel = e => this.handleUp(e, true), { passive: true });
-    document.documentElement.addEventListener('pointerleave', this.onPointerLeave = () => { this.pointer.inside = false; });
-    window.addEventListener('blur', this.onBlur = () => { this.pointer.inside = false; this.endDrag(true); });
-    window.addEventListener('contextmenu', this.onContextMenu = e => {
-      if (!this.canOrbit()) return;
-      // a right-drag that began on the scene owns the menu wherever it is released (Windows raises it on mouse-up, over whatever is there)
-      const turning = (this.drag && this.drag.button === 2) || performance.now() < this.contextGuardUntil;
-      if (turning || !chromeAt(e.target)) e.preventDefault();
-    });
-    // (a double click is the game's own two drops, so only the scenes where the left button is free reset on it - home, results, the lobby, the podium and the host's arena; the game resets on a double right click)
-    window.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode !== 'play' && this.canOrbit() && !chromeAt(e.target)) this.resetView(); });
-    window.addEventListener('wheel', this.onWheel = e => this.handleWheel(e), { passive: false });
-    window.addEventListener('keydown', this.onKeyDown = e => this.handleKey(e));
+    this.interaction.activate();
     this.applyTier(this.engine.tier);
     // opening the link on the title screen: the menu is held back until SABOTAGE STACK has rained down (index.js adds has-3d in the same task)
     if (view.screen === 'title' && !view.reduced) { this.holdMenu = true; document.documentElement.dataset.intro = 'hold'; }
   }
+
+  get pointer() { return this.interaction.pointer; }
 
   applyTier(tier) {
     this.fx.sparks.density = tier.particles; this.fx.glints.density = tier.particles; this.fx.confetti.density = tier.particles;
@@ -215,81 +192,8 @@ export class Stage {
 
   confettiColors() { return this.theme === 'paper' ? ['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#C96F8A'] : this.theme === 'sunset' ? ['#FFC53D', '#2EC4B6', '#9B5DE5', '#FF5964', '#FF8FAB'] : ['#FFC83D', '#35D0E8', '#F2F5FF', '#E5322D', '#FF7FA8']; }
 
-  // -------------------------------------------------------------------------------------------------------------------
-  handlePointer(event) {
-    const p = this.pointer; const now = performance.now(); const w = window.innerWidth; const h = window.innerHeight;
-    const dt = Math.max(1, now - p.lastT);
-    const speed = Math.hypot(event.clientX - p.lastX, event.clientY - p.lastY) / dt * 1000;
-    p.speed = Math.min(5000, Math.max(speed, p.speed * 0.6)); p.lastX = event.clientX; p.lastY = event.clientY; p.lastT = now;
-    p.x = event.clientX / w * 2 - 1; p.y = -(event.clientY / h * 2 - 1); p.ndc.set(p.x, p.y); p.inside = true;
-    p.touch = event.pointerType === 'touch'; p.buttons = event.buttons || 0; // (the pixel feel waits while any button is down, a middle press included)
-    p.overUi = chromeAt(event.target);
-  }
-
-  // -------------------------------------------------------------------------------------------------------------------
-  // Home view input. Hold the left or the right mouse button (or a finger) on the scene and drag to turn it all the way round
-  // (orbit.js). A press that never moves is a click: it pops a headline letter or calls a sabotage from the ring.
-  handleMove(event) {
-    this.handlePointer(event); this.idleFor = 0;
-    const d = this.drag; if (!d || event.pointerId !== d.id) return;
-    if (event.pointerType === 'mouse' && event.buttons === 0) { this.endDrag(false, event); return; } // let go outside the window
-    if (!d.moved && Math.hypot(event.clientX - d.x, event.clientY - d.y) > this.orbit.tapSlop) d.moved = true;
-    this.orbit.move(event.clientX, event.clientY, event.timeStamp / 1000, { pitch: !d.touch });
-  }
-
-  // a visitor who does not want to wait: any press or key speeds the title's build up (and so brings the menu in sooner)
+  // A press or key can rush the title build.
   rushIntro() { if (this.holdMenu && this.title && this.title.mesh && !this.title.complete) this.title.speed = Math.max(this.title.speed, 3.4); }
-
-  handleDown(event) {
-    this.rushIntro(); this.handlePointer(event); this.idleFor = 0;
-    if (!this.canOrbit(event.button) || this.drag || !event.isPrimary) return;
-    if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
-    if (this.pointer.overUi) return;
-    this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp, button: event.button, moved: false, touch: event.pointerType === 'touch' };
-    this.orbit.begin(event.clientX, event.clientY, event.timeStamp / 1000);
-    document.documentElement.classList.add('orbiting');
-    const selection = window.getSelection && window.getSelection(); if (selection && selection.removeAllRanges) selection.removeAllRanges();
-  }
-
-  handleUp(event, cancelled = false) {
-    this.pointer.buttons = event.buttons || 0; // (a release with no move after it must not leave the pixel feel waiting)
-    const d = this.drag; if (!d || event.pointerId !== d.id) return;
-    if (event.pointerType === 'touch') this.pointer.inside = false; // a finger has no hover
-    this.endDrag(cancelled, event);
-  }
-
-  endDrag(cancelled = false, event = null) {
-    const d = this.drag; if (!d) return; this.drag = null;
-    this.orbit.end(event ? event.timeStamp / 1000 : performance.now() / 1000);
-    if (d.button === 2) this.contextGuardUntil = performance.now() + 500;
-    document.documentElement.classList.remove('orbiting');
-    if (d.moved) { this.usedView(); return; }
-    if (!cancelled && event && d.button === 0 && event.timeStamp - d.t < 600) this.handleClick(event);
-    else if (!cancelled && event && d.button === 2) this.handleRightTap(event);
-  }
-
-  // Two quick right clicks on the same spot: back to the default view (in the game the left button is DROP, so a double click cannot be the reset there).
-  handleRightTap(event) {
-    const last = this.lastRightTap; const t = event.timeStamp;
-    if (last && t - last.t < 420 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 12) { this.lastRightTap = null; this.resetView(); } else this.lastRightTap = { t, x: event.clientX, y: event.clientY };
-  }
-
-  // The wheel zooms the scene it is over. Panels and controls keep it (they scroll the page), and so does the browser's own zoom (Ctrl + wheel, a trackpad
-  // pinch). Wheeling on against the zoom limit hands the wheel back to the page after a pause (view-zoom.js), so the page can still be scrolled from here.
-  handleWheel(event) {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || !this.canOrbit()) return;
-    if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || chromeAt(event.target) || document.querySelector('dialog[open]')) return;
-    this.dolly.setReduced(this.reduced);
-    if (this.dolly.wheel(event.deltaY, event.deltaMode, event.timeStamp / 1000)) { event.preventDefault(); this.usedView(); }
-  }
-
-  // The visitor has found the view controls: the hints can go (and stay gone), and the scene's idle timer starts over.
-  usedView() { this.idleFor = 0; const hud = this.sceneHud(); if (hud) hud.quiet(); }
-  // the on-screen controls of the scene on show: the home scene, the results (and the podium), the lobby, and the game (and its arena) each have their own
-  sceneHud() { switch (this.mode) { case 'hero': return this.hud; case 'results': case 'celebrate': return this.resultsHud; case 'lobby': return this.lobbyHud; default: return this.playHud; } }
-
-  // Back to the default view: turned and zoomed alike.
-  resetView(duration = 0.9) { this.orbit.reset(duration); this.dolly.reset(duration); this.idleFor = 0; }
 
   // Which of the ring's 16 is under the pointer. The ring stands in depth, so the proxy nearest the CAMERA is not the one clicked: of the
   // icons the ray actually goes through, take the one whose centre is closest to the ray (in the screen's own plane).
@@ -309,39 +213,13 @@ export class Stage {
   handleClick(event) {
     if (this.mode !== 'hero' || !this.arsenal) return;
     if (closest(event.target, UI_SELECTOR)) return;
-    this.handlePointer(event);
+    this.interaction.samplePointer(event);
     this.raycaster.setFromCamera(this.pointer.ndc, this.camera);
     const idx = this.pickRing();
     if (idx >= 0) { this.directorForce(this.arsenal.items[idx].id); if (!this.reduced) this.title.wave(this.arsenal.items[idx].holder.position.x); return; }
     // anywhere on the title: the bricks under the pointer are knocked out (and fall back in)
     if (this.title.complete && this.title.poke(this.raycaster) > 0) { this.world.crowd.cheer(0.5); if (!this.reduced) this.title.wave(this.pointerFrame ? this.pointerFrame.point.x : 0, 1900); }
   }
-
-  // The arrow keys turn the scene, + and - zoom it, 0 or Home reset it, wherever the focus is except on a control that reads those keys itself (KEY_OWNERS: a select,
-  // a text field...). The Drop button, a results screen's main action and the game's canvas (Space, Enter and 1 / 2 / 3 are the page's) do not, so they pass them on.
-  handleKey(event) {
-    this.rushIntro();
-    if (!this.canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (closest(event.target, KEY_OWNERS)) return;
-    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8; const now = event.timeStamp / 1000;
-    if (event.key === 'ArrowLeft') { this.orbit.rotateBy(-step, 0.35); this.usedView(); event.preventDefault(); }
-    else if (event.key === 'ArrowRight') { this.orbit.rotateBy(step, 0.35); this.usedView(); event.preventDefault(); }
-    else if (event.key === 'Home' || event.key === '0') { this.resetView(); event.preventDefault(); }
-    else if (event.key === '+' || event.key === '=') { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(ZOOM_STEP, now); this.usedView(); event.preventDefault(); }
-    else if (event.key === '-' || event.key === '_') { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(1 / ZOOM_STEP, now); this.usedView(); event.preventDefault(); }
-  }
-
-  // The scenes a visitor may turn all the way round and zoom: the home scene, the lobby, the game (and the arena that watches it), the solo results (the score
-  // sculpture) and the podium. All but the game turn with either mouse button; the game keeps the left button for itself (DROP), so there only the right one turns the view.
-  canOrbit(button = 2) {
-    switch (this.mode) {
-      case 'hero': case 'results': case 'arena': case 'lobby': case 'celebrate': return true; // (the host's arena, the lobby and the podium have no use for the left button)
-      case 'play': return button === 2;
-      default: return false;
-    }
-  }
-
-  setCursor(value) { if (value === this.cursor) return; this.cursor = value; document.documentElement.style.cursor = value; }
 
   // The pointer in the scene: where its ray meets a plane that faces the camera and passes through `anchor` (moved `advance`
   // units towards the camera), plus that plane's right / up axes, so distances can be measured across the screen.
@@ -361,7 +239,7 @@ export class Stage {
   triggerSabotage() {
     const d = this.director; if (this.mode !== 'hero' || !d) return '';
     const current = d.effect ? d.effect.id : ''; const pool = TITLE_EFFECT_IDS.filter(id => id !== current && id !== d.forced && (!this.reduced || d.pool().includes(id)));
-    if (!pool.length) return ''; const id = pool[Math.floor(Math.random() * pool.length)]; this.directorForce(id); this.idleFor = 0; return id;
+    if (!pool.length) return ''; const id = pool[Math.floor(Math.random() * pool.length)]; this.directorForce(id); this.interaction.wake(); return id;
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -387,7 +265,7 @@ export class Stage {
     const dt = clamp((ts - (this.last || ts)) / 1000, 0, 0.05); this.last = ts; this.lastDt = dt;
     if (this.engine.contextLost) return;
     this.time += dt;
-    const view = this.host.view(); this.view = view; this.reduced = Boolean(view.reduced); this.engine.reducedMotion = this.reduced;
+    const view = this.host.view(); this.view = view; this.reduced = Boolean(view.reduced); this.engine.reducedMotion = this.reduced; this.interaction.setContext({ reduced: this.reduced });
     const theme = normalizeTheme(view.theme);
     if (theme !== this.theme) this.buildTheme(theme);
     const mode = this.pickMode(view);
@@ -407,7 +285,7 @@ export class Stage {
     this.updateLeaving(dt);
     this.updateCommon(dt);
     if (render) { this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts); }
-    this.pointer.speed *= 0.9;
+    this.interaction.endFrame();
   }
 
   activeTowers() { return this.mode === 'arena' || this.mode === 'celebrate' ? this.arena : Object.values(this.towers); }
@@ -432,10 +310,8 @@ export class Stage {
     this.plinthGoal = mode === 'celebrate' ? null : [mode === 'arena' ? 2.3 : hero ? 2.2 : play ? 1.4 : 1, mode === 'arena' ? 0.62 : hero ? 1.5 : 1];
     if (!flies && this.plinthGoal) this.world.plinth.scale.set(this.plinthGoal[0], 1, this.plinthGoal[1]);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
-    if (hero) { this.endDrag(true); this.orbit.snap(); this.dolly.snap(); this.openHud(); } else this.leaveHome(); // (every view starts square on: nothing the visitor did to the last one is inherited)
-    if (mode === 'results' || mode === 'celebrate') this.openResultsHud();
-    if (mode === 'lobby') this.openLobbyHud();
-    if (mode === 'play' || mode === 'arena') this.openPlayHud(); else this.closePlayHud();
+    this.interaction.setContext({ mode, reduced: this.reduced });
+    if (!hero) this.leaveHome();
     if (hero && !this.director) this.director = new TitleDirector(TITLE_EFFECT_IDS, rng(Date.now() & 0xffff), { reduced: this.reduced });
     if (mode === 'results') { this.resultsT = 0; this.scoreShown = false; }
     this.bricks.hide('score', false); this.bricks.hide('height', false); this.heightShown = -1; this.candidates.release();
@@ -467,55 +343,20 @@ export class Stage {
     }
   }
 
-  // The home view's on-screen controls (they live inside the title screen, so the page hides them with it).
-  openHud() {
-    if (this.hud) return; this.hintAge = 0;
-    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
-    const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    this.hud = createOrbitHud({ doc: document, storage, touch: coarse, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor), onToy: () => this.triggerSabotage() });
-  }
-
-  // The solo results, the podium and the lobby turn too: the same hint and buttons, in a corner of the scene (no toy dock here). The results and the podium
-  // share the results screen's controls, the lobby has its own in the room screen (the page hides each along with its screen).
-  openResultsHud() { this.resultsHintAge = 0; if (!this.resultsHud) this.resultsHud = this.makeSceneHud('results-screen', 'orbit-hud-results'); }
-  openLobbyHud() { this.lobbyHintAge = 0; if (!this.lobbyHud) this.lobbyHud = this.makeSceneHud('room-screen', 'orbit-hud-lobby'); }
-  makeSceneHud(hostId, id) {
-    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
-    const coarse = Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    return createOrbitHud({ doc: document, storage, touch: coarse, hostId, id, dock: false, hint: SCENE_HINT, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor) });
-  }
   // the lobby's controls sit in the bottom-right corner of the screen, under the cards (a narrow screen is all cards: the page hides them there)
   placeLobbyHud(W, H, dt) {
-    const hud = this.lobbyHud; if (!hud) return;
-    hud.place(W - 16, H - 14); hud.setRotated(this.orbit.rotated || this.dolly.zoomed);
-    this.lobbyHintAge += dt; if (this.lobbyHintAge > 10) hud.fade();
+    this.interaction.placeHud('lobby', W - 16, H - 14, dt);
   }
 
-  // The game's view controls: zoom, turn and reset in the corner of the play field, for the mouse (the right button turns the view there, the wheel zooms) and
-  // for the keyboard. Not on a touch screen: the board is for the thumb, and a finger cannot hold the right button.
-  openPlayHud() {
-    if (this.playHud) return; this.playHintAge = 0;
-    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
-    let storage = null; try { storage = window.localStorage; } catch (_) { storage = null; }
-    let shown = 0; try { shown = Number(storage.getItem(`${PLAY_HINT_KEY}-shown`)) || 0; storage.setItem(`${PLAY_HINT_KEY}-shown`, String(shown + 1)); } catch (_) { shown = 0; }
-    const hint = { mouse: '<span class="orbit-hint-full"><b>Right-drag</b> to look around, <b>scroll</b> to zoom</span><span class="orbit-hint-short"><b>Right-drag</b> to look, <b>scroll</b> to zoom</span>' };
-    this.playHud = createOrbitHud({ doc: document, storage, hostId: 'game-screen', id: 'orbit-hud-play', dock: false, layout: 'stage', hint, hintKey: PLAY_HINT_KEY, onTurn: delta => { this.orbit.rotateBy(delta); this.usedView(); }, onReset: () => this.resetView(), onZoom: factor => this.zoomBy(factor) });
-    if (shown >= 3 && this.playHud) this.playHud.fade(); // (it has said its piece: three games, or the first time it was used)
-  }
-  closePlayHud() { if (this.playHud) { this.playHud.dispose(); this.playHud = null; } }
   // the bottom-right corner of the play field: the floor, never the sky where the votes and the sabotage names appear
   placePlayHud(rect, dt) {
-    const hud = this.playHud; if (!hud) return;
-    hud.place(rect.x + rect.w - 10, rect.y + rect.h - 12); hud.setRotated(this.orbit.rotated || this.dolly.zoomed);
-    this.playHintAge += dt; if (this.playHintAge > 12) hud.fade();
+    this.interaction.placeHud('play', rect.x + rect.w - 10, rect.y + rect.h - 12, dt);
   }
-
-  zoomBy(factor) { this.dolly.setReduced(this.reduced); this.dolly.zoomBy(factor, performance.now() / 1000); this.usedView(); }
 
   // Everything the home view changed that the other views must not inherit.
   leaveHome() {
-    this.endDrag(true); this.orbit.snap(); this.dolly.snap(); this.world.setViewYaw(0); this.popups.faceYaw = 0; this.facing = 0; this.lastRightTap = null; this.dragBlend = 0;
-    this.setCursor(''); this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
+    this.world.setViewYaw(0); this.popups.faceYaw = 0; this.facing = 0;
+    this.heroHover = -1; this.arsenal.hover = -1; this.cursorLight.intensity = 0;
     this.hover.energy = 0; this.hover.inside = false; this.world.crowd.setAttention(0, 0, 0, 0); this.hideCaption();
     this.engine.bloomPass.strength = this.palette.bloom;
   }
@@ -537,15 +378,7 @@ export class Stage {
   // until it has been used. Returns the yaw and pitch to add, the zoom factor to multiply by, and how much of the pointer's own parallax is still wanted
   // (it steps aside while the scene is being turned). `focusY` is the height the camera looks at, which decides how low it may come.
   userView(dt, focusY, { idleReset = false } = {}) {
-    const o = this.orbit; const z = this.dolly; const reduced = this.reduced;
-    const floorPitch = Math.asin(clamp((10 - focusY) / (this.camDist || 1700), -0.95, 0.95)); // the lowest view that keeps the camera above the floor
-    o.setReduced(reduced); o.minPitch = Math.min(0, floorPitch - 0.045); o.update(dt); z.setReduced(reduced); z.update(dt);
-    const turning = Boolean(this.drag) || o.moving;
-    // a scene on show (home, results) returns to its default view by itself after 30 s untouched; the game keeps whatever view its player chose
-    if (idleReset && !reduced && (o.rotated || z.zoomed) && !turning && !z.moving) { this.idleFor += dt; if (this.idleFor > 30) { this.resetView(2.4); this.idleFor = 0; } } else if (turning || z.moving) this.idleFor = 0;
-    // the pointer's own parallax steps aside while the scene is being turned, and comes back as it settles
-    this.dragBlend = damp(this.dragBlend, turning ? 1 : 0, this.drag ? 14 : 2.2, dt);
-    return { yaw: o.yaw, pitch: o.pitch, zoom: z.value, par: 1 - this.dragBlend };
+    return this.interaction.update(dt, focusY, { idleReset, cameraDistance: this.camDist || 1700 });
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -760,7 +593,7 @@ export class Stage {
     let rect;
     if (W >= 900 && cr.right < W * 0.66) rect = { x: cr.right + 12, y: barBottom + 6, w: W - cr.right - 28, h: H - barBottom - 20 };
     else rect = { x: 6, y: barBottom + 2, w: W - 12, h: Math.max(180, Math.min(cr.top - barBottom - 6, H * 0.62)) };
-    const title = this.title; const director = this.director; const p = this.pointer; const o = this.orbit; const hover = this.hover;
+    const title = this.title; const director = this.director; const p = this.pointer; const hover = this.hover;
     // ---- the title: built (it rains from the sky) the first time the home scene is shown, and again after a theme change
     if (!title.titleBuilt) {
       title.titleBuilt = true; this.swoop = !this.heroSeen && !reduced; title.build({ speed: this.heroSeen ? 2.2 : 1, instant: reduced }); this.heroSeen = true; director.timer = 0;
@@ -783,14 +616,14 @@ export class Stage {
     const uv = this.userView(dt, cyBase, { idleReset: true }); const par = uv.par;
     const [px, py] = this.parallax(1.4);
     const cam = pose ? pose.cam : null; const focus = cam ? cam.focus : 0;
-    const yaw = (1 - intro) * -0.5 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + o.yaw;
-    const pitch = lerp(0.74, 0.085, intro) + py * par + o.pitch;
+    const yaw = (1 - intro) * -0.5 + px * par + (reduced ? 0 : Math.sin(this.time * 0.19) * 0.035) + uv.yaw;
+    const pitch = lerp(0.74, 0.085, intro) + py * par + uv.pitch;
     const zoom = lerp(0.46, 1, intro) * (reduced ? 1 : 1 + 0.028 * hover.energy) * (cam ? cam.zoom : 1) * uv.zoom;
     const shakeAmp = cam && !reduced ? cam.shake * 8 : 0;
     const shake = [shakeAmp ? Math.sin(this.time * 61) * shakeAmp : 0, this.rig.kick.step(dt) + (shakeAmp ? Math.cos(this.time * 53) * shakeAmp * 0.7 : 0), 0];
     const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(lerp(0, Lb.topOffsetX, focus), lerp(cyBase, title.topCenterY, focus), 0);
     this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h * 0.5 }, rect, worldW, worldH, yaw, pitch, zoom, roll: cam ? cam.roll : 0, shake });
-    this.world.setViewYaw(o.yaw); this.facing = yaw;
+    this.world.setViewYaw(uv.yaw); this.facing = yaw;
     title.toCamera.copy(this.camera.position).sub(tmpTitle.set(0, 150, 0)).normalize();
 
     // ---- the pointer in the scene
@@ -798,17 +631,17 @@ export class Stage {
     const inRect = onScene && p.lastX >= rect.x && p.lastX <= rect.x + rect.w && p.lastY >= rect.y && p.lastY <= rect.y + rect.h;
     const frame = inRect ? this.pointerOnScreenPlane(anchor, p.ndc, 0) : null; // its place on a plane through the scene that faces the camera
     let idx = -1;
-    if (onScene && !this.drag) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.pickRing(); }
+    if (onScene && !this.interaction.dragging) { this.raycaster.setFromCamera(p.ndc, this.camera); idx = this.pickRing(); }
     if (idx !== this.heroHover) { this.heroHover = idx; this.arsenal.hover = idx; this.showHoverLabel(idx, yaw); } else if (idx >= 0) this.showHoverLabel(idx, yaw, true);
-    const overTitle = onScene && !this.drag && idx < 0 && title.complete && this.overTitle(p.lastX, p.lastY);
-    this.setCursor(this.drag ? 'grabbing' : idx >= 0 || overTitle ? 'pointer' : onScene ? 'grab' : '');
-    hover.update(dt, { point: frame ? frame.point : null, speed: p.speed, blocked: Boolean(this.drag), reduced });
+    const overTitle = onScene && !this.interaction.dragging && idx < 0 && title.complete && this.overTitle(p.lastX, p.lastY);
+    this.interaction.setCursor(this.interaction.dragging ? 'grabbing' : idx >= 0 || overTitle ? 'pointer' : onScene ? 'grab' : '');
+    hover.update(dt, { point: frame ? frame.point : null, speed: p.speed, blocked: Boolean(this.interaction.dragging), reduced });
     this.hoverLife(dt, frame, anchor, yaw, rect);
     { // the crowd's eyes: the pointer once it is over the scene, otherwise the title, where the sabotages land
       const e = hover.energy; const sweep = Math.sin(this.time * 0.5) * (b.x1 - b.x0) * 0.3;
-      this.watch(lerp(sweep, hover.x, e), lerp(title.topCenterY, hover.y, e), lerp(0, hover.z, e), 1, o.yaw);
+      this.watch(lerp(sweep, hover.x, e), lerp(title.topCenterY, hover.y, e), lerp(0, hover.z, e), 1, uv.yaw);
     }
-    const pointer = this.drag ? null : frame;
+    const pointer = this.interaction.dragging ? null : frame;
     // (one pointer frame for both layers of the title: the letter reaction reads `pointer` and the speed of the sweep, the scatter reads the same `pointer`.
     //  It is null while a button is held: nothing reacts mid-drag. Under Reduced Motion title.update() drops it itself.)
     const pointerNow = p.buttons ? null : pointer;
@@ -823,13 +656,10 @@ export class Stage {
     else if (!effect && this.captionKey) this.hideCaption();
     this.placeCaption(rect);
     this.ruler.group.visible = false;
-    if (this.hud) {
-      // The strip under the scene rises from the bottom of the window as the page scrolls: the controls ride above it instead of covering its right end.
-      const strip = document.querySelector('#title-screen .home-bottom'); const sr = strip ? strip.getBoundingClientRect() : null;
-      const ceiling = sr && sr.height > 4 && sr.top < H ? sr.top - 10 : Infinity;
-      this.hud.place(rect.x + rect.w - 14, Math.max(rect.y + 120, Math.min(rect.y + rect.h - 12, ceiling))); this.hud.setRotated(o.rotated);
-      this.hintAge += dt; if (this.hintAge > 10) this.hud.fade(); // the hint is only there to be noticed: it steps aside by itself (until the first drag, it comes back next visit)
-    }
+    // Controls ride above the footer strip rather than covering it.
+    const strip = document.querySelector('#title-screen .home-bottom'); const sr = strip ? strip.getBoundingClientRect() : null;
+    const ceiling = sr && sr.height > 4 && sr.top < H ? sr.top - 10 : Infinity;
+    this.interaction.placeHud('hero', rect.x + rect.w - 14, Math.max(rect.y + 120, Math.min(rect.y + rect.h - 12, ceiling)), dt);
     this.world.plinth.position.set(0, 0, 0);
     this.updateWorld(dt, 190, 0, view, null);
     if (pose && !reduced) {
@@ -904,7 +734,7 @@ export class Stage {
       light.intensity = e * this.cursorLightPower;
     } else light.intensity = 0;
     if (reduced || !frame) { crowd.setAttention(0, 0, 0, 0); return; }
-    const c = Math.cos(this.orbit.yaw); const s = Math.sin(this.orbit.yaw); // into the crowd's own (turned) space
+    const c = Math.cos(this.interaction.view.yaw); const s = Math.sin(this.interaction.view.yaw); // into the crowd's own (turned) space
     crowd.setAttention(c * hover.x - s * hover.z, s * hover.x + c * hover.z + 260, e * 0.85, e * (hover.dwell > 1.2 ? 1 : 0.65));
     if (hover.entered) { this.title.wave(frame.point.x); crowd.cheer(0.55); this.groundRipple(1); }
     // while the pixel UI's snapped grid trail is on, it is the trail: the sparkle stream steps aside (the light and the ripples stay)
@@ -1034,12 +864,12 @@ export class Stage {
     const worldH = Math.max(520, topY + 230 + (data.newBest ? 130 : 0)); const focusY = worldH / 2 - 50; this.rig.focusY = damp(this.rig.focusY, focusY, 3, dt);
     const reveal = this.reduced ? 1 : easeInOutCubic(clamp(this.resultsT / 1.8));
     // the sculpture can be walked all the way round: hold left or right and drag (same controller and rules as the home scene)
-    const reduced = this.reduced; const o = this.orbit; const p = this.pointer;
+    const reduced = this.reduced; const p = this.pointer;
     const uv = this.userView(dt, this.rig.focusY, { idleReset: true }); const par = uv.par;
     const [px, py] = this.parallax(1.4);
-    const yaw = (Math.sin(this.time * 0.22) * 0.14 + px) * par + o.yaw; const pitch = lerp(0.04, 0.13, reveal) + py * par + o.pitch;
-    this.world.setViewYaw(o.yaw); this.facing = o.yaw;
-    this.setCursor(this.drag ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
+    const yaw = (Math.sin(this.time * 0.22) * 0.14 + px) * par + uv.yaw; const pitch = lerp(0.04, 0.13, reveal) + py * par + uv.pitch;
+    this.world.setViewYaw(uv.yaw); this.facing = uv.yaw;
+    this.interaction.setCursor(this.interaction.dragging ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
     this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) * uv.zoom });
     // the height, as a monument
     if (!this.scoreShown && this.resultsT > 0.4) {
@@ -1057,10 +887,7 @@ export class Stage {
         this.fx.sparks.burst({ pos: [Math.cos(a) * 46, y + 20 + Math.random() * 40, 80 + Math.sin(a) * 30], count: 3, speed: 60, spread: 1, color: [1.7, 1.25, 0.3], size: 5.5, life: 1, gravity: -30, up: 0.4, drag: 1.2 });
       }
     } else this.crown.visible = false;
-    if (this.resultsHud) {
-      this.resultsHud.place(rect.x + rect.w - 14, rect.y + rect.h - 12); this.resultsHud.setRotated(o.rotated || this.dolly.zoomed);
-      this.resultsHintAge += dt; if (this.resultsHintAge > 10) this.resultsHud.fade();
-    }
+    this.interaction.placeHud('results', rect.x + rect.w - 14, rect.y + rect.h - 12, dt);
     this.ruler.setHeight(blocks.length); this.world.plinth.position.set(0, 0, 0); this.world.crowd.clearBallot();
     this.updateWorld(dt, this.rig.focusY, clamp(this.rig.focusY / 2200), view, tower);
     this.post.tiltCenter = 0.5; this.post.blur = 5;
@@ -1137,12 +964,7 @@ export class Stage {
     const focusY = topY * 0.5 + 40; const worldH = topY + 220; const [px, py] = this.parallax(1.2);
     this.placeCamera({ anchor: new THREE.Vector3(0, focusY, 30), screen: { x: free.x + free.w / 2, y: free.y + free.h * 0.47 }, rect: free, worldW: worldW + 60, worldH, yaw: px * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.18) * 0.1) + uv.yaw, pitch: 0.1 + py * uv.par + uv.pitch, zoom: uv.zoom });
     this.world.setViewYaw(uv.yaw);
-    if (this.resultsHud) {
-      // beside the cards the screen's bottom-right corner is free (as in the lobby, and clear of the page's footer note); above them it is the corner of the podium's own area
-      if (wide) this.resultsHud.place(W - 16, H - 14); else this.resultsHud.place(free.x + free.w - 14, free.y + free.h - 12);
-      this.resultsHud.setRotated(this.orbit.rotated || this.dolly.zoomed);
-      this.resultsHintAge += dt; if (this.resultsHintAge > 10) this.resultsHud.fade();
-    }
+    this.interaction.placeHud('results', wide ? W - 16 : free.x + free.w - 14, wide ? H - 14 : free.y + free.h - 12, dt);
     this.ruler.group.visible = false; this.world.crowd.clearBallot(); this.updateWorld(dt, focusY, 0.04, view); this.post.tiltCenter = 0.5; this.post.blur = 4;
   }
 
@@ -1174,17 +996,12 @@ export class Stage {
   }
 
   dispose() {
-    for (const [name, fn] of [['pointermove', this.onPointerMove], ['pointerdown', this.onPointerDown], ['pointerup', this.onPointerUp], ['pointercancel', this.onPointerCancel], ['blur', this.onBlur], ['contextmenu', this.onContextMenu], ['dblclick', this.onDoubleClick], ['wheel', this.onWheel], ['keydown', this.onKeyDown]]) window.removeEventListener(name, fn);
-    document.documentElement.removeEventListener('pointerleave', this.onPointerLeave);
-    this.setCursor(''); this.endDrag(true); if (this.hud) { this.hud.dispose(); this.hud = null; }
+    this.interaction.dispose();
     if (this.bricks) this.bricks.destroy(); if (this.voxel) this.voxel.dispose(); if (this.candidates) this.candidates.dispose();
     this.releaseMenu(); if (this.caption) { this.caption.el.remove(); this.caption = null; }
-    document.documentElement.classList.remove('orbiting');
     this.scene.remove(this.cursorLight); this.cursorLight.dispose();
     if (this.totems) { this.scene.remove(this.totems.group); this.totems.dispose(); }
     if (this.crown) { this.scene.remove(this.crown); this.crown.userData.dispose(); }
-    if (this.resultsHud) { this.resultsHud.dispose(); this.resultsHud = null; }
-    if (this.lobbyHud) { this.lobbyHud.dispose(); this.lobbyHud = null; }
     this.engine.dispose();
   }
 }

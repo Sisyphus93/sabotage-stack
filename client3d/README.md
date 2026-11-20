@@ -59,17 +59,19 @@ The scenes that are *on show* (home, lobby, results, podium) also return to the 
 and the arena keep whatever view their player chose, until the round ends. Leaving a scene always snaps its view back. Everything above
 is immediate under Reduced Motion.
 
-**The keys** go to the view wherever the focus is, except on a control that reads those keys itself (`KEY_OWNERS` in `stage.js`: a text field, a
+**The keys** go to the view wherever the focus is, except on a control that reads those keys itself (`KEY_OWNERS` in `scene-interaction.js`: a text field, a
 select, a slider, a radio group, a menu, a dialog). A button or a link does not, and that matters: the page leaves the **Drop button** focused in a
 round and a results screen's main action focused on the podium, so a rule of "nothing focused" would silently kill every key exactly where they
-are wanted. `test/view-controls.test.js` pins both halves with real DOM elements.
+are wanted. `test/scene-interaction.test.js` pins both halves with real DOM elements.
 
 Drags and wheel turns that start on a button, a link, a menu or one of the page's glass panels are left alone, so text stays selectable,
-panels stay scrollable and controls stay controls (`chromeAt` in `stage.js`; the play field itself is part of the scene even though it sits
+panels stay scrollable and controls stay controls (`chromeAt` in `scene-interaction.js`; the play field itself is part of the scene even though it sits
 in a panel). Ctrl/Cmd + wheel (the browser's own zoom and a trackpad pinch) and sideways scrolling are never taken, and wheeling on against a zoom
 limit hands the wheel back to the page after a short pause (`view-zoom.js`), so the page can always be scrolled again from over the scene.
 
-How it composes: `userView()` in `stage.js` returns the visitor's turn (`yaw`, `pitch`) and dolly (`zoom`) and every scene adds it **on top of** its own
+Ownership: `SceneInteraction` (`scene-interaction.js`) owns pointer sampling, gestures, orbit/zoom coordination, input listeners, and hint lifecycle. Stage supplies scene context and control placement, handles scene-specific taps, and disposes the interaction module with the renderer. See [the design notes](../docs/architecture/scene-interaction.md).
+
+How it composes: `userView()` in `stage.js` delegates to the interaction module and returns the visitor's turn (`yaw`, `pitch`) and dolly (`zoom`) and every scene adds it **on top of** its own
 camera, so the game's own camera work (the follow, the Pisa roll, the zoom sabotage, shakes) is unchanged and separate. Zooming in closes
 on the top block (game), the middle of the towers (arena) or the totems (lobby) rather than the centre of the sky, so a short tower is never zoomed out of
 the frame. The camera cannot go below the floor, whatever the angle. The name plates, the Teamwork name plaques on the blocks, the lobby's totems (on the

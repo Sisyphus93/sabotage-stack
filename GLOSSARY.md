@@ -15,3 +15,6 @@ The misleading second moving block shown during the Double sabotage; it is not t
 
 **Room**:
 A hosted multiplayer session in which players take part in Teamwork or Competitive rounds and spectators can watch.
+
+**Scene**:
+A presentation of the title, lobby, active round, or results that a visitor can look around by turning and zooming the view.
