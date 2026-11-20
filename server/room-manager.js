@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const { RoundEngine } = require('./round-engine');
+const Replication = require('../shared/room-replication');
 
 const MAX_PLAYERS = 6;
 const MAX_SPECTATORS = 16;
@@ -46,20 +47,6 @@ function safeSend(socket, message) {
   } catch (_) {
     return false;
   }
-}
-
-// Structural patches keep long immutable stacks off the wire. Arrays that grow are
-// patched by index; shrinking arrays are replaced so reconstruction is unambiguous.
-function stateChanges(before, after, path = [], changes = []) {
-  if (Object.is(before, after)) return changes;
-  const arrays = Array.isArray(before) && Array.isArray(after);
-  const objects = before && after && typeof before === 'object' && typeof after === 'object' && !Array.isArray(before) && !Array.isArray(after);
-  if (arrays && after.length >= before.length) {
-    for (let i = 0; i < after.length; i += 1) stateChanges(before[i], after[i], path.concat(i), changes);
-  } else if (objects && Object.keys(before).every(key => Object.hasOwn(after, key))) {
-    for (const key of Object.keys(after)) stateChanges(before[key], after[key], path.concat(key), changes);
-  } else changes.push([path, after]);
-  return changes;
 }
 
 class RoomManager {
@@ -546,7 +533,7 @@ class RoomManager {
     const previous = room.lastBroadcastState;
     room.stateRevision = (room.stateRevision || 0) + 1;
     const state = this.snapshot(room);
-    const delta = { type: 'room.delta', baseRevision: previous.revision, revision: state.revision, changes: stateChanges(previous, state) };
+    const delta = Replication.createDelta(previous, state);
     room.lastBroadcastState = state;
     if (JSON.stringify(delta).length >= JSON.stringify({ type: 'room.state', state }).length) this.broadcast(room, { type: 'room.state', state });
     else this.broadcast(room, delta);
