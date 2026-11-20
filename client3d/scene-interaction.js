@@ -137,7 +137,7 @@ export class SceneInteraction {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || !this.#canOrbit()) return;
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || chromeAt(event.target) || this.doc.querySelector('dialog[open]')) return;
     this.#dolly.setReduced(this.reduced);
-    if (this.#dolly.wheel(event.deltaY, event.deltaMode, event.timeStamp / 1000)) { event.preventDefault(); this.#usedView(); }
+    if (this.#dolly.wheel(event.deltaY, event.deltaMode)) { event.preventDefault(); this.#usedView(); }
   }
 
   #usedView() { this.idleFor = 0; const hud = this.#sceneHud(); if (hud) hud.quiet(); }
@@ -150,12 +150,12 @@ export class SceneInteraction {
     this.onRushIntro();
     if (!this.#canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (closest(event.target, KEY_OWNERS)) return;
-    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8; const now = event.timeStamp / 1000;
+    const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
     if (event.key === 'ArrowLeft') { this.#orbit.rotateBy(-step, 0.35); this.#usedView(); event.preventDefault(); }
     else if (event.key === 'ArrowRight') { this.#orbit.rotateBy(step, 0.35); this.#usedView(); event.preventDefault(); }
     else if (event.key === 'Home' || event.key === '0') { this.#resetView(); event.preventDefault(); }
-    else if (event.key === '+' || event.key === '=') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(ZOOM_STEP, now); this.#usedView(); event.preventDefault(); }
-    else if (event.key === '-' || event.key === '_') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(1 / ZOOM_STEP, now); this.#usedView(); event.preventDefault(); }
+    else if (event.key === '+' || event.key === '=') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(ZOOM_STEP); this.#usedView(); event.preventDefault(); }
+    else if (event.key === '-' || event.key === '_') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(1 / ZOOM_STEP); this.#usedView(); event.preventDefault(); }
   }
 
   #canOrbit(button = 2) {
@@ -197,7 +197,7 @@ export class SceneInteraction {
 
   #closePlayHud() { if (this.playHud) { this.playHud.dispose(); this.playHud = null; } }
 
-  #zoomBy(factor) { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(factor, this.now() / 1000); this.#usedView(); }
+  #zoomBy(factor) { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(factor); this.#usedView(); }
 
   update(dt, focusY, { idleReset = false, cameraDistance = 1700 } = {}) {
     const o = this.#orbit; const z = this.#dolly; const reduced = this.reduced;

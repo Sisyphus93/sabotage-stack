@@ -67,7 +67,7 @@ are wanted. `test/scene-interaction.test.js` pins both halves with real DOM elem
 Drags and wheel turns that start on a button, a link, a menu or one of the page's glass panels are left alone, so text stays selectable,
 panels stay scrollable and controls stay controls (`chromeAt` in `scene-interaction.js`; the play field itself is part of the scene even though it sits
 in a panel). Ctrl/Cmd + wheel (the browser's own zoom and a trackpad pinch) and sideways scrolling are never taken, and wheeling on against a zoom
-limit hands the wheel back to the page after a short pause (`view-zoom.js`), so the page can always be scrolled again from over the scene.
+limit stays with the scene (`view-zoom.js`), even after a pause, so zooming never scrolls the page underneath it. Move the pointer onto a panel or control to scroll the page normally.
 
 Ownership: `SceneInteraction` (`scene-interaction.js`) owns pointer sampling, gestures, orbit/zoom coordination, input listeners, and hint lifecycle. Stage supplies scene context and control placement, handles scene-specific taps, and disposes the interaction module with the renderer. See [the design notes](../docs/architecture/scene-interaction.md).
 

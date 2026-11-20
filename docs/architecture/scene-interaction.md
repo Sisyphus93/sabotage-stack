@@ -44,7 +44,9 @@ hint state. There is no back-reference from SceneInteraction to Stage.
 - Controls and glass panels retain input; the game canvas remains part of the
   scene even with its accessibility `role=button` inside a play panel.
 - Wheel ownership respects browser zoom, horizontal scrolling, open dialogs,
-  and the existing zoom-limit handoff after a pause.
+  and page controls. After browser-playtest feedback, the scene retains vertical
+  wheel events at both zoom limits, even after a pause, instead of handing them
+  back to page scrolling. This applies in windowed and fullscreen views.
 - Keyboard exclusions retain text fields, selects, sliders, menus and dialogs,
   while buttons and links pass view keys through. Space, Enter, 1/2/3 and other
   page-owned keys remain untouched. Existing step sizes and timings are unchanged.
@@ -58,7 +60,9 @@ Two cleanup omissions are addressed as part of the agreed disposal contract:
 Stage's old disposal did not remove a live play HUD, and HUD disposal did not
 remove handlers from retained detached button references. All scene HUDs now
 close on disposal; `orbit-hud.js` removes its click listeners as well as its root.
-No control tuning or gameplay behavior was changed.
+The ownership refactor did not tune controls or change gameplay behavior. A later
+browser-playtest fix deliberately removed zoom-limit wheel handoff; the regression
+tests now require scene ownership at both limits across every mode and motion setting.
 
 ## Verification
 

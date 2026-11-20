@@ -124,7 +124,7 @@ for (const reduced of [false, true]) test(`keyboard controls, focus exclusions a
   } finally { r.close(); }
 });
 
-test('wheel preserves browser zoom, horizontal scrolling, dialogs and limit handoff', async () => {
+test('wheel preserves browser zoom, horizontal scrolling and dialogs without limit handoff', async () => {
   const r = await rig();
   try {
     for (const init of [{ ctrlKey: true }, { metaKey: true }, { deltaX: 200 }, { defaultPrevented: true }]) {
@@ -134,7 +134,7 @@ test('wheel preserves browser zoom, horizontal scrolling, dialogs and limit hand
     r.doc.getElementById('dialog').removeAttribute('open');
     assert.equal(r.fire('wheel', { timeStamp: 5000 }).defaultPrevented, true);
     for (let i = 1; i < 80; i++) r.fire('wheel', { timeStamp: 5000 + i * 10 });
-    assert.equal(r.fire('wheel', { timeStamp: 7000 }).defaultPrevented, false);
+    assert.equal(r.fire('wheel', { timeStamp: 7000 }).defaultPrevented, true);
     assert.equal(r.fire('wheel', { deltaY: 100, timeStamp: 7100 }).defaultPrevented, true);
   } finally { r.close(); }
 });
@@ -298,5 +298,22 @@ test('all pointer buttons block hover reactions, and release clears them without
     r.fire('pointermove'); assert.equal(r.interaction.pointer.inside, true);
     r.doc.documentElement.dispatchEvent(new r.win.Event('pointerleave'));
     assert.equal(r.interaction.pointer.inside, false);
+  } finally { r.close(); }
+});
+
+for (const mode of modes) for (const reduced of [false, true]) test(`${mode}: wheel remains on the scene at both limits (reduced=${reduced})`, async () => {
+  const r = await rig({ mode, reduced });
+  try {
+    for (const direction of [1, -1]) {
+      for (let i = 0; i < 80; i++) assert.equal(r.fire('wheel', { deltaY: direction * 100 }).defaultPrevented, true);
+      r.settle();
+      const limit = direction > 0 ? .5 : 3.2;
+      assert.equal(r.interaction.view.zoom, limit);
+      assert.equal(r.fire('wheel', { deltaY: direction * 100, timeStamp: 600000 }).defaultPrevented, true);
+      assert.equal(r.fire('wheel', { deltaY: direction * 100 }, 'panel').defaultPrevented, false, 'moving onto a panel restores page scrolling');
+      assert.equal(r.fire('wheel', { deltaY: direction * 100, ctrlKey: true }).defaultPrevented, false);
+      assert.equal(r.fire('wheel', { deltaY: direction * 100, metaKey: true }).defaultPrevented, false);
+      assert.equal(r.fire('wheel', { deltaY: 0 }).defaultPrevented, false);
+    }
   } finally { r.close(); }
 });
