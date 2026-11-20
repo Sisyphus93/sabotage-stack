@@ -24,6 +24,62 @@ async function listen() {
   return { app, url: `ws://127.0.0.1:${app.server.address().port}/ws`, port: app.server.address().port };
 }
 
+describe('Cold-start compression is coalesced (P2-3)', () => {
+  test('100 concurrent cold requests share one compression per encoding', async () => {
+    const zlib = require('node:zlib');
+    const counts = { sync: 0, async: 0 };
+    const originals = {};
+    for (const [name, kind] of [['gzipSync', 'sync'], ['brotliCompressSync', 'sync'], ['gzip', 'async'], ['brotliCompress', 'async']]) {
+      originals[name] = zlib[name];
+      zlib[name] = function (...args) { counts[kind] += 1; return originals[name].apply(this, args); };
+    }
+    const app = createGameServer({ onError: () => {} });
+    try {
+      await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+      const port = app.server.address().port;
+      const burst = encoding => Promise.all(Array.from({ length: 100 }, () => new Promise(resolve => {
+        const request = require('node:http').get({ host: '127.0.0.1', port, path: '/public/stack3d.js', headers: { 'accept-encoding': encoding } }, response => {
+          const chunks = []; response.on('data', chunk => chunks.push(chunk));
+          response.on('end', () => resolve({ status: response.statusCode, encoding: response.headers['content-encoding'], bytes: Buffer.concat(chunks).length, length: Number(response.headers['content-length']) }));
+        });
+        request.on('error', () => resolve({ status: 0 }));
+      })));
+      const gzip = await burst('gzip');
+      assert.equal(counts.async, 1, `one gzip for the burst, got ${counts.async}`);
+      assert.equal(counts.sync, 0, 'nothing on the request path is synchronous');
+      assert.ok(gzip.every(r => r.status === 200 && r.encoding === 'gzip'));
+      assert.equal(new Set(gzip.map(r => r.bytes)).size, 1, 'every response is byte-identical');
+      assert.equal(gzip[0].bytes, gzip[0].length, 'Content-Length matches the body');
+      const br = await burst('br');
+      assert.equal(counts.async, 2, 'one brotli for the second burst');
+      assert.ok(br.every(r => r.status === 200 && r.encoding === 'br'));
+      assert.ok(br[0].bytes < gzip[0].bytes, 'brotli is the smaller one');
+      // warm requests never compress again
+      await burst('gzip');
+      assert.equal(counts.async, 2, 'a warm burst compresses nothing');
+      // ETag and HEAD behaviour is unchanged
+      const head = await new Promise(resolve => {
+        const request = require('node:http').request({ host: '127.0.0.1', port, path: '/public/stack3d.js', method: 'HEAD', headers: { 'accept-encoding': 'gzip' } }, response => {
+          response.resume(); resolve({ status: response.statusCode, etag: response.headers.etag, vary: response.headers.vary, length: Number(response.headers['content-length']), encoding: response.headers['content-encoding'] });
+        });
+        request.end();
+      });
+      assert.equal(head.status, 200);
+      assert.equal(head.vary, 'Accept-Encoding');
+      assert.equal(head.encoding, 'gzip');
+      assert.ok(head.length > 0);
+      const notModified = await new Promise(resolve => {
+        const request = require('node:http').get({ host: '127.0.0.1', port, path: '/public/stack3d.js', headers: { 'accept-encoding': 'gzip', 'if-none-match': head.etag } }, response => { response.resume(); resolve(response.statusCode); });
+        request.on('error', () => resolve(0));
+      });
+      assert.equal(notModified, 304);
+    } finally {
+      for (const [name, fn] of Object.entries(originals)) zlib[name] = fn;
+      await app.close();
+    }
+  });
+});
+
 describe('HTTP hardening', () => {
   test('malformed request targets get a 400 and never crash the process', async () => {
     const port = 20000 + Math.floor(Math.random() * 20000);

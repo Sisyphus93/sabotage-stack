@@ -41,7 +41,35 @@ function requestPathname(request) {
 
 // Serves one file with ETag revalidation and brotli/gzip. The compressed copies are cached per file version, so the
 // 700 KB page and the 3D bundle are compressed once per change instead of once per visitor.
+//
+// Two things keep a cold start from stampeding: the read is coalesced, so a burst of first requests shares one
+// fs.readFile, and each (version, encoding) remembers its *promise*, so the burst shares one compression instead of
+// running one per request. Compression also moved off the request path (async zlib, libuv thread pool) so the event
+// loop keeps serving the rest of the game while a megabyte is being compressed.
 const compressionCache = new Map();
+const inflightReads = new Map();
+function readOnce(filePath, version) {
+  const key = `${filePath}|${version}`;
+  let pending = inflightReads.get(key);
+  if (!pending) {
+    pending = fs.promises.readFile(filePath).finally(() => inflightReads.delete(key));
+    inflightReads.set(key, pending);
+  }
+  return pending;
+}
+
+function compressOnce(entry, encoding) {
+  const pending = encoding === 'br'
+    ? new Promise((resolve, reject) => zlib.brotliCompress(entry.raw, {
+      params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: entry.raw.length }
+    }, (error, out) => (error ? reject(error) : resolve(out))))
+    : new Promise((resolve, reject) => zlib.gzip(entry.raw, { level: 6 }, (error, out) => (error ? reject(error) : resolve(out))));
+  // The promise itself is the memo: a failed compression is dropped so the next request can retry.
+  const shared = pending.catch(error => { if (entry[encoding] === shared) delete entry[encoding]; throw error; });
+  entry[encoding] = shared;
+  return shared;
+}
+
 function sendFile(request, response, filePath, { type, cache }, onError) {
   fs.stat(filePath, (statError, stat) => {
     if (statError || !stat.isFile()) {
@@ -57,35 +85,39 @@ function sendFile(request, response, filePath, { type, cache }, onError) {
     const accepted = String(request.headers['accept-encoding'] || '');
     const encoding = /\bbr\b/.test(accepted) ? 'br' : /\bgzip\b/.test(accepted) ? 'gzip' : null;
     let entry = compressionCache.get(filePath);
-    const load = cb => {
-      if (entry && entry.version === version) return cb(null, entry);
-      fs.readFile(filePath, (readError, raw) => {
-        if (readError) return cb(readError);
-        entry = { version, raw, br: null, gzip: null };
-        compressionCache.set(filePath, entry);
-        cb(null, entry);
-      });
+    const load = async () => {
+      if (entry && entry.version === version) return entry;
+      const raw = await readOnce(filePath, version);
+      // Every request that waited on the read must join the same entry object, so the cache (not this request's
+      // local view of it) decides: whoever finishes first creates it, the rest reuse it and its compression promise.
+      const current = compressionCache.get(filePath);
+      if (current && current.version === version) { entry = current; return current; }
+      entry = { version, raw, br: null, gzip: null };
+      compressionCache.set(filePath, entry);
+      return entry;
     };
-    load((readError, loaded) => {
-      if (readError) {
-        onError(readError);
-        response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
-        response.end('The file could not be loaded.');
-        return;
-      }
+    load().then(async loaded => {
       let body = loaded.raw;
       if (encoding && loaded.raw.length > 1024) {
-        if (!loaded[encoding]) {
-          loaded[encoding] = encoding === 'br'
-            ? zlib.brotliCompressSync(loaded.raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: loaded.raw.length } })
-            : zlib.gzipSync(loaded.raw, { level: 6 });
-        }
-        body = loaded[encoding];
+        body = await (loaded[encoding] && typeof loaded[encoding].then === 'function'
+          ? loaded[encoding]
+          : compressOnce(loaded, encoding));
         headers['Content-Encoding'] = encoding;
       }
       headers['Content-Length'] = body.length;
       response.writeHead(200, headers);
       response.end(request.method === 'HEAD' ? undefined : body);
+    }, readError => {
+      onError(readError);
+      response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end('The file could not be loaded.');
+    }).catch(compressError => {
+      // A compression failure answers plainly rather than leaving the socket open.
+      onError(compressError);
+      if (!response.headersSent) {
+        response.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        response.end('The file could not be loaded.');
+      } else response.end();
     });
   });
 }
