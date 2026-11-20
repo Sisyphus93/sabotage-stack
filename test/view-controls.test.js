@@ -42,17 +42,20 @@ describe('wheel zoom (client3d/view-zoom.js)', () => {
     assert.equal(z.target, ZOOM_MIN); assert.ok(z.atMin && !z.atMax);
   });
 
-  test('against a limit the wheel is handed back to the page once the spin that reached it has died away', async () => {
+  test('the wheel stays with the scene at both zoom limits, even after a long pause', async () => {
     const { ZoomController } = await load('view-zoom.js');
-    const z = new ZoomController(); let t = 10;
-    while (!z.atMax) { z.wheel(-100, 0, t); t += 0.01; }
-    const reachedAt = t - 0.01; assert.ok(z.hold > 0.3 && z.hold < 1, 'a short pause, not a long one');
-    assert.equal(z.wheel(-100, 0, reachedAt + 0.1), true, 'still inside the spin: the page must not lurch');
-    assert.equal(z.wheel(-100, 0, reachedAt + z.hold - 0.02), true);
-    assert.equal(z.wheel(-100, 0, reachedAt + z.hold + 0.05), false, 'a deliberate wheel against the limit scrolls the page again');
-    assert.equal(z.wheel(-100, 0, reachedAt + 5), false, 'and goes on doing so');
-    assert.equal(z.wheel(100, 0, reachedAt + 6), true, 'the other way is always the scene\'s');
-    assert.ok(z.target < z.max);
+    for (const direction of [-1, 1]) {
+      const z = new ZoomController();
+      for (let i = 0; i < 80; i++) z.wheel(direction * 100, 0, 10 + i * .01);
+      const limit = direction < 0 ? z.max : z.min;
+      assert.equal(z.target, limit);
+      for (const time of [11, 20, 600]) {
+        assert.equal(z.wheel(direction * 100, 0, time), true, 'a limit never hands scrolling back to the page');
+        assert.equal(z.target, limit, 'zoom remains clamped');
+      }
+      assert.equal(z.wheel(-direction * 100, 0, 601), true);
+      assert.notEqual(z.target, limit, 'reversing the wheel still zooms normally');
+    }
   });
 
   test('the + and - buttons take fixed steps, and a button press at the limit changes nothing', async () => {

@@ -5,8 +5,8 @@
 //   value   the factor applied to the scene's own camera distance: 1 is the default view, 2 is twice as close, 0.5 twice as far.
 //   target  where the wheel has asked it to go; value eases towards it (at once under Reduced Motion).
 //
-// The wheel belongs to the scene only while it can still zoom. Wheeling on against a limit hands the wheel back to the page,
-// after a short pause, so the page can always be scrolled again from over the scene.
+// A nonempty vertical wheel event belongs to the scene even at a zoom limit.
+// Continuing to zoom must not unexpectedly scroll the page underneath the scene.
 import { clamp, easeInOutCubic } from './util.js';
 
 export const ZOOM_MIN = 0.5; // the whole world in view
@@ -26,9 +26,9 @@ export function wheelPixels(deltaY, deltaMode = 0) {
 export const zoomFactor = (px, perPixel = 0.0013) => Math.exp(-px * perPixel);
 
 export class ZoomController {
-  constructor({ min = ZOOM_MIN, max = ZOOM_MAX, perPixel = 0.0013, ease = 11, hold = 0.45 } = {}) {
-    Object.assign(this, { min, max, perPixel, ease, hold });
-    this.value = 1; this.target = 1; this.reduced = false; this.lastMoved = -Infinity; this.tween = null;
+  constructor({ min = ZOOM_MIN, max = ZOOM_MAX, perPixel = 0.0013, ease = 11 } = {}) {
+    Object.assign(this, { min, max, perPixel, ease });
+    this.value = 1; this.target = 1; this.reduced = false; this.tween = null;
   }
 
   // True once the view has been zoomed away from the default (the "Reset view" control follows this).
@@ -39,22 +39,22 @@ export class ZoomController {
 
   setReduced(flag) { this.reduced = Boolean(flag); if (this.reduced) this.value = this.target; }
 
-  // One wheel event. Returns true when it was used (the page must not scroll under it), false when it was not: sideways or
-  // empty events, and wheeling on against a limit once the spin that reached it has died away.
-  wheel(deltaY, deltaMode = 0, t = 0) {
+  // True means the scene owns the event, even if clamping leaves zoom unchanged.
+  // The interaction module excludes horizontal gestures, controls, and browser zoom.
+  wheel(deltaY, deltaMode = 0) {
     const px = wheelPixels(deltaY, deltaMode); if (px === 0) return false;
     const next = clamp(this.target * zoomFactor(px, this.perPixel), this.min, this.max);
-    if (next === this.target) return Number.isFinite(t) && t - this.lastMoved < this.hold;
-    this.target = next; this.lastMoved = Number.isFinite(t) ? t : 0; this.tween = null;
+    if (next === this.target) return true;
+    this.target = next; this.tween = null;
     if (this.reduced) this.value = next;
     return true;
   }
 
   // The on-screen buttons: a fixed step. Returns whether anything changed.
-  zoomBy(factor, t = 0) {
+  zoomBy(factor) {
     const next = clamp(this.target * (Number.isFinite(factor) && factor > 0 ? factor : 1), this.min, this.max);
     if (next === this.target) return false;
-    this.target = next; this.lastMoved = Number.isFinite(t) ? t : 0; this.tween = null;
+    this.target = next; this.tween = null;
     if (this.reduced) this.value = next;
     return true;
   }
@@ -67,7 +67,7 @@ export class ZoomController {
   }
 
   // Jumps straight back (leaving the scene).
-  snap() { this.value = 1; this.target = 1; this.lastMoved = -Infinity; this.tween = null; }
+  snap() { this.value = 1; this.target = 1; this.tween = null; }
 
   update(dt) {
     if (!(dt > 0)) return;
