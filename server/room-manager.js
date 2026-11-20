@@ -54,9 +54,14 @@ function uniqueDisplayName(value, players) {
 }
 
 function safeSend(socket, message) {
+  return safeSendRaw(socket, JSON.stringify(message));
+}
+
+// The same guard, for a text that was serialised once for many recipients.
+function safeSendRaw(socket, text) {
   if (!socket || typeof socket.send !== 'function' || socket.readyState === 2 || socket.readyState === 3) return false;
   try {
-    socket.send(JSON.stringify(message));
+    socket.send(text);
     return true;
   } catch (_) {
     return false;
@@ -697,8 +702,13 @@ class RoomManager {
     const state = this.snapshot(room);
     const delta = Replication.createDelta(previous, state);
     room.lastBroadcastState = state;
-    if (JSON.stringify(delta).length >= JSON.stringify({ type: 'room.state', state }).length) this.broadcast(room, { type: 'room.state', state });
-    else this.broadcast(room, delta);
+    // Both texts are built once here, so the size comparison costs two serialisations rather than four, and
+    // whichever one wins is sent as a string (no second pass per recipient inside broadcast).
+    const deltaText = JSON.stringify(delta);
+    const fullState = { type: 'room.state', state };
+    const fullText = JSON.stringify(fullState);
+    if (deltaText.length >= fullText.length) this.broadcast(room, fullState, fullText);
+    else this.broadcast(room, delta, deltaText);
   }
 
   syncState(socket) {
@@ -709,10 +719,20 @@ class RoomManager {
     safeSend(socket, { type: 'room.state', state: room.lastBroadcastState || this.snapshot(room) });
   }
 
-  broadcast(room, message) {
-    safeSend(room.host.socket, message);
-    for (const player of room.players) if (player.connected) safeSend(player.socket, message);
-    for (const spectator of room.spectators) if (spectator.connected) safeSend(spectator.socket, message);
+  // One serialisation, however many seats: every recipient gets the identical text. With 22 seats in a room and a
+  // few rooms ticking at 10 Hz this was the largest per-tick cost after socket I/O itself.
+  // `text` lets a caller that already built the exact bytes (broadcastDelta compares two candidate texts before
+  // choosing) hand them over instead of paying for a second serialisation here.
+  broadcast(room, message, text = null) {
+    this.sendToSeats(room, text === null ? JSON.stringify(message) : text);
+  }
+
+  // The seat walk, for text that is already serialised. Kept separate from broadcast() so the delta path can build
+  // its two candidate texts once and still send through the same one place.
+  sendToSeats(room, text) {
+    safeSendRaw(room.host.socket, text);
+    for (const player of room.players) if (player.connected) safeSendRaw(player.socket, text);
+    for (const spectator of room.spectators) if (spectator.connected) safeSendRaw(spectator.socket, text);
   }
 
   error(socket, code, message, details = null) {

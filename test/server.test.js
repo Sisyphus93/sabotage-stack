@@ -280,6 +280,45 @@ describe('abuse limits', () => {
 });
 
 describe('broadcast', () => {
+  test('one serialisation per broadcast, however many seats, and every seat gets identical bytes', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(64), idleLimitMs: 1e12 });
+    const mk = () => ({ readyState: 1, frames: [], send(text) { this.frames.push(text); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'competitive' }));
+    const code = [...rm.rooms.keys()][0];
+    const players = [];
+    for (let i = 0; i < 6; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `P${i}` })); players.push(socket); }
+    const spectators = [];
+    for (let i = 0; i < 15; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `S${i}`, spectate: true })); spectators.push(socket); }
+    const room = rm.rooms.get(code);
+    const seats = [host, ...players, ...spectators];
+    assert.equal(seats.length, 22);
+    const original = JSON.stringify;
+    let calls = 0;
+    const mark = () => seats.forEach(socket => { socket.mark = socket.frames.length; });
+    JSON.stringify = (...args) => { calls += 1; return original(...args); };
+    try {
+      mark();
+      rm.broadcast(room, { type: 'room.state', state: { revision: 1 } });
+      assert.equal(calls, 1, `broadcast serialised ${calls} times`);
+    } finally { JSON.stringify = original; }
+    const delivered = seats.map(socket => socket.frames.slice(socket.mark));
+    assert.ok(delivered.every(frames => frames.length === 1), 'one frame each');
+    assert.equal(new Set(delivered.map(frames => frames[0])).size, 1, 'byte-identical to every seat');
+    // the delta path builds its two candidate texts once. Count only what broadcastDelta itself serialises: a round
+    // snapshot also clones the game with JSON (round-engine.js clone), which is not part of this change.
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    room.engine.changed('game.state');
+    const ownCalls = [];
+    JSON.stringify = (...args) => {
+      // the caller of JSON.stringify itself, not something nested below it (the engine clones its snapshot with JSON)
+      const caller = new Error().stack.split('\n')[2] || '';
+      if (caller.includes('RoomManager.broadcastDelta')) ownCalls.push(caller.trim());
+      return original(...args);
+    };
+    try { room.engine.changed('game.state'); } finally { JSON.stringify = original; }
+    assert.equal(ownCalls.length, 2, `broadcastDelta serialised ${ownCalls.length} times`);
+  });
+
   test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
     let t = 1e9; const rm = new RoomManager({ now: () => t, random: rng(3), idleLimitMs: 1e12 });
     const mk = () => ({ readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)); } });
