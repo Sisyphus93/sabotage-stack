@@ -24,6 +24,11 @@ const JOIN_FAILURE_LIMIT = 60;
 const JOIN_FAILURE_WINDOW_MS = 60_000;
 const JOIN_FAILURE_MAX_KEYS = 10_000;
 const SHARED_CLIENT_KEY = '__shared__';
+// Rooms one client may hold open, and how many it may create in a window. Skipped while the client key is unknown.
+const ROOMS_PER_CLIENT = 5;
+const ROOM_CREATE_LIMIT = 10;
+const ROOM_CREATE_WINDOW_MS = 10 * 60 * 1000;
+const ROOM_CREATE_MAX_KEYS = 10_000;
 
 function cleanDisplayName(value) {
   if (typeof value !== 'string') return '';
@@ -53,7 +58,7 @@ function safeSend(socket, message) {
 }
 
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
@@ -65,6 +70,10 @@ class RoomManager {
     this.joinFailureLimit = Math.max(1, joinFailureLimit);
     this.joinFailureWindowMs = Math.max(1, joinFailureWindowMs);
     this.joinFailures = new Map();
+    this.roomsPerClient = Math.max(1, roomsPerClient);
+    this.roomCreateLimit = Math.max(1, roomCreateLimit);
+    this.roomCreateWindowMs = Math.max(1, roomCreateWindowMs);
+    this.roomCreations = new Map();
     this.clientKeys = new WeakMap();
     this.budgets = new WeakMap();
     this.rooms = new Map();
@@ -125,6 +134,29 @@ class RoomManager {
     return Boolean(bucket && bucket.count >= this.joinFailureLimit);
   }
 
+  // Creation budget, one bucket per client key. Together with the concurrent-room cap it stops one client from
+  // holding the whole room table; both are skipped when the key is null (no trustworthy address configured).
+  roomCreateBucket(key, now) {
+    let bucket = this.roomCreations.get(key);
+    if (!bucket || now - bucket.windowStart >= this.roomCreateWindowMs || now < bucket.windowStart) {
+      bucket = { count: 0, windowStart: now };
+      if (!this.roomCreations.has(key) && this.roomCreations.size >= ROOM_CREATE_MAX_KEYS) {
+        for (const [existing, entry] of this.roomCreations) {
+          if (now - entry.windowStart >= this.roomCreateWindowMs || now < entry.windowStart) this.roomCreations.delete(existing);
+        }
+        while (this.roomCreations.size >= ROOM_CREATE_MAX_KEYS) this.roomCreations.delete(this.roomCreations.keys().next().value);
+      }
+      this.roomCreations.set(key, bucket);
+    }
+    return bucket;
+  }
+
+  hostedRoomCount(key) {
+    let count = 0;
+    for (const room of this.rooms.values()) if (room.ownerKey === key) count += 1;
+    return count;
+  }
+
   allowMessage(socket) {
     const now = this.now();
     let budget = this.budgets.get(socket);
@@ -156,12 +188,8 @@ class RoomManager {
       return this.error(socket, 'INVALID_MESSAGE', 'Message must have a type.');
     }
 
-    const session = this.sessions.get(socket);
-    if (session && session.roomCode && message.type !== 'client.ping') {
-      const room = this.rooms.get(session.roomCode);
-      if (room) room.lastActivityAt = this.now();
-    }
-
+    // No blanket activity refresh here: only handlers that actually change the room refresh lastActivityAt, so a
+    // room cannot be kept alive by junk messages, failed actions or no-op preferences.
     switch (message.type) {
       case 'room.create': return this.createRoom(socket, message.mode, message.reducedMotion);
       case 'room.join': return this.joinRoom(socket, message);
@@ -219,14 +247,23 @@ class RoomManager {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before creating another.');
     if (!VALID_MODES.has(mode)) return this.error(socket, 'INVALID_MODE', 'Choose Teamwork or Competitive.');
     if (this.rooms.size >= this.maxRooms) return this.error(socket, 'SERVER_BUSY', 'The server is hosting as many rooms as it can. Try again shortly.');
-    const code = this.nextRoomCode();
-    const token = this.newToken();
     const now = this.now();
+    const ownerKey = this.clientKeyOf(socket);
+    if (ownerKey != null) {
+      if (this.hostedRoomCount(ownerKey) >= this.roomsPerClient
+        || this.roomCreateBucket(ownerKey, now).count >= this.roomCreateLimit) {
+        return this.error(socket, 'ROOM_LIMIT', 'You have too many rooms open. Close one or wait a few minutes.');
+      }
+    }
+    const code = this.nextRoomCode();
+    if (!code) return this.error(socket, 'SERVER_BUSY', 'The server is hosting as many rooms as it can. Try again shortly.');
+    const token = this.newToken();
     const room = {
-      code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now,
+      code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now, ownerKey,
       host: { token, connected: true, socket, reducedMotion: Boolean(reducedMotion), disconnectedAt: null, absenceReadyBroadcast: false }, players: [], spectators: [], roundNumber: 0, game: null, engine: null,
       bestTeamScore: 0
     };
+    if (ownerKey != null) this.roomCreateBucket(ownerKey, now).count += 1;
     this.rooms.set(code, room);
     this.sessions.set(socket, { roomCode: code, role: 'host', playerId: null });
     safeSend(socket, { type: 'room.created', code, role: 'host', resumeToken: token, state: this.snapshot(room) });
@@ -475,6 +512,7 @@ class RoomManager {
     if (!room || !room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
     const result = room.engine.teamReady(session.playerId, this.now());
     if (!result.ok) return this.error(socket, result.code, 'Cannot return to the rotation right now.');
+    room.lastActivityAt = this.now();
   }
 
   teamSkip(socket, message) {
@@ -483,6 +521,7 @@ class RoomManager {
     if (!room.engine) return this.error(socket, 'ROUND_NOT_LIVE', 'There is no live round.');
     const result = room.engine.hostSkipTeamTurn(message.turnId, this.now());
     if (!result.ok) return this.error(socket, result.code, 'That turn can no longer be skipped.');
+    room.lastActivityAt = this.now();
   }
 
   voteCast(socket, message) {
@@ -641,14 +680,15 @@ class RoomManager {
     return typeof value === 'string' ? value.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) : '';
   }
 
+  // Null when no free code could be found: every returned code must survive normalizeCode, or the room could
+  // never be joined. (The old base-36 fallback produced digits, which normalizeCode strips.)
   nextRoomCode() {
     for (let attempts = 0; attempts < 100; attempts += 1) {
       const bytes = this.randomBytes(4);
       const code = Array.from(bytes, byte => ROOM_CODE_ALPHABET[byte % ROOM_CODE_ALPHABET.length]).join('');
       if (!this.rooms.has(code)) return code;
     }
-    this.roomCounter += 1;
-    return this.roomCounter.toString(36).toUpperCase().padStart(4, '0').slice(-4);
+    return null;
   }
 
   newToken() { return this.randomBytes(24).toString('base64url'); }

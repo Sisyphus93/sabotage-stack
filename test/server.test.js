@@ -495,6 +495,95 @@ describe('Room-code guessing limit (A-03)', () => {
   });
 });
 
+describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const create = (rm, socket, mode = 'teamwork', clientKey = 'owner') => { rm.connect(socket, { clientKey }); rm.receive(socket, JSON.stringify({ type: 'room.create', mode })); return socket; };
+
+  test('a client key is capped on concurrent rooms and another key is unaffected', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(21), idleLimitMs: 1e12 });
+    const sockets = [];
+    for (let i = 0; i < 6; i += 1) sockets.push(create(rm, mk(), 'teamwork', 'owner'));
+    assert.equal(rm.hostedRoomCount('owner'), 5, 'five concurrent rooms');
+    assert.equal(sockets[5].sent.at(-1).code, 'ROOM_LIMIT', 'the sixth concurrent room is refused');
+    assert.equal(sockets[5].sent.at(-1).message, 'You have too many rooms open. Close one or wait a few minutes.');
+    const neighbour = create(rm, mk(), 'teamwork', 'neighbour');
+    assert.ok(neighbour.sent.some(m => m.type === 'room.created'), 'another key still creates rooms');
+  });
+
+  test('a client key is capped at ten creations per ten minutes', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(25), idleLimitMs: 1e12 });
+    const made = [];
+    // each attempt closes the previous room, so the concurrent cap never applies and only the rate is measured
+    for (let i = 0; i < 11; i += 1) {
+      const socket = create(rm, mk(), 'teamwork', 'rate');
+      made.push(socket.sent.some(m => m.type === 'room.created'));
+      for (const room of [...rm.rooms.values()]) rm.closeRoom(room, 'test');
+    }
+    assert.equal(made.filter(Boolean).length, 10, 'ten creations inside the window');
+    assert.deepEqual(made.slice(10), [false], 'the eleventh creation is refused');
+    now += 10 * 60_000;
+    const afterWindow = create(rm, mk(), 'teamwork', 'rate');
+    assert.ok(afterWindow.sent.some(m => m.type === 'room.created'), 'the creation budget recovers after the window');
+  });
+
+  test('no client key means no per-key cap, as before', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(22), idleLimitMs: 1e12, maxRooms: 50 });
+    for (let i = 0; i < 20; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.create', mode: 'teamwork' })); }
+    assert.equal(rm.rooms.size, 20);
+    assert.ok([...rm.rooms.values()].every(room => room.ownerKey === null));
+  });
+
+  test('only messages that change the room keep it alive', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(23), idleLimitMs: 10 * 60_000 });
+    const host = create(rm, mk(), 'competitive');
+    const code = [...rm.rooms.keys()][0];
+    for (let i = 0; i < 2; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `P${i}` })); }
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    const room = rm.rooms.get(code);
+    const seated = room.players[0].socket;
+    // A real position report (inside the round a competitive round lasts 90 s, so keep the idle window short enough)
+    now += 30_000; rm.tick();
+    room.lastActivityAt = 1_000_000;
+    rm.receive(seated, JSON.stringify({ type: 'player.position', x: room.engine.game.competitors[0].moving.left, sequence: 1e9, width: 100 }));
+    assert.ok(room.lastActivityAt > 1_000_000, 'a valid position report counts as activity');
+    // No-ops and rejections do not
+    for (const [socket, message] of [
+      [host, { type: 'nope' }],
+      [host, { type: 'room.sync' }],
+      [seated, { type: 'player.position', x: -1, sequence: 2e9, width: 100 }],
+      [seated, { type: 'vote.cast', option: 'turbo' }]
+    ]) {
+      room.lastActivityAt = 1_000_000;
+      rm.receive(socket, JSON.stringify(message));
+      assert.equal(room.lastActivityAt, 1_000_000, `${message.type} must not refresh activity`);
+    }
+    now += 11 * 60_000;
+    rm.sweepIdle();
+    assert.equal(rm.rooms.has(code), false, 'a room kept alive only by junk is swept');
+  });
+
+  test('team.ready and team.skip count as activity on success', () => {
+    const now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(24), idleLimitMs: 1e12 });
+    const host = create(rm, mk());
+    const code = [...rm.rooms.keys()][0];
+    const players = [mk(), mk()];
+    players.forEach((socket, i) => { rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `P${i}` })); });
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    const room = rm.rooms.get(code);
+    const onTurn = players.find(socket => socket === room.players.find(player => player.id === room.engine.game.team.currentPlayerId).socket);
+    room.players.find(player => player.id === room.engine.game.team.currentPlayerId).teamIdle = true;
+    room.lastActivityAt = 0;
+    rm.receive(onTurn, JSON.stringify({ type: 'team.ready' }));
+    assert.ok(room.lastActivityAt > 0, 'team.ready refreshed activity');
+    room.lastActivityAt = 0;
+    rm.receive(host, JSON.stringify({ type: 'team.skip', turnId: room.engine.game.team.turnId }));
+    assert.ok(room.lastActivityAt > 0, 'team.skip refreshed activity');
+  });
+});
+
 describe('Spectator role (A-09)', () => {
   test('late spectators receive updates and resume, but cannot affect the room', () => {
     let now = 1_000_000; const rm = new RoomManager({ now: () => now, random: rng(12) });
