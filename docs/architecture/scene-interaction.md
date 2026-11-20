@@ -12,10 +12,11 @@ unchanged, private implementation inside this module.
 - `activate()` installs input listeners once. `dispose()` is idempotent and
   terminal: it removes listeners and all HUDs, cancels the drag, clears transient
   pointer/cursor/context-menu state, and prevents reactivation.
-- `setContext({ mode, reduced })` updates reduced motion and handles scene-entry
-  interaction policy when the mode changes. It cancels drags, snaps the previous
-  view, and opens/closes the appropriate controls. Repeated frame updates with
-  only `reduced` do not restart hint lifetimes or reset the view.
+- `setContext({ mode, reduced, reenter })` updates reduced motion and handles
+  scene-entry interaction policy when the mode changes, or when Stage explicitly
+  requests re-entry after a theme/context rebuild. It cancels drags, snaps the
+  previous view, and opens/closes the appropriate controls. Repeated frame updates
+  without `reenter` do not restart hint lifetimes or reset the view.
 - `update(dt, focusY, { idleReset, cameraDistance })` advances the controllers
   using seconds and returns `{ yaw, pitch, zoom, par }`. Stage supplies the floor
   constraint context; the module does not inspect a camera or Stage object.

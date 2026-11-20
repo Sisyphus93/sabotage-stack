@@ -310,7 +310,8 @@ export class Stage {
     this.plinthGoal = mode === 'celebrate' ? null : [mode === 'arena' ? 2.3 : hero ? 2.2 : play ? 1.4 : 1, mode === 'arena' ? 0.62 : hero ? 1.5 : 1];
     if (!flies && this.plinthGoal) this.world.plinth.scale.set(this.plinthGoal[0], 1, this.plinthGoal[1]);
     this.popups.clear(); this.lastEffectKey = ''; this.removeBadge();
-    this.interaction.setContext({ mode, reduced: this.reduced });
+    // A theme/context rebuild clears Stage.mode but retains the interaction's mode.
+    this.interaction.setContext({ mode, reduced: this.reduced, reenter: !previous });
     if (!hero) this.leaveHome();
     if (hero && !this.director) this.director = new TitleDirector(TITLE_EFFECT_IDS, rng(Date.now() & 0xffff), { reduced: this.reduced });
     if (mode === 'results') { this.resultsT = 0; this.scoreShown = false; }
