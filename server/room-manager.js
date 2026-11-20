@@ -367,6 +367,11 @@ class RoomManager {
     if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
     const code = this.normalizeCode(message.code);
     const token = typeof message.resumeToken === 'string' ? message.resumeToken : '';
+    // Real tokens are 32 bytes; anything far larger is an attempt to make us allocate on demand.
+    if (token.length > 128) {
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    }
     const room = this.rooms.get(code);
     if (!room) {
       this.spendJoinFailure(socket, now);
@@ -722,9 +727,14 @@ class RoomManager {
   newToken() { return this.randomBytes(24).toString('base64url'); }
   newId() { return this.randomBytes(12).toString('hex'); }
 
+  // Compared in bytes, not UTF-16 code units: timingSafeEqual throws when the buffers differ in length, and two
+  // strings of equal length can encode to different byte counts (any token with non-ASCII in it).
   tokensMatch(supplied, expected) {
-    if (typeof supplied !== 'string' || typeof expected !== 'string' || supplied.length !== expected.length) return false;
-    return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+    if (typeof supplied !== 'string' || typeof expected !== 'string') return false;
+    const suppliedBytes = Buffer.from(supplied, 'utf8');
+    const expectedBytes = Buffer.from(expected, 'utf8');
+    if (suppliedBytes.length !== expectedBytes.length) return false;
+    return crypto.timingSafeEqual(suppliedBytes, expectedBytes);
   }
 }
 

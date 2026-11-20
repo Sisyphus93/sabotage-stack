@@ -584,6 +584,58 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   });
 });
 
+describe('Resume tokens are compared safely (P1-2)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+  const roomWithPlayer = () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(41) });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    const code = [...rm.rooms.keys()][0];
+    const player = mk(); rm.connect(player); rm.receive(player, JSON.stringify({ type: 'room.join', code, name: 'A' }));
+    return { rm, code, player, token: player.sent.find(m => m.type === 'room.joined').resumeToken };
+  };
+
+  test('a non-ASCII token of the same code-unit length is refused, not thrown', () => {
+    const { rm, code } = roomWithPlayer();
+    const attacker = mk(); rm.connect(attacker);
+    assert.doesNotThrow(() => rm.receive(attacker, JSON.stringify({ type: 'room.resume', code, resumeToken: 'é'.repeat(32) })));
+    assert.equal(attacker.sent.at(-1).type, 'error');
+    assert.equal(attacker.sent.at(-1).code, 'INVALID_RESUME');
+    rm.receive(attacker, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(attacker.sent.at(-1).type, 'server.pong', 'the socket is still usable');
+  });
+
+  test('a legitimate resume still succeeds and a wrong token of the same length still fails', () => {
+    const { rm, code, player, token } = roomWithPlayer();
+    rm.disconnect(player);
+    const resumed = mk(); rm.connect(resumed);
+    rm.receive(resumed, JSON.stringify({ type: 'room.resume', code, resumeToken: token }));
+    assert.equal((resumed.sent.find(m => m.type === 'room.resumed') || {}).role, 'player');
+    const wrong = mk(); rm.connect(wrong);
+    const wrongToken = token.replace(/[A-Za-z]/g, ch => (ch === 'A' ? 'B' : 'A'));
+    assert.equal(wrongToken.length, token.length);
+    rm.receive(wrong, JSON.stringify({ type: 'room.resume', code, resumeToken: wrongToken }));
+    assert.equal(wrong.sent.at(-1).code, 'INVALID_RESUME');
+  });
+
+  test('an oversized token is refused before any lookup', () => {
+    const { rm, code } = roomWithPlayer();
+    const socket = mk(); rm.connect(socket);
+    rm.receive(socket, JSON.stringify({ type: 'room.resume', code, resumeToken: 'A'.repeat(5000) }));
+    assert.equal(socket.sent.at(-1).code, 'INVALID_RESUME');
+    const overlong = mk(); rm.connect(overlong);
+    rm.receive(overlong, JSON.stringify({ type: 'room.resume', code: 'ZZZZ', resumeToken: 'A'.repeat(5000) }));
+    assert.equal(overlong.sent.at(-1).code, 'INVALID_RESUME', 'and identically for a room that does not exist');
+  });
+
+  test('tokensMatch compares bytes', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(43) });
+    assert.equal(rm.tokensMatch('éé', 'éé'), true);
+    assert.equal(rm.tokensMatch('é', 'e'), false, 'one UTF-16 unit each, different byte lengths');
+    assert.equal(rm.tokensMatch('éé', 'ee'), false, 'two UTF-16 units each, different byte lengths');
+    assert.equal(rm.tokensMatch(null, 'a'), false);
+  });
+});
+
 describe('Preference messages are not an amplifier (P1-1)', () => {
   const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
   const setup = (mode = 'competitive') => {
