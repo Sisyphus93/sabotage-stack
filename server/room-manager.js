@@ -26,6 +26,8 @@ const JOIN_FAILURE_WINDOW_MS = 60_000;
 // session. Anything faster is either a fight over the toggle or an attempt to amplify traffic.
 const PREFERENCE_BURST = 5;
 const PREFERENCE_REFILL_PER_SECOND = 2;
+// Shared buckets are pruned by age; a stale entry is only ever a few hundred bytes and is dropped on write.
+const KEYED_BUDGET_IDLE_MS = 5 * 60 * 1000;
 const JOIN_FAILURE_MAX_KEYS = 10_000;
 const SHARED_CLIENT_KEY = '__shared__';
 // Rooms one client may hold open, and how many it may create in a window. Skipped while the client key is unknown.
@@ -80,6 +82,7 @@ class RoomManager {
     this.preferenceBurst = Math.max(1, preferenceBurst);
     this.preferenceRefillPerSecond = Math.max(0, preferenceRefillPerSecond);
     this.preferenceBudgets = new WeakMap();
+    this.keyedMessageBudgets = new Map();
     this.roomCreations = new Map();
     this.clientKeys = new WeakMap();
     this.budgets = new WeakMap();
@@ -164,6 +167,8 @@ class RoomManager {
     return count;
   }
 
+  // A message has to fit both the socket's own bucket and, when the client key is known, a bucket shared by every
+  // socket from that key — otherwise opening a second connection resets a flood budget. Skipped when key is null.
   allowMessage(socket) {
     const now = this.now();
     let budget = this.budgets.get(socket);
@@ -171,13 +176,38 @@ class RoomManager {
     const elapsed = Math.max(0, now - budget.at) / 1000;
     budget.tokens = Math.min(this.messageBurst, budget.tokens + elapsed * this.messageRefillPerSecond);
     budget.at = now;
-    if (budget.tokens >= 1) { budget.tokens -= 1; budget.strikes = 0; return true; }
+    const key = this.clientKeyOf(socket);
+    const shared = key == null ? null : this.sharedMessageBudget(key, now);
+    if (budget.tokens >= 1 && (!shared || shared.tokens >= 1)) {
+      budget.tokens -= 1;
+      if (shared) shared.tokens -= 1;
+      budget.strikes = 0;
+      return true;
+    }
     budget.strikes += 1;
     if (budget.strikes === 1) this.error(socket, 'RATE_LIMITED', 'You are sending messages too quickly.');
     if (budget.strikes >= MESSAGE_ABUSE_CLOSE_AFTER && typeof socket.close === 'function') {
       try { socket.close(1008, 'Message flood'); } catch (_) { /* already closing */ }
     }
     return false;
+  }
+
+  sharedMessageBudget(key, now) {
+    let budget = this.keyedMessageBudgets.get(key);
+    if (!budget) {
+      if (this.keyedMessageBudgets.size >= JOIN_FAILURE_MAX_KEYS) {
+        for (const [existing, entry] of this.keyedMessageBudgets) {
+          if (now - entry.at >= KEYED_BUDGET_IDLE_MS || now < entry.at) this.keyedMessageBudgets.delete(existing);
+        }
+        while (this.keyedMessageBudgets.size >= JOIN_FAILURE_MAX_KEYS) this.keyedMessageBudgets.delete(this.keyedMessageBudgets.keys().next().value);
+      }
+      budget = { tokens: this.messageBurst, at: now };
+      this.keyedMessageBudgets.set(key, budget);
+    }
+    const elapsed = Math.max(0, now - budget.at) / 1000;
+    budget.tokens = Math.min(this.messageBurst, budget.tokens + elapsed * this.messageRefillPerSecond);
+    budget.at = now;
+    return budget;
   }
 
   // Only a message that actually changes the stored preference draws on this budget, so a client that repeats

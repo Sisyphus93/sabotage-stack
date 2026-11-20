@@ -584,6 +584,79 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   });
 });
 
+describe('Connections and messages are budgeted per client (P1-3)', () => {
+  const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+
+  test('one key cannot open more sockets than the cap, and its sockets share a message budget', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(51), messageBurst: 5, messageRefillPerSecond: 0 });
+    const first = mk(), second = mk();
+    rm.connect(first, { clientKey: 'A' });
+    rm.connect(second, { clientKey: 'A' });
+    for (let i = 0; i < 5; i += 1) rm.receive(first, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(first.sent.filter(m => m.type === 'server.pong').length, 5, 'the first socket spends its burst');
+    for (let i = 0; i < 5; i += 1) rm.receive(second, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(second.sent.filter(m => m.type === 'server.pong').length, 0, 'a second socket from the same key starts empty');
+    assert.ok(second.sent.some(m => m.code === 'RATE_LIMITED'));
+    const neighbour = mk(); rm.connect(neighbour, { clientKey: 'B' });
+    rm.receive(neighbour, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(neighbour.sent.at(-1).type, 'server.pong', 'another key is unaffected');
+    const unkeyed = new RoomManager({ now: () => 1_000_000, random: rng(52), messageBurst: 5, messageRefillPerSecond: 0 });
+    const a = mk(), b = mk(); unkeyed.connect(a); unkeyed.connect(b);
+    for (let i = 0; i < 5; i += 1) unkeyed.receive(a, JSON.stringify({ type: 'client.ping' }));
+    unkeyed.receive(b, JSON.stringify({ type: 'client.ping' }));
+    assert.equal(b.sent.at(-1).type, 'server.pong', 'with no key each socket keeps its own burst, as before');
+  });
+
+  test('the upgrade handler refuses a key past its cap and another key still connects', async () => {
+    const app = createGameServer({
+      onError: () => {},
+      clientKeyFor: request => request.headers['x-test-ip'] || null,
+      clientsPerKey: 3
+    });
+    await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+    const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+    const attempt = ip => new Promise(resolve => {
+      const ws = new WebSocket(url, { headers: { 'x-test-ip': ip } });
+      ws.on('open', () => resolve({ ok: true, ws }));
+      ws.on('unexpected-response', (request, response) => resolve({ ok: false, status: response.statusCode }));
+      ws.on('error', () => resolve({ ok: false, status: 0 }));
+    });
+    try {
+      const held = [];
+      for (let i = 0; i < 3; i += 1) held.push(await attempt('10.9.0.1'));
+      assert.deepEqual(held.map(r => r.ok), [true, true, true]);
+      const refused = await attempt('10.9.0.1');
+      assert.equal(refused.ok, false);
+      assert.equal(refused.status, 503, 'the fourth socket from one key is refused with 503');
+      const neighbour = await attempt('10.9.0.2');
+      assert.equal(neighbour.ok, true, 'another key is unaffected');
+      for (const result of [...held, neighbour]) result.ws.terminate();
+      await sleep(200);
+      const reopened = await attempt('10.9.0.1');
+      assert.equal(reopened.ok, true, 'the counter is released when sockets close, so nothing leaks');
+      reopened.ws.terminate();
+    } finally { await app.close(); }
+  });
+
+  test('the global socket ceiling always applies, even with no client key', async () => {
+    const app = createGameServer({ onError: () => {}, clientKeyFor: () => null, maxSockets: 2 });
+    await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+    const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+    const attempt = () => new Promise(resolve => {
+      const ws = new WebSocket(url);
+      ws.on('open', () => resolve({ ok: true, ws }));
+      ws.on('unexpected-response', (request, response) => resolve({ ok: false, status: response.statusCode }));
+      ws.on('error', () => resolve({ ok: false, status: 0 }));
+    });
+    try {
+      const results = [await attempt(), await attempt(), await attempt()];
+      assert.deepEqual(results.map(r => r.ok), [true, true, false]);
+      assert.equal(results[2].status, 503);
+      results.filter(r => r.ws).forEach(r => r.ws.terminate());
+    } finally { await app.close(); }
+  });
+});
+
 describe('Resume tokens are compared safely (P1-2)', () => {
   const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
   const roomWithPlayer = () => {

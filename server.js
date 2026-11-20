@@ -8,6 +8,10 @@ const zlib = require('node:zlib');
 const { WebSocketServer, WebSocket } = require('ws');
 const { RoomManager } = require('./server/room-manager');
 
+// Connection ceilings: one client cannot hold more than a few dozen sockets, and the process refuses new ones
+// outright past the global ceiling so a spread of addresses cannot exhaust file descriptors.
+const CLIENTS_PER_KEY = 30;
+const MAX_SOCKETS = 2000;
 const PROJECT_ROOT = __dirname;
 const HTML_PATH = path.join(PROJECT_ROOT, 'sabotage-stack.html');
 // The only files served besides the page itself. Exact-match routing (no directory serving) keeps path traversal impossible.
@@ -114,7 +118,7 @@ function clientKeyResolver(source = process.env.CLIENT_IP_SOURCE) {
   return () => null;
 }
 
-function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error, clientKeyFor = clientKeyResolver() } = {}) {
+function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error, clientKeyFor = clientKeyResolver(), clientsPerKey = CLIENTS_PER_KEY, maxSockets = MAX_SOCKETS } = {}) {
   const htmlPath = path.join(root, 'sabotage-stack.html');
   const server = http.createServer((request, response) => {
     const pathname = requestPathname(request);
@@ -141,13 +145,34 @@ function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager()
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024, perMessageDeflate: false });
+  // Open sockets per client key, and a global ceiling. The per-key cap is skipped when no key is known (the
+  // fail-safe rule: a cap must never be keyed on a proxy address); the global cap always applies.
+  const socketsByKey = new Map();
+  const perKeySocketCap = Math.max(1, clientsPerKey);
+  const totalSocketCap = Math.max(1, maxSockets);
+  const refuseUpgrade = (socket, status) => {
+    socket.write(`HTTP/1.1 ${status} Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n`);
+    socket.destroy();
+  };
   server.on('upgrade', (request, socket, head) => {
     if (requestPathname(request) !== '/ws' || !originIsSameHost(request)) {
       socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(request, socket, head, webSocket => wss.emit('connection', webSocket, request));
+    if (wss.clients.size >= totalSocketCap) return refuseUpgrade(socket, 503);
+    const clientKey = clientKeyFor(request);
+    if (clientKey != null && (socketsByKey.get(clientKey) || 0) >= perKeySocketCap) return refuseUpgrade(socket, 503);
+    wss.handleUpgrade(request, socket, head, webSocket => {
+      if (clientKey != null) {
+        socketsByKey.set(clientKey, (socketsByKey.get(clientKey) || 0) + 1);
+        webSocket.once('close', () => {
+          const remaining = (socketsByKey.get(clientKey) || 1) - 1;
+          if (remaining > 0) socketsByKey.set(clientKey, remaining); else socketsByKey.delete(clientKey);
+        });
+      }
+      wss.emit('connection', webSocket, request);
+    });
   });
 
   // A bug triggered by one client's message must not terminate the process and every other room with it.
