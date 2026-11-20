@@ -590,6 +590,23 @@ describe('Room-code guessing limit (A-03)', () => {
   });
 });
 
+describe('Room codes are always joinable (P2-5)', () => {
+  test('an exhausted code space answers SERVER_BUSY and never mints a digit code', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(71), randomBytes: () => Buffer.alloc(4, 0) });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    assert.equal(host.sent.find(m => m.type === 'room.created').code, 'AAAA');
+    // every further attempt collides with AAAA, so the 100 tries run out and the fallback must not be a digit code
+    const second = mk(); rm.connect(second); rm.receive(second, JSON.stringify({ type: 'room.create', mode: 'teamwork' }));
+    assert.equal(second.sent.at(-1).type, 'error');
+    assert.equal(second.sent.at(-1).code, 'SERVER_BUSY');
+    assert.deepEqual([...rm.rooms.keys()], ['AAAA'], 'no room with an unjoinable code was created');
+    for (const code of rm.rooms.keys()) assert.match(code, /^[A-Z]{4}$/);
+    const joiner = mk(); rm.connect(joiner); rm.receive(joiner, JSON.stringify({ type: 'room.join', code: '0001', name: 'Guest' }));
+    assert.equal(joiner.sent.at(-1).code, 'ROOM_NOT_FOUND', 'the old fallback code is not a room, as it never was');
+  });
+});
+
 describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
   const create = (rm, socket, mode = 'teamwork', clientKey = 'owner') => { rm.connect(socket, { clientKey }); rm.receive(socket, JSON.stringify({ type: 'room.create', mode })); return socket; };
