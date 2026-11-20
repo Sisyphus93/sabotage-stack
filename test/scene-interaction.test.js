@@ -317,3 +317,44 @@ for (const mode of modes) for (const reduced of [false, true]) test(`${mode}: wh
     }
   } finally { r.close(); }
 });
+
+for (const mode of modes) test(`${mode}: Stage forced re-entry resets interaction after a theme rebuild`, async () => {
+  const { Stage } = await load('stage.js');
+  const r = await rig({ mode, reduced: true });
+  const previousDocument = globalThis.document;
+  globalThis.document = r.doc;
+  try {
+    r.fire('keydown', { key: 'ArrowRight' });
+    r.fire('wheel'); r.update();
+    assert.notEqual(r.interaction.view.yaw, 0);
+    assert.notEqual(r.interaction.view.zoom, 1);
+    // Ordinary same-mode frame updates must not reset view or hints.
+    r.interaction.setContext({ mode, reduced: true });
+    assert.notEqual(r.interaction.view.yaw, 0);
+    r.fire('pointerdown', { button: 2, buttons: 2 });
+    assert.equal(r.interaction.dragging, true);
+    const noop = () => {};
+    const stage = {
+      // buildTheme clears Stage.mode to request a full scene re-entry.
+      mode: '', reduced: true, camSpec: null, interaction: r.interaction,
+      engine: { fade: { value: 0, target: 0 } }, title: { group: {} },
+      arsenal: { group: {} }, titleProps: { group: {} }, towers: {}, arena: [], labels: [],
+      totems: { group: {} }, crown: {}, ruler: { group: {} },
+      world: { plinth: { scale: { set: noop } }, crowd: { clearBallot: noop, setSpread: noop } },
+      leave: noop, leaveHome: noop, popups: { clear: noop }, removeBadge: noop, director: {},
+      bricks: { hide: noop }, candidates: { release: noop }
+    };
+    Stage.prototype.enterMode.call(stage, mode, {});
+    assert.equal(r.interaction.dragging, false);
+    assert.equal(r.interaction.view.yaw, 0);
+    assert.equal(r.interaction.view.pitch, 0);
+    assert.equal(r.interaction.view.zoom, 1);
+    r.update();
+    assert.equal(r.interaction.view.yaw, 0, 'no gesture momentum survives re-entry');
+    assert.equal(r.interaction.view.zoom, 1);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document;
+    else globalThis.document = previousDocument;
+    r.close();
+  }
+});

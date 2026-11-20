@@ -57,9 +57,9 @@ export class SceneInteraction {
   get dragging() { return Boolean(this.drag); }
   get view() { return { yaw: this.#orbit.yaw, pitch: this.#orbit.pitch, zoom: this.#dolly.value, rotated: this.#orbit.rotated, zoomed: this.#dolly.zoomed }; }
 
-  setContext({ mode = this.mode, reduced = this.reduced } = {}) {
+  setContext({ mode = this.mode, reduced = this.reduced, reenter = false } = {}) {
     this.reduced = Boolean(reduced);
-    if (mode === this.mode || this.disposed) return;
+    if (this.disposed || (mode === this.mode && !reenter)) return;
     this.mode = mode;
     this.#endDrag(true); this.#orbit.snap(); this.#dolly.snap();
     if (mode === 'hero') this.#openHud();

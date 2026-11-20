@@ -216,7 +216,6 @@ describe('the lobby and the podium turn and zoom like every other scene', () => 
     assert.match(lobby, /this\.reduced, uv\.yaw\);/, 'the totems turn to face the viewer');
     assert.match(lobby, /const anchorY = lerp\(230, 70, zk\);[^]*?screen: \{ x: free\.x \+ free\.w \/ 2, y: screenY - \(anchorY - 230\) \* ppu1 \}/, 'zooming in closes in on the totems, not on the air above them');
     assert.match(lobby, /this\.placeLobbyHud\(W, H, dt\)/); assert.match(podium, /this\.interaction\.placeHud\('results', wide \? W - 16 : free\.x \+ free\.w - 14, wide \? H - 14 : free\.y \+ free\.h - 12, dt\)/);
-    assert.match(stageSource, /this\.interaction\.setContext\(\{ mode, reduced: this\.reduced \}\)/);
   });
 
   test('the totems turn on the spot to face the viewer, and the Teamwork plaques turn on their blocks', async () => {
