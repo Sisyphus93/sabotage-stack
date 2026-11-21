@@ -111,7 +111,6 @@ test('deterministic room traces reconstruct exactly through the JSON wire', () =
 });
 
 test('standalone embedded replication matches the Node implementation', () => {
-  assert.equal(require('../scripts/sync-replication').check(), true, 'Run npm run sync-replication');
   const fs = require('node:fs'); const vm = require('node:vm'); const path = require('node:path');
   const html = fs.readFileSync(path.join(__dirname, '..', 'sabotage-stack.html'), 'utf8');
   const source = html.split('    /* SHARED_REPLICATION_START */\n')[1].split('    /* SHARED_REPLICATION_END */')[0];
@@ -149,24 +148,4 @@ test('synchronization sends the exact broadcast baseline, not a fresh snapshot',
   manager.snapshot = () => { throw new Error('must not take a fresh snapshot during recovery'); };
   manager.syncState(socket);
   assert.deepEqual(socket.sent, [{ type: 'room.state', state: before }]);
-});
-
-test('freshness command rejects stale or missing embedded replication', () => {
-  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os');
-  const { spawnSync } = require('node:child_process');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'replication-sync-'));
-  try {
-    fs.mkdirSync(path.join(root, 'scripts')); fs.mkdirSync(path.join(root, 'shared'));
-    fs.copyFileSync(path.join(__dirname, '..', 'scripts', 'sync-replication.js'), path.join(root, 'scripts', 'sync-replication.js'));
-    fs.writeFileSync(path.join(root, 'shared', 'room-replication.js'), 'new source\n');
-    const htmlPath = path.join(root, 'sabotage-stack.html');
-    const run = (...args) => spawnSync(process.execPath, [path.join(root, 'scripts', 'sync-replication.js'), ...args], { encoding: 'utf8' });
-    fs.writeFileSync(htmlPath, 'head\n    /* SHARED_REPLICATION_START */\nstale\n    /* SHARED_REPLICATION_END */\ntail');
-    assert.equal(run('--check').status, 1);
-    assert.equal(run().status, 0);
-    assert.equal(run('--check').status, 0);
-    assert.equal(fs.readFileSync(htmlPath, 'utf8'), 'head\n    /* SHARED_REPLICATION_START */\nnew source\n    /* SHARED_REPLICATION_END */\ntail');
-    fs.writeFileSync(htmlPath, 'missing markers');
-    assert.notEqual(run('--check').status, 0);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });

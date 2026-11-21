@@ -7,8 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node test/run.js",
-    "sync-core": "node scripts/sync-core.js",
-    "sync-replication": "node scripts/sync-replication.js",
+    "sync": "node scripts/sync-shared.js",
+    "sync-core": "node scripts/sync-shared.js",
+    "sync-replication": "node scripts/sync-shared.js",
     "build": "node scripts/build-client.js",
     "build:dev": "node scripts/build-client.js --dev",
     "build:check": "node scripts/build-client.js --check",

@@ -219,7 +219,7 @@ describe('landing is what the player saw, independent of network timing', () => 
     engine.addEffect('calipers', 'a', clock.t); clock.t += 500; engine.tick(clock.t);
     const c = engine.game.competitors[0]; const bounds = Core.caliperBounds(c.stack[c.stack.length - 1], c.moving);
     const speed = engine.effectiveSpeedAt(c.stack, c, 'a', clock.t);
-    const left = engine.landingLeft(c, c.stack, 'a', Math.max(0, c.moving.left - speed * 0.2), speed, clock.t);
+    const left = engine.drop('a', { x: Math.max(0, c.moving.left - speed * 0.2), requestId: 'rails' }).authoritativeX;
     assert.ok(left >= bounds.minLeft - 1e-9 && left <= bounds.maxLeft + 1e-9);
   });
 });
@@ -366,8 +366,8 @@ describe('shared core invariants', () => {
     for (let i = 0; i < 20000; i += 1) {
       const bw = 0.01 + r() * 200; const bl = r() * (360 - bw); const below = { left: bl, right: bl + bw, level: 3 };
       const mw = Math.max(Core.MIN_WIDTH, bw); const mover = { left: r() * (360 - mw), width: mw, direction: 1, rollerPhase: r() };
-      const landed = Core.landingMover(mover, r() < 0.5 ? 'rollercoaster' : '', { speed: 100 + r() * 200, verticalOffset: (r() - 0.5) * 60 }) || mover;
-      const out = Core.placeDrop(below, landed, { perfectWindow: 3 + r() * 10, crumble: r() < 0.3 });
+      const effects = { portal: r() < 0.2 ? {} : null, calipers: r() < 0.2 ? {} : null, superglue: r() < 0.2 ? {} : null, crumble: r() < 0.3 ? {} : null };
+      const { outcome: out } = Core.resolveLanding(below, mover, { left: mover.left + (r() - 0.5) * 80, speed: 100 + r() * 200, effects, level: 4 });
       if (out.status === 'placed') assert.ok(out.placed.right > out.placed.left && Number.isFinite(out.placed.width));
       for (const f of out.fallen) assert.ok(f.right > f.left);
     }

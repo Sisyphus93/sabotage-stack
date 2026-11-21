@@ -12,13 +12,11 @@ const AUTO_DROP_GRACE_MS = 2_000;
 const FIRST_VOTE_AT = 8;
 const VOTE_CYCLE_SECONDS = 10;
 const VOTE_SECONDS = 5;
-const EFFECT_SECONDS = 5;
-const DROP_EFFECT_SECONDS = 8;
+const EFFECT_SECONDS = Core.EFFECT_SECONDS;
 const ROUND_SECONDS = 90;
 const COMPETITIVE_DISCONNECT_GRACE_MS = 10_000;
 const SABOTAGE_IDS = Core.SABOTAGE_IDS;
-const DROP_COUNTED_EFFECTS = new Set(Core.DROP_COUNTED_IDS);
-const TEAM_GLOBAL_EFFECTS = new Set(['crumble']);
+const TEAM_GLOBAL_EFFECTS = new Set(Core.TEAM_GLOBAL_IDS);
 // Per-ballot bounds for future authenticated chat adapters.
 const MAX_CHAT_VOTER_ID_LENGTH = 128;
 const MAX_CHAT_VOTERS = 1000;
@@ -26,12 +24,6 @@ const MAX_CHAT_VOTES_PER_VOTER = 20;
 const ROOM_GLOBAL_EFFECTS = new Set();
 
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
-function randomDrunkTarget(mode, random) {
-  const min = mode === 'lurch' ? 1.55 : 0.25;
-  const max = mode === 'lurch' ? 1.9 : 0.45;
-  const sample = Math.max(0, Math.min(0.999999999, Number(random()) || 0));
-  return min + sample * (max - min);
-}
 
 class RoundEngine {
   constructor({ mode, players, now = Date.now, random = Math.random, motionPrefersReduced = false, isHostConnected = () => true, onEvent = () => {}, onChange = () => {} }) {
@@ -78,7 +70,7 @@ class RoundEngine {
         playerId: player.id,
         stack: [{ ...Core.makeBase(), color: player.color, placer: player.name }],
         fallen: [], perfects: 0, sabotageCount: 0, collapsed: false, disconnected: !player.connected,
-        ended: !player.connected, disconnectDeadline: null, collapseLevel: null, moving: this.makeMover([{ ...Core.makeBase(), color: player.color }], true, player.color, false),
+        ended: !player.connected, disconnectDeadline: null, collapseLevel: null, moving: Core.spawnMover([{ ...Core.makeBase(), color: player.color }], { fromLeft: true, color: player.color }),
         nextSpawnFromLeft: false, lastPositionSeq: -1,
         drunkClock: 0, drunkHold: 0.625, drunkMode: 'stumble', drunkFrom: 1, drunkTarget: 0.35, drunkMultiplier: 1
       })) : null,
@@ -90,30 +82,8 @@ class RoundEngine {
     return this.snapshot();
   }
 
-  makeMover(stack, fromLeft, color, accordionEffect = null, now = this.now()) {
-    const below = stack[stack.length - 1];
-    const width = Math.max(Core.MIN_WIDTH, below.right - below.left);
-    let moving = {
-      left: fromLeft ? 0 : WORLD_WIDTH - width,
-      width,
-      direction: fromLeft ? 1 : -1,
-      level: stack.length,
-      fromLeft: Boolean(fromLeft),
-      color,
-      portalWrap: false,
-      rollerPhase: ((stack.length * 0.38196601125) % 1)
-    };
-    if (accordionEffect) {
-      moving.accordion = true;
-      if (this.motionReductionEnabled()) {
-        moving.accordionReduced = true;
-      } else {
-        const elapsed = Math.max(0, (now - accordionEffect.startedAt) / 1000);
-        moving.accordionPhase = Core.accordionPhaseForWidth(width, width) - elapsed / 0.8;
-        moving = Core.resizeMover(moving, Core.accordionWidth(elapsed, width, moving.accordionPhase), width);
-      }
-    }
-    return moving;
+  makeMover(stack, fromLeft, color, playerId = null, now = this.now()) {
+    return Core.spawnMover(stack, { fromLeft, color, effects: this.moverEffects(playerId, now), reduced: this.motionReductionEnabled() });
   }
 
   connectedPlayer(id) { return this.players.find(player => player.id === id && player.connected && !player.ended) || null; }
@@ -131,13 +101,12 @@ class RoundEngine {
     return this.game.competitors.every(competitor => competitor.ended || competitor.collapsed);
   }
   teamMover() { return this.game && this.game.team ? this.game.team.moving : null; }
-  effectApplies(effect, playerId = null) { return effect.targetPlayerId == null || effect.targetPlayerId === playerId; }
   effectFor(id, playerId = null, now = this.now()) {
-    if (!this.game) return null;
-    return this.game.activeEffects.find(effect => effect.id === id && (effect.startedAt || 0) <= now && (effect.untilDrop || effect.expiresAt > now) && this.effectApplies(effect, playerId)) || null;
+    return this.game ? Core.effectFor(this.game.activeEffects, id, playerId, now) : null;
   }
   hasEffect(id, playerId = null, now = this.now()) { return Boolean(this.effectFor(id, playerId, now)); }
-  effectElapsed(effect, now = this.now()) { return effect ? Math.max(0, (now - effect.startedAt) / 1000) : 0; }
+  effectElapsed(effect, now = this.now()) { return Core.effectElapsed(effect, now); }
+  effectPolicy() { return Core.EFFECT_POLICIES[this.mode]; }
   motionReductionEnabled() {
     return this.motionPrefersReduced || this.players.some(player => player.connected && player.reducedMotion);
   }
@@ -152,7 +121,7 @@ class RoundEngine {
   }
 
   moverEffects(playerId, now) {
-    return Object.fromEntries(['turbo', 'rollercoaster', 'slowmo', 'drunk', 'accordion', 'portal', 'calipers', 'magnet', 'double'].map(id => {
+    return Object.fromEntries(SABOTAGE_IDS.map(id => {
       const effect = this.effectFor(id, playerId, now);
       return [id, effect ? { elapsed: this.effectElapsed(effect, now) } : null];
     }));
@@ -163,14 +132,8 @@ class RoundEngine {
   }
 
   effectiveSpeedAt(stack, actor, playerId, now) {
-    let speed = this.movementSpeed(stack, actor, playerId, now);
-    const moving = actor && actor.moving;
-    const below = Array.isArray(stack) && stack[stack.length - 1];
-    if (moving && below && this.hasEffect('magnet', playerId, now)) {
-      const target = (below.left + below.right) / 2;
-      speed *= Core.gravitySlingshotMultiplier(target - (moving.left + moving.width / 2));
-    }
-    return speed;
+    const below = Array.isArray(stack) ? stack[stack.length - 1] : null;
+    return Core.landingSpeed(actor, below, Math.max(0, stack.length - 1), this.moverEffects(playerId, now), this.motionReductionEnabled(), Core.MOVER_POLICIES.authoritative);
   }
 
   advanceOneMover(actor, stack, playerId, dt, now) {
@@ -224,9 +187,7 @@ class RoundEngine {
     if (!reuseMoving || !team.moving) {
       const fromLeft = team.nextSpawnFromLeft;
       team.nextSpawnFromLeft = !fromLeft;
-      team.moving = this.makeMover(team.stack, fromLeft, player.color, this.effectFor('accordion', player.id, now), now);
-      team.moving.portalWrap = this.hasEffect('portal', player.id, now);
-      if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
+      team.moving = this.makeMover(team.stack, fromLeft, player.color, player.id, now);
     }
     team.moving.portalWrap = this.hasEffect('portal', player.id, now);
     if (this.hasEffect('double', player.id, now)) team.moving.decoy = Core.createShellDecoy(team.moving);
@@ -237,50 +198,23 @@ class RoundEngine {
   }
 
   addEffect(id, targetPlayerId, now = this.now()) {
-    if (!SABOTAGE_IDS.includes(id)) return null;
-    const dropCounted = DROP_COUNTED_EFFECTS.has(id);
-    const duration = dropCounted ? DROP_EFFECT_SECONDS : EFFECT_SECONDS;
-    const untilDrop = this.mode === 'teamwork';
-    // One sabotage at a time per target (per stage in Teamwork). The client renders and predicts exactly one effect, and
-    // solo play replaces the running effect when a new vote resolves. Letting the server stack effects made a queued
-    // sabotage (for example Spotlight) mechanically active but invisible, and let movement speed diverge from the client.
-    this.game.activeEffects = this.game.activeEffects.filter(item => !(
-      this.mode === 'teamwork' || item.targetPlayerId == null || targetPlayerId == null || item.targetPlayerId === targetPlayerId));
-    const effect = {
-      id, targetPlayerId, startedAt: now, duration,
-      ...(untilDrop ? { untilDrop: true } : { expiresAt: now + duration * 1000 })
-    };
-    if (dropCounted) effect.dropsRemaining = 3;
-    if (id === 'pisa') effect.tiltDirection = this.random() < 0.5 ? -1 : 1;
-    if (id === 'spotlight') effect.spotlightSide = this.random() < 0.5 ? -1 : 1;
-    if (id === 'portal') {
-      if (this.mode === 'teamwork' && this.game.team.currentPlayerId === targetPlayerId && this.game.team.moving) this.game.team.moving.portalWrap = true;
-      if (this.mode === 'competitive') {
-        const target = this.game.competitors.find(item => item.playerId === targetPlayerId);
-        if (target && target.moving) target.moving.portalWrap = true;
-      }
+    // One Effect at a time per target (per stage in Teamwork). The client renders and predicts exactly one Effect;
+    // stacking them made a queued sabotage (for example Spotlight) mechanically active but invisible.
+    const { effects, effect } = Core.activateEffect(this.game.activeEffects, id, { targetPlayerId, now, random: this.random, policy: this.effectPolicy() });
+    if (!effect) return null;
+    this.game.activeEffects = effects;
+    // The shared Teamwork Mover only wraps through a portal when the portal targets the player holding it.
+    const actors = this.mode === 'teamwork'
+      ? (id !== 'portal' || this.game.team.currentPlayerId === targetPlayerId ? [this.game.team] : [])
+      : this.game.competitors.filter(item => item.playerId === targetPlayerId);
+    for (const actor of actors) {
+      const below = Array.isArray(actor.stack) ? actor.stack[actor.stack.length - 1] : null;
+      Core.beginMoverBehavior(actor, below, id, { random: this.random, policy: Core.MOVER_POLICIES.authoritative });
     }
-    if (id === 'double') {
-      const actors = this.mode === 'teamwork' ? [this.game.team] : this.game.competitors.filter(item => item.playerId === targetPlayerId);
-      for (const actor of actors) if (actor.moving) actor.moving.decoy = Core.createShellDecoy(actor.moving);
-    }
-    if (id === 'drunk') {
-      const actors = this.mode === 'teamwork' ? [this.game.team] : this.game.competitors.filter(item => item.playerId === targetPlayerId);
-      for (const actor of actors) {
-        actor.drunkClock = 0;
-        actor.drunkMode = this.random() < 0.5 ? 'stumble' : 'lurch';
-        actor.drunkHold = 0.55 + Math.max(0, Math.min(0.999999999, Number(this.random()) || 0)) * 0.15;
-        actor.drunkFrom = 1;
-        actor.drunkTarget = randomDrunkTarget(actor.drunkMode, this.random);
-        actor.drunkMultiplier = 1;
-      }
-    }
-    this.game.activeEffects = this.game.activeEffects.filter(item => !(item.id === id && item.targetPlayerId === targetPlayerId));
-    this.game.activeEffects.push(effect);
     this.onEvent('sabotage.active', {
       id, targetPlayerId,
-      ...(untilDrop ? { untilDrop: true } : { expiresAt: effect.expiresAt }),
-      ...(dropCounted ? { dropsRemaining: effect.dropsRemaining } : {})
+      ...(effect.untilDrop ? { untilDrop: true } : { expiresAt: effect.expiresAt }),
+      ...(Number.isInteger(effect.dropsRemaining) ? { dropsRemaining: effect.dropsRemaining } : {})
     });
     return effect;
   }
@@ -468,17 +402,21 @@ class RoundEngine {
     return { ok: true, x, authoritativeX: moving.left };
   }
 
-  landingLeft(actor, stack, playerId, reportedX, speed, now) {
+  // Lag compensation: honour the reported position when it is within a quarter-second of travel.
+  landingLeft(actor, reportedX, speed) {
     const moving = actor.moving;
     const serverLeft = moving.left;
     const rawDistance = Math.abs(reportedX - serverLeft);
     const distance = moving.portalWrap ? Math.min(rawDistance, WORLD_WIDTH - rawDistance) : rawDistance;
-    let left = distance <= speed * LAG_COMPENSATION_SECONDS + 2 ? reportedX : serverLeft;
-    if (this.hasEffect('calipers', playerId, now)) {
-      const bounds = Core.caliperBounds(stack[stack.length - 1], moving);
-      if (bounds) left = Math.max(bounds.minLeft, Math.min(bounds.maxLeft, left));
-    }
-    return left;
+    return distance <= speed * LAG_COMPENSATION_SECONDS + 2 ? reportedX : serverLeft;
+  }
+
+  resolveDrop(actor, stack, player, reportedX, now) {
+    const speed = this.effectiveSpeedAt(stack, actor, player.id, now);
+    return Core.resolveLanding(stack[stack.length - 1], actor.moving, {
+      left: this.landingLeft(actor, reportedX, speed), speed, effects: this.moverEffects(player.id, now),
+      level: stack.length, color: player.color, placer: player.name
+    });
   }
 
   position(playerId, message) {
@@ -535,23 +473,13 @@ class RoundEngine {
     const checked = this.validateReportedX(team.moving, team.stack, team, playerId, message.x, now, 'DROP_POSITION_OUT_OF_SYNC');
     if (!checked.ok) return { ...checked, requestId: message.requestId };
     if (message.sequence != null && Number(message.sequence) < player.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: team.moving.left };
-    const below = team.stack[team.stack.length - 1];
-    const speed = this.effectiveSpeedAt(team.stack, team, playerId, now);
-    const landing = { ...team.moving, left: this.landingLeft(team, team.stack, playerId, checked.x, speed, now) };
-    let placedMover = Core.landingMover(landing, '', { speed });
-    if (this.hasEffect('portal', playerId, now)) placedMover = Core.portalLandingMover(below, placedMover || landing);
-    const superglue = this.hasEffect('superglue', playerId, now);
-    const outcome = Core.placeDrop(below, placedMover || landing, {
-      level: team.stack.length, color: player.color, placer: player.name,
-      perfectWindow: Core.perfectWindowForEffect(speed, superglue ? 'superglue' : ''),
-      crumble: this.hasEffect('crumble', playerId, now)
-    });
+    const { left, outcome } = this.resolveDrop(team, team.stack, player, checked.x, now);
     this.consumeDropEffects(playerId, now);
     if (outcome.status === 'miss') {
       team.fallen.push(...outcome.fallen.map(piece => ({ ...piece })));
       team.collapseLevel = team.stack.length - 1;
       this.finishTeamRound(now);
-      return { ok: true, collapsed: true, authoritativeX: landing.left, turnId: team.turnId };
+      return { ok: true, collapsed: true, authoritativeX: left, turnId: team.turnId };
     }
     team.stack.push(outcome.placed);
     team.fallen.push(...outcome.fallen.map(piece => ({ ...piece })));
@@ -569,7 +497,7 @@ class RoundEngine {
     if (game.elapsed >= game.nextVoteAt) this.openVote(now);
     else this.startTeamTurn(now, false);
     this.changed('game.state');
-    return { ok: true, outcome: clone(outcome), score: team.score, authoritativeX: landing.left, turnId: team.turnId };
+    return { ok: true, outcome: clone(outcome), score: team.score, authoritativeX: left, turnId: team.turnId };
   }
 
   competitiveDrop(playerId, message, now) {
@@ -580,17 +508,7 @@ class RoundEngine {
     const checked = this.validateReportedX(competitor.moving, competitor.stack, competitor, playerId, message.x, now, 'DROP_POSITION_OUT_OF_SYNC');
     if (!checked.ok) return { ...checked, requestId: message.requestId };
     if (message.sequence != null && Number(message.sequence) < competitor.lastPositionSeq) return { ok: false, code: 'STALE_POSITION', requestId: message.requestId, authoritativeX: competitor.moving.left };
-    const below = competitor.stack[competitor.stack.length - 1];
-    const speed = this.effectiveSpeedAt(competitor.stack, competitor, playerId, now);
-    const landing = { ...competitor.moving, left: this.landingLeft(competitor, competitor.stack, playerId, checked.x, speed, now) };
-    let placedMover = Core.landingMover(landing, '', { speed });
-    if (this.hasEffect('portal', playerId, now)) placedMover = Core.portalLandingMover(below, placedMover || landing);
-    const superglue = this.hasEffect('superglue', playerId, now);
-    const outcome = Core.placeDrop(below, placedMover || landing, {
-      level: competitor.stack.length, color: player.color, placer: player.name,
-      perfectWindow: Core.perfectWindowForEffect(speed, superglue ? 'superglue' : ''),
-      crumble: this.hasEffect('crumble', playerId, now)
-    });
+    const { left, outcome } = this.resolveDrop(competitor, competitor.stack, player, checked.x, now);
     this.consumeDropEffects(playerId, now);
     if (outcome.status === 'miss') {
       competitor.fallen.push(...outcome.fallen.map(piece => ({ ...piece })));
@@ -608,48 +526,20 @@ class RoundEngine {
     }
     if (this.competitiveRoundFinished()) this.finishCompetitiveRound(now);
     else this.changed('game.state');
-    return { ok: true, outcome: clone(outcome), authoritativeX: landing.left, collapsed: Boolean(competitor.collapsed) };
+    return { ok: true, outcome: clone(outcome), authoritativeX: left, collapsed: Boolean(competitor.collapsed) };
   }
 
   nextCompetitorMover(competitor, player, now = this.now()) {
     const fromLeft = competitor.nextSpawnFromLeft;
     competitor.nextSpawnFromLeft = !fromLeft;
-    const moving = this.makeMover(competitor.stack, fromLeft, player.color, this.effectFor('accordion', player.id, now), now);
-    moving.portalWrap = this.hasEffect('portal', player.id, now);
-    if (this.hasEffect('double', player.id, now)) moving.decoy = Core.createShellDecoy(moving);
-    return moving;
+    return this.makeMover(competitor.stack, fromLeft, player.color, player.id, now);
   }
 
   consumeDropEffects(playerId, now = this.now()) {
-    if (!this.game) return false;
-    let changed = false;
-    const retained = [];
-    for (const effect of this.game.activeEffects) {
-      if (!this.effectApplies(effect, playerId)) {
-        retained.push(effect);
-        continue;
-      }
-      if (this.mode === 'teamwork' && effect.untilDrop) {
-        changed = true;
-        if (DROP_COUNTED_EFFECTS.has(effect.id)) {
-          const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
-          effect.dropsRemaining = Math.max(0, remaining - 1);
-          if (effect.dropsRemaining > 0) retained.push(effect);
-        }
-        // Regular Teamwork effects are consumed by this affected landing; no wall-clock expiry applies.
-        continue;
-      }
-      if (DROP_COUNTED_EFFECTS.has(effect.id) && effect.expiresAt > now) {
-        const remaining = Number.isInteger(effect.dropsRemaining) ? effect.dropsRemaining : 1;
-        effect.dropsRemaining = Math.max(0, remaining - 1);
-        changed = true;
-        if (effect.dropsRemaining > 0) retained.push(effect);
-        continue;
-      }
-      retained.push(effect);
-    }
-    if (changed) this.game.activeEffects = retained;
-    return changed;
+    if (!this.game) return [];
+    const { effects, ended } = Core.landEffects(this.game.activeEffects, playerId, now, this.effectPolicy());
+    this.game.activeEffects = effects;
+    return ended;
   }
 
   finishTeamRound(now) {
@@ -745,9 +635,9 @@ class RoundEngine {
     game.elapsed += delta / 1000;
     game.lastTickAt = now;
     const moved = this.advanceMovers(previousTickAt, now);
-    const oldEffects = game.activeEffects.length;
-    game.activeEffects = game.activeEffects.filter(effect => effect.untilDrop || effect.expiresAt > now);
-    let changed = game.activeEffects.length !== oldEffects;
+    const expiry = Core.expireEffects(game.activeEffects, now);
+    game.activeEffects = expiry.effects;
+    let changed = expiry.ended.length > 0;
 
     if (this.mode === 'competitive') {
       for (const competitor of game.competitors) {
@@ -848,7 +738,7 @@ class RoundEngine {
       if (team.turnExpiresAt != null) team.turnExpiresAt += shift;
       if (team.autoDropDeadlineAt != null) team.autoDropDeadlineAt += shift;
       if (game.vote) game.vote.closesAt += shift;
-      for (const effect of game.activeEffects) if (!effect.untilDrop) effect.expiresAt += shift;
+      game.activeEffects = Core.shiftEffects(game.activeEffects, shift).effects;
       game.paused = false;
       game.pausedAt = null;
       game.pauseReason = null;
@@ -922,16 +812,7 @@ class RoundEngine {
       elapsed: game.elapsed, paused: game.paused, pauseReason: game.pauseReason, voteCancellationSequence: game.voteCancellationSequence, vote, lastVote: game.lastVote ? clone(game.lastVote) : null,
       lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
-      activeEffects: game.activeEffects.map(effect => ({
-        id: effect.id, targetPlayerId: effect.targetPlayerId, duration: effect.duration,
-        elapsed: Math.max(0, (now - effect.startedAt) / 1000),
-        // Teamwork uses this positive value only to keep visual envelopes open; `untilDrop` marks it as non-countdown.
-        remaining: effect.untilDrop ? Math.max(0, effect.duration) : Math.max(0, (effect.expiresAt - now) / 1000),
-        ...(effect.untilDrop ? { untilDrop: true } : {}),
-        ...(Number.isInteger(effect.dropsRemaining) ? { dropsRemaining: effect.dropsRemaining } : {}),
-        ...(Number.isFinite(effect.tiltDirection) ? { tiltDirection: effect.tiltDirection } : {}),
-        ...(Number.isFinite(effect.spotlightSide) ? { spotlightSide: effect.spotlightSide } : {})
-      })),
+      activeEffects: Core.effectsToWire(game.activeEffects, now),
       results: game.results ? clone(game.results) : null
     };
     if (this.mode === 'teamwork') {

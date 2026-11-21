@@ -7,8 +7,19 @@ Players place moving blocks onto a tower while sabotages change the challenge.
 **Mover**:
 The block traveling across the playfield before it is dropped onto a tower.
 
+**Landing**:
+Resolving a dropped Mover against the block below: where it comes down, whether it is perfect, what it places, and what falls off.
+_Avoid_: drop (the player's action, not its result)
+
 **Sabotage**:
 A temporary change to the stacking challenge, such as altered movement, visibility, or block geometry.
+
+**Sabotage catalogue**:
+The one list of every Sabotage, with its rules, tuning numbers and wording; every other list of Sabotages is derived from it or checked against it.
+
+**Effect**:
+One activation of a Sabotage against a target (a player, or the whole stack in Teamwork), with its own lifetime.
+_Avoid_: active sabotage, buff
 
 **Decoy**:
 The misleading second moving block shown during the Double sabotage; it is not the block placed on the tower.

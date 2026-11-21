@@ -76,7 +76,7 @@ outcomes, JSON round trips over deterministic room traces, rejected-patch
 isolation, packet isolation, full-state fallback, and exact recovery baselines.
 Existing and extended real WebSocket tests cover recovery and request suppression.
 
-Run `npm run sync-replication` after changing the shared module. Its embedded copy
-is between `SHARED_REPLICATION` markers in `sabotage-stack.html`.
-`node scripts/sync-replication.js --check` and the regular test suite reject a
+Run `npm run sync` (`scripts/sync-shared.js`) after changing the shared module.
+Its embedded copy is between `SHARED_REPLICATION` markers in `sabotage-stack.html`.
+`node scripts/sync-shared.js --check` and the regular test suite reject a
 stale copy. No extra browser network request or build dependency is introduced.

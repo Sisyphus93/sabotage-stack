@@ -2,15 +2,19 @@
 
 The existing `shared/game-core.js` module owns speed composition, drunk-motion
 transitions, accordion geometry, mover/decoy advancement, and motion cleanup.
-`scripts/sync-core.js` embeds the same implementation into the standalone page.
+`scripts/sync-shared.js` embeds the same implementation into the standalone page.
 
 ## Interface and ownership
 
 - `moverBehaviorSpeed`: reads actor state, tower height, resolved effects, reduced
-  motion, and an execution policy. Used for stepping and landing-speed queries.
+  motion, and an execution policy. Used for stepping, and by `landingSpeed` (see
+  `landing.md`).
 - `stepMoverBehavior`: mutates actor motion. Callers supply seconds (`dt`), effects
   keyed by sabotage ID with elapsed seconds, reduced motion, a random function,
   and a named policy. No clock or random defaults are used.
+- `beginMoverBehavior`: applies an Effect's start to the actor (drunk seed, portal
+  wrap, Decoy, local accordion phase). Callers choose which actors it applies to;
+  see `effect-lifecycle.md`.
 - `finishMoverBehavior`: restores geometry and removes motion-specific state when
   the caller ends or replaces an effect. It does not end the effect itself.
 
@@ -34,6 +38,8 @@ These are compatibility policies, not newly unified gameplay:
 | Inactive accordion/portal reconciliation | During preparation | Caller ends/replaces the effect |
 | Decoy portal wrapping | Disabled | Follows active portal effect |
 | `moving.vx` | Unchanged | Set to base composed speed |
+| Drunk seed order at `beginMoverBehavior` | Hold before target | Target before hold |
+| Accordion start at `beginMoverBehavior` | Left to preparation | Phase from the block below's width |
 
 The named policies are frozen. Callers select them rather than constructing
 runtime-specific logic inside the shared implementation.
