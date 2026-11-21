@@ -50,6 +50,7 @@ export class Stage {
   constructor({ canvas, host, tier = null, scale = 1 }) {
     this.host = host; this.canvas = canvas; this.time = 0; this.last = 0; this.mode = ''; this.modeTime = 0;
     const view = host.view();
+    this.sabotages = view.Core.SABOTAGE_BY_ID; // the Sabotage catalogue: names for the badge, the captions, the ring and the ballot
     this.theme = normalizeTheme(view.theme);
     this.engine = new Engine({ canvas, theme: this.theme, reducedMotion: view.reduced, forcedTier: tier });
     if (scale !== 1) { this.engine.scale = scale; this.engine.forcedTier = true; }
@@ -134,7 +135,7 @@ export class Stage {
     this.title = new TitleStack(theme, this.palette, this.fx); this.scene.add(this.title.group);
     if (this.arsenal) { this.scene.remove(this.arsenal.group); this.arsenal.dispose(); }
     const view = this.host.view();
-    this.arsenal = new Arsenal(theme, this.palette, window.SabotageStack && window.SabotageStack.sabotages); this.scene.add(this.arsenal.group);
+    this.arsenal = new Arsenal(theme, this.palette, view.Core.SABOTAGE_CATALOGUE); this.scene.add(this.arsenal.group);
     for (const tower of Object.values(this.towers)) tower.setKit(this.kit);
     for (const tower of this.arena) tower.setKit(this.kit);
     this.removeBadge(); this.labels.forEach(l => { this.scene.remove(l.mesh); l.mesh.material.map.dispose(); l.mesh.material.dispose(); l.mesh.geometry.dispose(); }); this.labels.length = 0;
@@ -249,7 +250,7 @@ export class Stage {
       case 'title': return 'hero';
       case 'room': case 'lobby': return 'lobby';
       case 'results': return view.results ? 'results' : 'celebrate';
-      case 'game': return g && g.multiplayer && g.mode === 'competitive' && view.mp.role !== 'player' ? 'arena' : 'play';
+      case 'game': return view.arena ? 'arena' : 'play';
       default: return 'hero';
     }
   }
@@ -443,23 +444,21 @@ export class Stage {
   }
 
   ballotFrom(view) {
-    const g = view.game; if (!g || !g.vote || g.phase !== 'playing') return null;
-    const remote = Boolean(view.mp.active && g.multiplayer); const vote = g.vote; const Core = view.Core;
-    const counts = remote && vote.counts ? vote.counts : Core.countVotes(vote.votes, vote.options);
-    let total = remote ? Number(vote.totalVotes) || 0 : vote.votes.size;
-    const fractions = vote.options.slice(0, 3).map(id => Number(counts[id]) || 0);
-    if (!remote && vote.votes.has && vote.votes.has('you')) { const c = vote.votes.get('you'); const idx = vote.options.indexOf(c); if (idx >= 0) fractions[idx] += 3; total += 3; }
+    // the page tallies the vote (view.ballot, the solo pick already weighted); the crowd only shows it
+    const g = view.game; if (!g || !view.ballot) return null;
+    const remote = Boolean(view.mp.active && g.multiplayer); const { counts, total } = view.ballot;
+    const fractions = g.vote.options.slice(0, 3).map(id => Number(counts[id]) || 0);
     while (fractions.length < 3) fractions.push(0);
     const crowd = remote ? Math.max(5, (view.mp.room && view.mp.room.players ? view.mp.room.players.length : 4) * 1.5) : 22;
     return { voted: clamp(total / crowd), fractions: fractions.map(f => f + 0.0001), colors: BALLOT_COLORS[this.theme] };
   }
 
-  sabotageName(id) { const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id); return sab ? sab.name : String(id); }
+  sabotageName(id) { const sab = this.sabotages[id]; return sab ? sab.name : String(id); }
   // the icon as a block sculpture made from the page's own artwork (the toy model while the artwork is still being read)
   makeEmblem(id) { return this.voxel.build(id) || buildIcon(id, this.theme); }
 
   announceEffect(effect, view) {
-    const sab = window.SabotageStack && window.SabotageStack.sabotages.find(s => s.id === effect.id); if (!sab) return;
+    const sab = this.sabotages[effect.id]; if (!sab) return;
     const name = sab.name.toUpperCase(); const top = this.rig.focusY;
     // the name slams in above the tower in blocks, holds, and shatters
     const cap = clamp(330 / (name.length * 0.62), 24, 50);
@@ -505,9 +504,9 @@ export class Stage {
     const effect = g.activeEffect; const key = effect ? `${effect.id}:${effect.targetPlayerId || ''}` : '';
     if (key !== this.lastEffectKey) { if (effect) this.announceEffect(effect, view); else this.removeBadge(); this.lastEffectKey = key; }
     this.updateBadge(effect, dt, this.rig.focusY);
-    // zoom sabotage: 1.85x about the top block, like the 2D view. The visitor's own zoom (the wheel) closes in the same way: the closer the view, the more
+    // zoom sabotage: the catalogue's zoom scale about the top block, like the 2D view. The visitor's own zoom (the wheel) closes in the same way: the closer the view, the more
     // it centres on the top block, so a short tower is never zoomed off the bottom of the field (and zooming out simply shows more of the world)
-    const zoomTarget = effectId === 'zoom' ? 1.85 : 1;
+    const zoomTarget = effectId === 'zoom' ? view.Core.SABOTAGE_TUNING.zoom.scale : 1;
     this.rig.zoom = this.reduced ? zoomTarget : damp(this.rig.zoom, zoomTarget, 1 / 0.12, dt);
     const zk = clamp((this.rig.zoom * uv.zoom - 1) / 0.85);
     const topBlock = blocks[blocks.length - 1]; const topX = topBlock ? (topBlock.left + topBlock.right) / 2 - 180 : 0; const topY = topBlock ? levelY(topBlock.level) : 11;
@@ -535,7 +534,7 @@ export class Stage {
     if (this.heightShown !== placed) { this.heightShown = placed; this.bricks.show({ key: 'height', text: String(placed), position: [DIGITS_X, 0, 62], cap: 92, colors: ['#2F8478'], rows: 14, style: 'hold', baseline: true, shatterOld: false, reduced: this.reduced }); if (placed > 0 && !this.reduced) this.fx.dust([DIGITS_X, 6, 70], 4); }
     // while chat votes, the three candidates hover over the tower and grow with their share
     { const vote = ballot && g.vote; const remote = Boolean(view.mp.active && g.multiplayer);
-      const mine = vote && !remote && vote.votes && vote.votes.has && vote.votes.has('you') ? vote.options.indexOf(vote.votes.get('you')) : -1;
+      const mine = vote ? vote.options.indexOf(view.ballot.pick) : -1;
       this.candidates.update(dt, this.time, { options: vote ? vote.options.slice(0, 3) : null, fractions: ballot ? ballot.fractions : null, y: Math.max(176, (count + 1) * 22 + 132), you: mine, winner: effectId, reduced: this.reduced, away: this.badge ? this.badge.icon.position : tmpTitle.set(EMBLEM_X, this.rig.focusY + 30, 70), faceYaw: this.facing, hover: this.voteHover }); }
     // post: each sabotage has a feel
     if (!this.reduced) {
@@ -716,7 +715,7 @@ export class Stage {
     host.appendChild(el); this.caption = { el, use: el.querySelector('use'), text: el.querySelector('.chat-caption-text'), x: NaN, y: NaN }; return this.caption;
   }
   showCaption(id) {
-    const c = this.ensureCaption(); if (!c) return; const sab = window.SabotageStack && window.SabotageStack.sabotages && window.SabotageStack.sabotages.find(item => item.id === id);
+    const c = this.ensureCaption(); if (!c) return; const sab = this.sabotages[id];
     c.use.setAttribute('href', `#sabotage-symbol-${id}`); c.text.textContent = captionFor(sab ? sab.name : id); this.captionKey = id; c.el.classList.add('is-on');
   }
   hideCaption() { this.captionKey = ''; if (this.caption) this.caption.el.classList.remove('is-on'); }
@@ -791,7 +790,7 @@ export class Stage {
     if (effectKey !== this.lastArenaKey) {
       const fresh = effects.find(e => !(this.lastArenaKey || '').includes(`${e.id}:${e.targetPlayerId || 'all'}`));
       if (fresh && this.mode === 'arena') {
-        const sab = window.SabotageStack && window.SabotageStack.sabotages.find(item => item.id === fresh.id);
+        const sab = this.sabotages[fresh.id];
         if (sab) { const name = sab.name.toUpperCase(); this.popups.show({ text: name, position: [0, 330, 130], size: clamp(520 / (name.length * 0.7), 18, 46), depth: 12, color: this.palette.cream, glow: 0.7, style: 'slam', life: 1.9, tilt: 0.05 }); this.world.crowd.cheer(0.9); this.world.crowd.chaos(1); }
       }
       this.lastArenaKey = effectKey;
