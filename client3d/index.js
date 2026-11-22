@@ -17,7 +17,7 @@ async function boot() {
   const params = new URLSearchParams(window.location.search);
   const supported = webglSupported();
   const doc = document; const root = doc.documentElement;
-  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null; let iconTurn = null; let pixel = null;
+  let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null; let iconTurn = null; let pixel = null; let onVisibility = null; let onResize = null;
 
   function showUnavailable() {
     if (doc.getElementById('webgl-required')) return;
@@ -62,6 +62,11 @@ async function boot() {
       if (canvas) canvas.remove(); canvas = null; stage = null; return false;
     }
     host.setActive(true);
+    // An Idle Scene may be drawing at a capped rate: a tab that becomes visible, or a resized window, must draw at full
+    // rate on its very next frame.
+    onVisibility = () => { if (!doc.hidden && stage) stage.wake(); };
+    onResize = () => { if (stage) stage.wake(); };
+    doc.addEventListener('visibilitychange', onVisibility); window.addEventListener('resize', onResize);
     tactile = installTactileUi({ doc, win: window }); iconTurn = installIconTurn({ doc });
     pixel = installPixelUi({ doc, win: window, hooks: { onVoteHover: index => { if (stage) stage.setVoteHover(index); }, onPrimaryHover: () => { if (stage) stage.tickPattern(); } } });
     stage.gridTrail = () => Boolean(pixel && pixel.trailActive); // one trail, not two: the stage's sparkles step aside while the grid trail is on
@@ -71,6 +76,8 @@ async function boot() {
 
   function disable() {
     cancelAnimationFrame(raf); iconBake.cancel();
+    if (onVisibility) { doc.removeEventListener('visibilitychange', onVisibility); onVisibility = null; }
+    if (onResize) { window.removeEventListener('resize', onResize); onResize = null; }
     if (tactile) { tactile.dispose(); tactile = null; }
     if (iconTurn) { iconTurn.dispose(); iconTurn = null; }
     if (pixel) { pixel.dispose(); pixel = null; }

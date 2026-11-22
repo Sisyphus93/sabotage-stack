@@ -3,6 +3,7 @@
 // landings, perfects, votes, sabotages, collapses, results. It never decides gameplay.
 import * as THREE from 'three';
 import { Engine, TIERS } from './engine.js';
+import { FramePace } from './frame-pace.js';
 import { SceneInteraction } from './scene-interaction.js';
 import { createWorld } from './worlds.js';
 import { BlockKit, BLOCK_D } from './blocks.js';
@@ -33,6 +34,11 @@ const EMBLEM_SCALE = 2.2; // (the Sunset pixel pass swallows detail: the sculptu
 const EMBLEM_X = BOARD_W / 2 + 118; // the running sabotage's emblem floats beside the tower, outside the lane: on a phone that is off the screen
 const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits on the other side
 const DUST = [0.82, 0.74, 0.6];
+// How long a scripted sequence keeps an Idle Scene busy after it starts (see sceneSettled).
+const TITLE_RAIN_TAIL = 0.5; // after the last brick's own delay
+const RESULTS_REVEAL = 1.8; // the solo results camera reveal
+const PODIUM_FINALE = 3.6; // the finale headline's life
+const LOBBY_ARRIVAL = 1.6; // totems dropping onto the plinth
 // Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
 const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas):not(#game-canvas)'; // (the game surface, #game-canvas, is a role=button for assistive tech, but it is the scene)
 const FLOOR_CLEARANCE = 14; // the camera never comes lower than this above the plinth, however far the visitor turns it down
@@ -63,11 +69,16 @@ export class Stage {
     this.interaction = new SceneInteraction({
       onTap: event => this.handleClick(event), onRushIntro: () => this.rushIntro(), onToy: () => this.triggerSabotage()
     });
+    // The frame pace decides when an Idle Scene may skip drawing (see frame-pace.js). It starts awake; entering a Scene
+    // wakes it again, and the input/View wakes below keep it at full rate while the visitor is doing anything.
+    this.pace = new FramePace();
+    this.inputSeen = 0; this.settled = false;
     this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 40);
     this.rig = { yaw: 0, pitch: 0.1, zoom: 1, roll: 0, kick: new Spring(0, 220, 14), shakeAmp: 0, shakeT: 0, focusY: 220, intro: 0 };
     this.timeScale = 1; this.slowT = 0; this.flash = 0; this.desatPulse = 0; this.caPulse = 0;
     this.towers = {}; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
     this.sinking = new Map(); this.flight = null; this.camSpec = null; this.plinthGoal = null; this.lastDt = 0.016;
+    this.lobbyKey = ''; this.lobbyArrivalAt = 0;
     this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
     // Scene reactions use pointer observations; the interaction module owns controls.
     this.hover = new HoverField();
@@ -286,16 +297,27 @@ export class Stage {
     this.fakeTs = ts;
   }
 
+  // Wakes the frame pace: the rAF entry point calls this when the tab becomes visible or the window is resized, and Stage
+  // calls it on Scene entry.
+  wake(timestamp = performance.now()) { this.pace.wake(timestamp); }
+
   frame(ts, { render = true } = {}) {
-    const dt = clamp((ts - (this.last || ts)) / 1000, 0, 0.05); this.last = ts; this.lastDt = dt;
+    const previous = this.last;
+    const rawGap = previous ? ts - previous : Infinity; // (index.js zeroes `last` while the tab is hidden)
+    const dt = clamp((ts - (previous || ts)) / 1000, 0, 0.05); this.last = ts; this.lastDt = dt;
     if (this.engine.contextLost) return;
+    // A tab switch or device sleep leaves a rAF gap of seconds. Wake before `dt` is clamped, so the first frame back draws
+    // at full rate; the simulation still advances by the usual clamped dt, exactly as it did before. `advance()` drives
+    // fake future timestamps with render:false, so it must never move the pace clock or the next real frame would think
+    // it had been woken for seconds.
+    if (render && rawGap > this.pace.gapMs) this.pace.wake(ts);
     this.time += dt;
     const view = this.host.view(); this.view = view; this.reduced = Boolean(view.reduced); this.engine.reducedMotion = this.reduced; this.interaction.setContext({ reduced: this.reduced });
     const theme = normalizeTheme(view.theme);
     if (theme !== this.theme) this.requestTheme(theme);
     else if (this.pendingTheme) this.pendingTheme = null; // switched back before the awaited face arrived: drop it
     const mode = this.pickMode(view);
-    if (mode !== this.mode) this.enterMode(mode, view);
+    if (mode !== this.mode) { this.enterMode(mode, view); if (render) this.pace.wake(ts); } // entering a Scene is a wake
     this.modeTime += dt;
     if (this.flight) { this.flight.t += dt; if (this.flight.t >= this.flight.dur) { this.flight = null; delete document.documentElement.dataset.flight; } }
     // global slow-motion beat (collapse): physics run slower, then ease back
@@ -310,8 +332,36 @@ export class Stage {
     this.bricks.update(dt, this.time, { faceYaw: this.facing }); this.bricks.events.length = 0;
     this.updateLeaving(dt);
     this.updateCommon(dt);
-    if (render) { this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts); }
+    if (render) {
+      // Visitor input and View motion are wakes. The interaction timestamps every input path and reports a `moving` View
+      // (drag, fling, tween, dolly); both share the rAF clock. Ambient animation is deliberately not routed here.
+      if (this.interaction.lastActivity > this.inputSeen) { this.inputSeen = this.interaction.lastActivity; this.pace.wake(this.inputSeen); }
+      if (this.interaction.moving) this.pace.wake(ts);
+      this.settled = this.sceneSettled();
+      // The pace gates drawing only: simulation, input, pointer decay and View easing above keep their full rAF cadence.
+      // The governor is fed the normal rAF interval of a drawn frame, not the gap between draws, so an Idle Scene never
+      // looks like a slow device and never triggers a quality downgrade.
+      if (this.pace.shouldDraw({ mode: this.mode, settled: this.settled, now: ts })) {
+        this.engine.render(dt, this.post); this.engine.govern(dt * 1000, ts);
+      }
+    }
     this.interaction.endFrame();
+  }
+
+  // A Scene is settled once no scripted sequence is in flight: no flight or fade, the title's raining intro is over, the
+  // solo results reveal has played, the multiplayer podium has finished revealing and its finale headline has landed, and
+  // the lobby's arrival (totems dropping onto the plinth) is done. Ambient motion after that (the title director, confetti
+  // cannons, a bobbing crown) is deliberately not busy: an Idle Scene may settle through it.
+  sceneSettled() {
+    if (this.flight) return false;
+    if (Math.abs(this.engine.fade.value - this.engine.fade.target) > 0.02) return false;
+    switch (this.mode) {
+      case 'hero': { const title = this.title; return Boolean(title) && title.age >= title.introDuration + TITLE_RAIN_TAIL; }
+      case 'results': return (this.resultsT || 0) >= (this.reduced ? 0.5 : RESULTS_REVEAL);
+      case 'celebrate': return Boolean(this.podiumFinished) && (!this.podiumFinale || this.podiumClock - this.podiumFinaleAt >= PODIUM_FINALE);
+      case 'lobby': return this.modeTime - (this.lobbyArrivalAt || 0) >= LOBBY_ARRIVAL;
+      default: return false; // play and arena are rounds: never capped
+    }
   }
 
   activeTowers() { return this.mode === 'arena' || this.mode === 'celebrate' ? this.arena : Object.values(this.towers); }
@@ -341,6 +391,7 @@ export class Stage {
     if (!hero) this.leaveHome();
     if (hero && !this.director) this.director = new TitleDirector(TITLE_EFFECT_IDS, rng(Date.now() & 0xffff), { reduced: this.reduced });
     if (mode === 'results') { this.resultsT = 0; this.scoreShown = false; }
+    if (mode === 'lobby') { this.lobbyKey = ''; this.lobbyArrivalAt = 0; } // (a fresh arrival, even if the same players are back)
     this.bricks.hide('score', false); this.bricks.hide('height', false); this.heightShown = -1; this.candidates.release();
     this.world.crowd.clearBallot(); this.world.crowd.setSpread(hero ? 230 : 0, !previous);
     if (previous === 'results' || previous === 'celebrate') this.fx.confetti.floor = -64;
@@ -938,7 +989,7 @@ export class Stage {
 
   // Multiplayer results: the final towers climb a podium beside the cards, block by block, while the room celebrates.
   startPodium(payload) {
-    this.podiumFor = payload; this.podiumId = (this.podiumId || 0) + 1; this.podiumClock = 0; this.podiumFinale = false; this.podiumCannon = 0; this.podiumSide = 1;
+    this.podiumFor = payload; this.podiumId = (this.podiumId || 0) + 1; this.podiumClock = 0; this.podiumFinale = false; this.podiumFinaleAt = 0; this.podiumFinished = false; this.podiumCannon = 0; this.podiumSide = 1;
     this.podium = podiumEntries(payload);
     for (const entry of this.podium) { entry.shown = 0; entry.fallenShown = -1; entry.blockView = []; entry.fallenView = []; }
     this.fx.confetti.floor = -64;
@@ -973,13 +1024,14 @@ export class Stage {
       const status = done ? `${entry.winner ? 'WINNER · ' : ''}${entry.height}${entry.winner ? '' : ' HIGH'}` : `${Math.max(0, entry.shown - 1)} HIGH`;
       this.arenaLabel(i, { name: entry.name, color: entry.color }, x, scale, maxHeight, { status, colW, y: Math.max(1, entry.shown) * 22 * scale + 26 + 24 * labelScale });
     });
+    this.podiumFinished = finished;
     // the plinth stretches to fit the line-up
     const plinth = this.world.plinth.scale; const stretch = n <= 1 ? 1 : n === 2 ? 1.7 : 2.3; const squash = n <= 1 ? 1 : 0.62;
     this.world.plinth.scale.set(damp(plinth.x, stretch, 4, dt), 1, damp(plinth.z, squash, 4, dt)); this.world.plinth.position.set(0, 0, 0);
     // finale: cheer, a burst over each winner, the headline in 3D, then side cannons until the host moves on
     const topY = (maxHeight + 1) * 22 * scale;
     if (finished && n > 0 && !this.podiumFinale) {
-      this.podiumFinale = true; this.podiumCannon = 0.5; this.world.crowd.cheer(2.4);
+      this.podiumFinale = true; this.podiumFinaleAt = this.podiumClock; this.podiumCannon = 0.5; this.world.crowd.cheer(2.4);
       const winners = entries.filter(e => e.winner); const gold = this.palette.amber;
       winners.forEach(entry => {
         const x = entry.slot * colW; const top = entry.blocks.length * 22 * scale;
@@ -1014,6 +1066,10 @@ export class Stage {
   // The lobby: one block of every colour per player on the plinth, the room code as a giant 3D sign.
   update_lobby(dt, view) {
     const room = view.mp.room; const players = (room && room.players) || []; const tower = this.getTower('lobby'); tower.root.visible = true;
+    // A player arriving (or leaving) drops totems and blocks in: that is a scripted arrival, so an already-quiet lobby is
+    // busy for a moment again rather than capping through it.
+    const arrivalKey = players.map(p => `${p.id || ''}:${p.name || ''}:${p.color || ''}`).join('|');
+    if (arrivalKey !== this.lobbyKey) { this.lobbyKey = arrivalKey; this.lobbyArrivalAt = this.modeTime; }
     const uv = this.userView(dt, 230, { idleReset: true }); this.facing = uv.yaw; tower.setFacing(uv.yaw); // (the name plates, plaques and totems turn to face the visitor's view)
     const blocks = [view.Core.makeBase()];
     players.forEach((p, i) => { const w = Math.max(60, 190 - i * 18); const c = (360 - w) / 2 + ((i % 2) ? 8 : -8); blocks.push({ left: c, right: c + w, level: i + 1, color: p.color || '#E3A33B', perfect: false, placer: p.name || 'Player' }); });

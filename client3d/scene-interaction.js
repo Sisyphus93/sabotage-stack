@@ -30,7 +30,7 @@ export class SceneInteraction {
     this.drag = null; this.dragBlend = 0; this.cursor = ''; this.lastRightTap = null;
     this.hud = null; this.playHud = null; this.resultsHud = null; this.lobbyHud = null;
     this.hintAge = 0; this.playHintAge = 0; this.resultsHintAge = 0; this.lobbyHintAge = 0;
-    this.idleFor = 0; this.contextGuardUntil = 0; this.active = false; this.disposed = false; this.held = null;
+    this.idleFor = 0; this.lastActivity = 0; this.contextGuardUntil = 0; this.active = false; this.disposed = false; this.held = null;
   }
 
   activate() {
@@ -43,18 +43,22 @@ export class SceneInteraction {
     this.doc.documentElement.addEventListener('pointerleave', this.onPointerLeave = () => { this.pointer.inside = false; });
     this.win.addEventListener('blur', this.onBlur = () => { this.pointer.inside = false; this.#endDrag(true); });
     this.win.addEventListener('contextmenu', this.onContextMenu = e => {
+      this.#activity();
       if (!this.#canOrbit()) return;
       // a right-drag that began on the scene owns the menu wherever it is released (Windows raises it on mouse-up, over whatever is there)
       const turning = (this.drag && this.drag.button === 2) || this.now() < this.contextGuardUntil;
       if (turning || !chromeAt(e.target)) e.preventDefault();
     });
     // (a double click is the game's own two drops, so only the scenes where the left button is free reset on it - home, results, the lobby, the podium and the host's arena; the game resets on a double right click)
-    this.win.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode !== 'play' && this.#canOrbit() && !chromeAt(e.target)) this.#userReset(); });
+    this.win.addEventListener('dblclick', this.onDoubleClick = e => { this.#activity(); if (this.mode !== 'play' && this.#canOrbit() && !chromeAt(e.target)) this.#userReset(); });
     this.win.addEventListener('wheel', this.onWheel = e => this.#handleWheel(e), { passive: false });
     this.win.addEventListener('keydown', this.onKeyDown = e => this.#handleKey(e));
   }
 
   get dragging() { return Boolean(this.drag); }
+  // Any View motion at all: a drag, a fling still coasting, an orbit tween (a turn, a reset, a held View easing), or the
+  // zoom easing towards its target. The frame pace wakes while this is true, so an idle Scene never caps mid-motion.
+  get moving() { return Boolean(this.drag) || this.#orbit.moving || this.#dolly.moving; }
   get view() { return { yaw: this.#orbit.yaw, pitch: this.#orbit.pitch, zoom: this.#dolly.value, rotated: this.#orbit.rotated, zoomed: this.#dolly.zoomed }; }
 
   setContext({ mode = this.mode, reduced = this.reduced, reenter = false } = {}) {
@@ -89,6 +93,10 @@ export class SceneInteraction {
   #showHeld() { const hud = this.#sceneHud(); if (hud) hud.setHeld(this.held ? this.held.reason : ''); }
 
   wake() { this.idleFor = 0; }
+  // Every input path stamps the pacing clock; a View change also resets the hint idle timer. The Stage reads
+  // `lastActivity` and `moving`, so the frame pace can wake an Idle Scene without knowing which event arrived.
+  #activity() { this.lastActivity = this.now(); }
+  #touch() { this.idleFor = 0; this.#activity(); }
   endFrame() { this.pointer.speed *= 0.9; }
 
   // Stage supplies placement, never HUD objects or hint state. Home intentionally
@@ -112,7 +120,7 @@ export class SceneInteraction {
   }
 
   #handleMove(event) {
-    this.samplePointer(event); this.idleFor = 0;
+    this.samplePointer(event); this.#touch();
     const d = this.drag; if (!d || event.pointerId !== d.id) return;
     if (event.pointerType === 'mouse' && event.buttons === 0) { this.#endDrag(false, event); return; } // let go outside the window
     if (!d.moved && Math.hypot(event.clientX - d.x, event.clientY - d.y) > this.#orbit.tapSlop) d.moved = true;
@@ -120,7 +128,7 @@ export class SceneInteraction {
   }
 
   #handleDown(event) {
-    this.onRushIntro(); this.samplePointer(event); this.idleFor = 0;
+    this.onRushIntro(); this.samplePointer(event); this.#touch();
     if (!this.#canOrbit(event.button) || this.drag || !event.isPrimary) return;
     if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
     if (this.pointer.overUi || this.held) return;
@@ -131,7 +139,7 @@ export class SceneInteraction {
   }
 
   #handleUp(event, cancelled = false) {
-    this.pointer.buttons = event.buttons || 0; // (a release with no move after it must not leave the pixel feel waiting)
+    this.pointer.buttons = event.buttons || 0; this.#activity(); // (a release with no move after it must not leave the pixel feel waiting)
     const d = this.drag; if (!d || event.pointerId !== d.id) return;
     if (event.pointerType === 'touch') this.pointer.inside = false; // a finger has no hover
     this.#endDrag(cancelled, event);
@@ -153,6 +161,7 @@ export class SceneInteraction {
   }
 
   #handleWheel(event) {
+    this.#activity();
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || !this.#canOrbit()) return;
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || chromeAt(event.target) || this.doc.querySelector('dialog[open]')) return;
     if (this.held) { if (event.deltaY) event.preventDefault(); return; } // (still the scene's: a held View must not turn into a scrolling page)
@@ -160,14 +169,14 @@ export class SceneInteraction {
     if (this.#dolly.wheel(event.deltaY, event.deltaMode)) { event.preventDefault(); this.#usedView(); }
   }
 
-  #usedView() { this.idleFor = 0; const hud = this.#sceneHud(); if (hud) hud.quiet(); }
+  #usedView() { this.#touch(); const hud = this.#sceneHud(); if (hud) hud.quiet(); }
 
   #sceneHud() { switch (this.mode) { case 'hero': return this.hud; case 'results': case 'celebrate': return this.resultsHud; case 'lobby': return this.lobbyHud; default: return this.playHud; } }
 
-  #resetView(duration = 0.9) { this.#orbit.reset(duration); this.#dolly.reset(duration); this.idleFor = 0; }
+  #resetView(duration = 0.9) { this.#orbit.reset(duration); this.#dolly.reset(duration); this.#touch(); }
 
   #handleKey(event) {
-    this.onRushIntro();
+    this.#activity(); this.onRushIntro();
     if (!this.#canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (closest(event.target, KEY_OWNERS)) return;
     const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;

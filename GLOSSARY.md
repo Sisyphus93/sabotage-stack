@@ -34,6 +34,9 @@ _Avoid_: empty room, dead room
 **Scene**:
 A presentation of the title, lobby, active round, or results that a visitor can look around by turning and zooming the View.
 
+**Idle Scene**:
+A Scene that is not a round in progress and that the visitor has stopped interacting with; the title, lobby, results and celebration can all be Idle Scenes.
+
 **View**:
 The visitor's own turn and zoom of a Scene, layered on top of the Scene's own camera; it never changes the game, and it never weakens an Effect.
 _Avoid_: zoom (on its own, it is ambiguous with Macro Zoom)
