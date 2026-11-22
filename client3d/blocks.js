@@ -8,6 +8,7 @@ export const BLOCK_H = 22;          // level pitch (matches the 2D board)
 export const BLOCK_T = 21.2;        // visible thickness, leaving a hairline seam between levels
 export const BLOCK_D = 120;         // depth of every block
 export const BOARD_W = 360;
+export const EDGE_OPACITY = 0.85;   // the Sunset outline of a block
 
 let grainTexture = null;
 function makeGrain() {
@@ -42,6 +43,7 @@ function starShape(outer, inner, points = 5) {
 export class BlockKit {
   constructor(theme = 'paper') {
     this.geometries = new Map(); this.materials = new Map(); this.edgeGeometries = new Map();
+    this.sunsetEdgeMaterial = null; this.plaquePlaneGeometry = null;
     this.star = new THREE.ExtrudeGeometry(starShape(6.2, 2.7), { depth: 1.4, bevelEnabled: true, bevelThickness: 0.5, bevelSize: 0.5, bevelSegments: 1 });
     this.starMaterial = null;
     this.setTheme(theme);
@@ -56,6 +58,7 @@ export class BlockKit {
     for (const g of this.edgeGeometries.values()) g.dispose();
     this.edgeGeometries.clear();
     if (this.starMaterial) this.starMaterial.dispose();
+    this.releaseSharedResources();
     this.starMaterial = new THREE.MeshStandardMaterial({ color: this.palette.ink, emissive: this.theme === 'paper' ? '#000000' : this.palette.amber, emissiveIntensity: this.theme === 'paper' ? 0 : 1.6, roughness: 0.5, metalness: this.theme === 'primetime' ? 0.6 : 0 });
   }
 
@@ -85,6 +88,23 @@ export class BlockKit {
 
   color(hex) { return themedBlockColor(this.theme, hex); }
 
+  releaseSharedResources() {
+    if (this.sunsetEdgeMaterial) { this.sunsetEdgeMaterial.dispose(); this.sunsetEdgeMaterial = null; }
+    if (this.plaquePlaneGeometry) { this.plaquePlaneGeometry.dispose(); this.plaquePlaneGeometry = null; }
+  }
+
+  // One Sunset outline material per kit/theme: every block shares it, and it dies with the kit.
+  edgeMaterial() {
+    if (!this.sunsetEdgeMaterial) this.sunsetEdgeMaterial = new THREE.LineBasicMaterial({ color: this.palette.ink, transparent: true, opacity: EDGE_OPACITY });
+    return this.sunsetEdgeMaterial;
+  }
+
+  // Every Teamwork plaque is this same flat plane; the plaque cache owns the texture/material drawn on it.
+  plaqueGeometry() {
+    if (!this.plaquePlaneGeometry) this.plaquePlaneGeometry = new THREE.PlaneGeometry(52, 14.6);
+    return this.plaquePlaneGeometry;
+  }
+
   material(hex, variant = 'solid') {
     const color = this.color(hex); const key = `${color}|${variant}`;
     let m = this.materials.get(key);
@@ -112,7 +132,7 @@ export class BlockKit {
     mesh.scale.x = width / geometry.userData.quantWidth;
     mesh.castShadow = shadow; mesh.receiveShadow = true;
     if (this.theme === 'sunset') {
-      const edges = new THREE.LineSegments(this.edges(width, depth), new THREE.LineBasicMaterial({ color: this.palette.ink, transparent: true, opacity: 0.85 }));
+      const edges = new THREE.LineSegments(this.edges(width, depth), this.edgeMaterial());
       mesh.add(edges); mesh.userData.edges = edges;
     }
     mesh.userData.width = width;
@@ -131,6 +151,7 @@ export class BlockKit {
     for (const m of this.materials.values()) m.dispose();
     for (const g of this.geometries.values()) g.dispose();
     for (const g of this.edgeGeometries.values()) g.dispose();
+    this.releaseSharedResources();
     this.star.dispose(); if (this.starMaterial) this.starMaterial.dispose();
   }
 }
