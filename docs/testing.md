@@ -6,6 +6,7 @@ Use the Node version in `.nvmrc`, then run `npm ci`.
 - `node --test test/csp.test.js`: HTTP security headers, CSP hash freshness and mutation regressions.
 - `npm run build`: regenerate the committed 3D bundle and `public/csp-hashes.json` after editing the client or inline HTML scripts/styles.
 - `npm run build:check`: reject stale generated artifacts without writing them.
+- `npm run benchmark:publication`: time the full room-publication path at 20, 80 and 320 history entries per tower; exits non-zero above the 2x scaling smoke target.
 
 ## Chromium smoke tests
 

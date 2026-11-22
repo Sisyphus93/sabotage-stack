@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { RoundEngine } = require('./round-engine');
 const Replication = require('../shared/room-replication');
+const { sharedHistoryPrefixLength } = require('./publication-history');
 
 const MAX_PLAYERS = 6;
 const MAX_SPECTATORS = 16;
@@ -331,6 +332,7 @@ class RoomManager {
       : session.role === 'spectator' ? (room.spectators.find(item => item.id === session.spectatorId) || {}).socket !== socket
       : (room.players.find(item => item.id === session.playerId) || {}).socket !== socket) return;
     room.lastActivityAt = this.now();
+    const revision = room.stateRevision;
     if (session.role === 'host') {
       room.host.connected = false;
       room.host.socket = null;
@@ -349,7 +351,7 @@ class RoomManager {
         if (room.engine) room.engine.playerDisconnected(player.id, this.now());
       }
     }
-    this.broadcastState(room);
+    this.publishIfUnchanged(room, revision);
   }
 
   createRoom(socket, mode, reducedMotion = false) {
@@ -400,8 +402,7 @@ class RoomManager {
       room.spectators.push(spectator);
       room.lastActivityAt = now;
       this.sessions.set(socket, { roomCode: code, role: 'spectator', spectatorId: spectator.id });
-      safeSend(socket, { type: 'room.joined', code, role: 'spectator', resumeToken: spectator.token, state: this.snapshot(room) });
-      this.broadcastState(room);
+      this.publishAdmission(room, socket, { type: 'room.joined', code, role: 'spectator', resumeToken: spectator.token });
       return;
     }
     if (room.phase !== 'lobby') return this.error(socket, 'ROOM_LOCKED', 'This room has already started. Choose Watch as spectator to view it.');
@@ -416,8 +417,7 @@ class RoomManager {
     room.players.push(player);
     room.lastActivityAt = this.now();
     this.sessions.set(socket, { roomCode: code, role: 'player', playerId: player.id });
-    safeSend(socket, { type: 'room.joined', code, role: 'player', playerId: player.id, resumeToken: player.token, state: this.snapshot(room) });
-    this.broadcastState(room);
+    this.publishAdmission(room, socket, { type: 'room.joined', code, role: 'player', playerId: player.id, resumeToken: player.token });
   }
 
   updateClientPreferences(socket, message) {
@@ -448,7 +448,7 @@ class RoomManager {
     }
     room.lastActivityAt = this.now();
     safeSend(socket, { type: 'preferences.updated', reducedMotion });
-    this.broadcastState(room);
+    this.broadcastDelta(room);
   }
 
   resumeRoom(socket, message) {
@@ -506,11 +506,26 @@ class RoomManager {
     if (!role) return refuseResume();
     room.lastActivityAt = this.now();
     this.sessions.set(socket, { roomCode: code, role, playerId, spectatorId });
-    if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
-    const packet = { type: 'room.resumed', code, role, state: this.snapshot(room) };
+    const packet = { type: 'room.resumed', code, role };
     if (playerId) packet.playerId = playerId;
-    safeSend(socket, packet);
-    this.broadcastState(room);
+    this.publishAdmission(room, socket, packet, () => {
+      if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
+    });
+  }
+
+  // Engine reconnect callbacks can publish before admission finishes. Existing
+  // seats see those deltas, but the new socket starts at the final exact baseline.
+  publishAdmission(room, socket, packet, update = () => {}) {
+    room.pendingBaselineSockets ||= new Set();
+    room.pendingBaselineSockets.add(socket);
+    const revision = room.stateRevision;
+    try {
+      update();
+      this.publishIfUnchanged(room, revision);
+      safeSend(socket, { ...packet, state: room.lastBroadcastState });
+    } finally {
+      room.pendingBaselineSockets.delete(socket);
+    }
   }
 
   // The previous socket for a role stays open but inert: it loses its session (so it can no longer act and its eventual
@@ -562,6 +577,7 @@ class RoomManager {
     }
     const index = room.players.findIndex(player => player.id === session.playerId);
     const player = index >= 0 ? room.players[index] : null;
+    const revision = room.stateRevision;
     if (room.phase === 'lobby') {
       if (index >= 0) room.players.splice(index, 1);
     } else if (player) {
@@ -573,7 +589,7 @@ class RoomManager {
     this.sessions.delete(socket);
     room.lastActivityAt = this.now();
     safeSend(socket, { type: 'room.left', code: room.code });
-    this.broadcastState(room);
+    this.publishIfUnchanged(room, revision);
   }
 
   beginRound(room) {
@@ -679,7 +695,7 @@ class RoomManager {
       if (room.engine && room.phase === 'playing') room.engine.tick(now);
       if (!room.host.absenceReadyBroadcast && this.canRematchWithoutHost(room, now)) {
         room.host.absenceReadyBroadcast = true;
-        this.broadcastState(room);
+        this.broadcastDelta(room);
       }
     }
   }
@@ -733,7 +749,7 @@ class RoomManager {
     return !room.host.connected && room.host.disconnectedAt != null && now - room.host.disconnectedAt >= HOST_ABSENCE_GRACE_MS;
   }
 
-  snapshot(roomOrCode) {
+  snapshot(roomOrCode, { publication = false } = {}) {
     const room = typeof roomOrCode === 'string' ? this.rooms.get(roomOrCode) : roomOrCode;
     if (!room) return null;
     return {
@@ -745,30 +761,31 @@ class RoomManager {
         connected: player.connected, ended: Boolean(player.ended)
       })),
       canStart: room.phase === 'lobby' && room.players.filter(player => player.connected).length >= 2,
-      game: room.engine ? room.engine.snapshot(this.now()) : room.game ? structuredClone(room.game) : null
+      game: room.engine ? room.engine.snapshot(this.now(), { publication }) : room.game ? structuredClone(room.game) : null
     };
   }
 
   broadcastState(room) {
     room.stateRevision = (room.stateRevision || 0) + 1;
-    room.lastBroadcastState = this.snapshot(room);
-    this.broadcast(room, { type: 'room.state', state: room.lastBroadcastState });
+    room.lastBroadcastState = this.snapshot(room, { publication: true });
+    this.broadcast(room, { type: 'room.state', state: room.lastBroadcastState }, { baseline: true });
   }
 
   broadcastDelta(room) {
     if (!room.lastBroadcastState) return this.broadcastState(room);
     const previous = room.lastBroadcastState;
     room.stateRevision = (room.stateRevision || 0) + 1;
-    const state = this.snapshot(room);
-    const delta = Replication.createDelta(previous, state);
+    const state = this.snapshot(room, { publication: true });
+    const delta = Replication.createDelta(previous, state, { historyPrefixLength: sharedHistoryPrefixLength });
     room.lastBroadcastState = state;
-    // Both texts are built once here, so the size comparison costs two serialisations rather than four, and
-    // whichever one wins is sent as a string (no second pass per recipient inside broadcast).
-    const deltaText = JSON.stringify(delta);
-    const fullState = { type: 'room.state', state };
-    const fullText = JSON.stringify(fullState);
-    if (deltaText.length >= fullText.length) this.broadcast(room, fullState, fullText);
-    else this.broadcast(room, delta, deltaText);
+    // Always publish the delta: measuring a full candidate walks all history.
+    this.broadcast(room, delta, { baseline: true });
+  }
+
+  // Publishes the current state unless an engine callback already did so while
+  // the room was being mutated (disconnect, leave, reconnect).
+  publishIfUnchanged(room, revision) {
+    if (room.stateRevision === revision) this.broadcastDelta(room);
   }
 
   syncState(socket) {
@@ -781,18 +798,17 @@ class RoomManager {
 
   // One serialisation, however many seats: every recipient gets the identical text. With 22 seats in a room and a
   // few rooms ticking at 10 Hz this was the largest per-tick cost after socket I/O itself.
-  // `text` lets a caller that already built the exact bytes (broadcastDelta compares two candidate texts before
-  // choosing) hand them over instead of paying for a second serialisation here.
-  broadcast(room, message, text = null) {
-    this.sendToSeats(room, text === null ? JSON.stringify(message) : text);
-  }
-
-  // The seat walk, for text that is already serialised. Kept separate from broadcast() so the delta path can build
-  // its two candidate texts once and still send through the same one place.
-  sendToSeats(room, text) {
-    safeSendRaw(room.host.socket, text);
-    for (const player of room.players) if (player.connected) safeSendRaw(player.socket, text);
-    for (const spectator of room.spectators) if (spectator.connected) safeSendRaw(spectator.socket, text);
+  // A socket being admitted gets its full baseline after all engine callbacks; a state packet sent meanwhile would
+  // give it the wrong starting revision. Events still reach it, as they did before admission became delta-based.
+  broadcast(room, message, { baseline = false } = {}) {
+    const text = JSON.stringify(message);
+    const send = socket => {
+      if (baseline && room.pendingBaselineSockets?.has(socket)) return;
+      safeSendRaw(socket, text);
+    };
+    send(room.host.socket);
+    for (const player of room.players) if (player.connected) send(player.socket);
+    for (const spectator of room.spectators) if (spectator.connected) send(spectator.socket);
   }
 
   error(socket, code, message, details = null) {

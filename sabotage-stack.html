@@ -2367,20 +2367,23 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
 
   // Growing arrays are patched by index; shrinking arrays and objects with
   // removed keys are replaced so reconstruction is unambiguous.
-  function stateChanges(before, after, path = [], changes = []) {
+  function stateChanges(before, after, path = [], changes = [], historyPrefixLength = null) {
     if (Object.is(before, after)) return changes;
     const arrays = Array.isArray(before) && Array.isArray(after);
     const objects = before && after && typeof before === 'object' && typeof after === 'object' && !Array.isArray(before) && !Array.isArray(after);
     if (arrays && after.length >= before.length) {
-      for (let i = 0; i < after.length; i += 1) stateChanges(before[i], after[i], path.concat(i), changes);
+      // Only the publisher can certify immutable history lineage. Ordinary JSON
+      // arrays (including growing metadata arrays) still compare every entry.
+      const prefix = historyPrefixLength ? historyPrefixLength(before, after) : null;
+      for (let i = prefix === null ? 0 : prefix; i < after.length; i += 1) stateChanges(before[i], after[i], path.concat(i), changes, historyPrefixLength);
     } else if (objects && Object.keys(before).every(key => Object.hasOwn(after, key))) {
-      for (const key of Object.keys(after)) stateChanges(before[key], after[key], path.concat(key), changes);
+      for (const key of Object.keys(after)) stateChanges(before[key], after[key], path.concat(key), changes, historyPrefixLength);
     } else changes.push([path, after]);
     return changes;
   }
 
-  function createDelta(before, after) {
-    return { type: 'room.delta', baseRevision: before.revision, revision: after.revision, changes: stateChanges(before, after) };
+  function createDelta(before, after, { historyPrefixLength = null } = {}) {
+    return { type: 'room.delta', baseRevision: before.revision, revision: after.revision, changes: stateChanges(before, after, [], [], historyPrefixLength) };
   }
 
   // Pure decision/reconstruction seam. Callers own baseline adoption, ignoring
