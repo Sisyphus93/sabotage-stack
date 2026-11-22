@@ -15,10 +15,14 @@ function publish(proto, before, after) {
 }
 const before = { revision: 3, code: 'ABCD', players: [{ id: 'a', connected: true }], game: { stack: [{ left: 0, right: 180 }], score: 0 }, padding: 'unchanged'.repeat(100) };
 const after = { ...copy(before), revision: 4, game: { stack: [...before.game.stack, { left: 20, right: 175 }], score: 1 } };
-test('publisher characterization: delta/full selection, revision, and recovery baseline', () => {
-  for (const [a, b] of [[before, after], [null, before], [{ revision: 1 }, { revision: 2, game: 'x'.repeat(1000) }]]) {
+test('publisher uses deltas with a baseline and full state only without one', () => {
+  for (const [a, b] of [[before, after], [null, before]]) {
     assert.deepEqual(publish(RoomManager.prototype, a, b), publish(LegacyPublisher.prototype, a, b));
   }
+  // Size selection is gone: a delta wins even when a full packet would be smaller.
+  const large = publish(RoomManager.prototype, { revision: 1 }, { revision: 2, game: 'x'.repeat(1000) });
+  assert.equal(large.packet.type, 'room.delta');
+  assert.deepEqual(Replication.receiveDelta({ revision: 1 }, copy(large.packet)).state, large.room.lastBroadcastState);
   const { packet, room } = publish(RoomManager.prototype, before, after);
   assert.equal(packet.type, 'room.delta');
   assert.deepEqual(receiveDelta(before, packet), { status: 'apply', state: after });
@@ -35,6 +39,22 @@ test('shared replication seam creates and reconstructs the existing wire delta',
   const delta = Replication.createDelta(before, after);
   assert.deepEqual(delta, publish(LegacyPublisher.prototype, before, after).packet);
   assert.deepEqual(Replication.receiveDelta(before, delta), { status: 'apply', state: after });
+});
+
+test('certified history tails skip the prefix without assuming arbitrary arrays are append-only', () => {
+  const history = values => new Proxy(values, {
+    get(array, key, receiver) {
+      if (key === '0') throw new Error('published history revisited');
+      return Reflect.get(array, key, receiver);
+    }
+  });
+  const a = { revision: 1, history: history([{ level: 0 }]) };
+  const b = { revision: 2, history: history([{ level: 0 }, { level: 1 }]) };
+  const packet = Replication.createDelta(a, b, { historyPrefixLength: () => 1 });
+  assert.deepEqual(packet.changes, [[['revision'], 2], [['history', 1], { level: 1 }]]);
+  const before = { revision: 1, players: [{ id: 'a' }] };
+  const after = { revision: 2, players: [{ id: 'b' }, { id: 'c' }] };
+  assert.deepEqual(Replication.receiveDelta(before, copy(Replication.createDelta(before, after))).state, after);
 });
 
 const Replication = require('../shared/room-replication');

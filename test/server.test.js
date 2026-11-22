@@ -353,19 +353,16 @@ describe('broadcast', () => {
     const delivered = seats.map(socket => socket.frames.slice(socket.mark));
     assert.ok(delivered.every(frames => frames.length === 1), 'one frame each');
     assert.equal(new Set(delivered.map(frames => frames[0])).size, 1, 'byte-identical to every seat');
-    // the delta path builds its two candidate texts once. Count only what broadcastDelta itself serialises: a round
-    // snapshot also clones the game with JSON (round-engine.js clone), which is not part of this change.
+    // Only the delta is serialized; a full candidate must not traverse history.
     rm.receive(host, JSON.stringify({ type: 'round.start' }));
     room.engine.changed('game.state');
     const ownCalls = [];
     JSON.stringify = (...args) => {
-      // the caller of JSON.stringify itself, not something nested below it (the engine clones its snapshot with JSON)
-      const caller = new Error().stack.split('\n')[2] || '';
-      if (caller.includes('RoomManager.broadcastDelta')) ownCalls.push(caller.trim());
+      if ((new Error().stack.split('\n')[2] || '').includes('RoomManager.broadcast')) ownCalls.push(args[0]?.type);
       return original(...args);
     };
     try { room.engine.changed('game.state'); } finally { JSON.stringify = original; }
-    assert.equal(ownCalls.length, 2, `broadcastDelta serialised ${ownCalls.length} times`);
+    assert.deepEqual(ownCalls, ['room.delta']);
   });
 
   test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
@@ -504,7 +501,9 @@ describe('Host absence (F-015)', () => {
     assert.equal(manager.snapshot(room).canRematchWithoutHost, false);
     clock.t += 1; manager.tick();
     assert.equal(manager.snapshot(room).canRematchWithoutHost, true);
-    assert.ok(players[0].sent.some(m => m.type === 'room.state' && m.state.canRematchWithoutHost));
+    const revealed = players[0].sent.filter(m => m.type === 'room.state' || m.type === 'room.delta').at(-1);
+    assert.equal(revealed.type, 'room.delta');
+    assert.ok(revealed.changes.some(([path, value]) => path.join('.') === 'canRematchWithoutHost' && value === true));
     manager.receive(players[0], JSON.stringify({ type: 'round.rematch' }));
     assert.equal(room.phase, 'playing');
     assert.equal(room.roundNumber, 2);
@@ -888,8 +887,8 @@ describe('Preference messages are not an amplifier (P1-1)', () => {
     rm.receive(b, JSON.stringify({ type: 'room.join', code, name: 'B' }));
     const room = rm.rooms.get(code);
     const calls = { count: 0 };
-    const broadcastState = rm.broadcastState.bind(rm);
-    rm.broadcastState = (...args) => { calls.count += 1; return broadcastState(...args); };
+    const broadcast = rm.broadcast.bind(rm);
+    rm.broadcast = (...args) => { calls.count += 1; return broadcast(...args); };
     return { rm, host, a, b, room, calls, advance: ms => { now += ms; } };
   };
 
@@ -1036,7 +1035,7 @@ describe('Damage limits without a client key (#53)', () => {
     rm.disconnect(host);
     now += 30_000;
     const back = mk(); rm.connect(back);
-    assert.equal(send(rm, back, { type: 'room.resume', code, resumeToken: token }).type, 'room.state');
+    assert.equal(send(rm, back, { type: 'room.resume', code, resumeToken: token }).type, 'room.resumed');
     assert.equal(back.sent.find(message => message.type === 'room.resumed').role, 'host');
     now += 60_000;
     assert.deepEqual(rm.sweepIdle(), []);

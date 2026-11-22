@@ -1,6 +1,7 @@
 'use strict';
 
 const Core = require('../shared/game-core');
+const { captureValue, captureHistory } = require('./publication-history');
 
 const WORLD_WIDTH = 360;
 // A drop lands where the player saw the block, provided that is within this much travel of the server's own position
@@ -53,6 +54,7 @@ class RoundEngine {
       player.lastPositionSeq = -1;
     }
     this.dropRequestResults.clear();
+    this.publishedResults = null;
     this.game = {
       mode: this.mode, phase: 'playing', roundNumber, startedAt: now, lastTickAt: now,
       elapsed: 0, nextVoteAt: FIRST_VOTE_AT, vote: null, lastVote: null, lastSabotageWinner: null,
@@ -796,9 +798,15 @@ class RoundEngine {
     return { ok: true };
   }
 
-  snapshot(now = this.now()) {
+  snapshot(now = this.now(), { publication = false } = {}) {
     const game = this.game;
     if (!game) return null;
+    const history = publication ? captureHistory : clone;
+    // Results are completed once (including RoomManager's bestTeamScore) before
+    // their first publication. Later metadata changes must not re-copy towers.
+    if (publication && game.results && this.publishedResults?.source !== game.results) {
+      this.publishedResults = { source: game.results, value: captureValue(game.results) };
+    }
     const vote = game.vote ? {
       options: game.vote.options.slice(),
       counts: Core.countVotes(game.vote.votes, game.vote.options),
@@ -813,13 +821,13 @@ class RoundEngine {
       lastSabotage: game.lastSabotage ? clone(game.lastSabotage) : null,
       nextVoteIn: Math.max(0, game.nextVoteAt - game.elapsed),
       activeEffects: Core.effectsToWire(game.activeEffects, now),
-      results: game.results ? clone(game.results) : null
+      results: game.results ? (publication ? this.publishedResults.value : clone(game.results)) : null
     };
     if (this.mode === 'teamwork') {
       const team = game.team;
       const active = this.player(team.currentPlayerId);
       common.team = {
-        stack: clone(team.stack), fallen: clone(team.fallen), perfects: team.perfects, score: team.score,
+        stack: history(team.stack), fallen: history(team.fallen), perfects: team.perfects, score: team.score,
         turnOrder: team.turnOrder.slice(), turnIndex: team.turnIndex, currentPlayerId: team.currentPlayerId,
         currentPlayerName: active ? active.name : null, currentPlayerColor: active ? active.color : null,
         turnId: team.turnId, turnActive: team.turnActive,
@@ -836,7 +844,7 @@ class RoundEngine {
           playerId: item.playerId, name: player ? player.name : 'Player', color: player ? player.color : '#2A2520',
           connected: Boolean(player && player.connected), ended: item.ended, disconnected: item.disconnected,
           collapsed: item.collapsed, height: item.stack.length - 1, perfects: item.perfects,
-          sabotageCount: item.sabotageCount, blocks: clone(item.stack), fallen: clone(item.fallen),
+          sabotageCount: item.sabotageCount, blocks: history(item.stack), fallen: history(item.fallen),
           moving: item.moving ? clone(item.moving) : null, motion: this.motionSnapshot(item), lastPositionSeq: item.lastPositionSeq,
           collapseLevel: item.collapseLevel
         };
@@ -851,7 +859,7 @@ class RoundEngine {
   }
 
   changed(type = 'game.state') {
-    if (typeof this.onChange === 'function') this.onChange(type, this.snapshot());
+    if (typeof this.onChange === 'function') this.onChange(type, this.game);
   }
 }
 
