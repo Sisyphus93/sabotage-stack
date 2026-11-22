@@ -19,13 +19,13 @@ const rest = () => ({ x: 0, y: 0, rz: 0, sx: 1 });
 // The Pisa Tilt in the title: a lean of up to 16 degrees that eases in, sways, and eases out.
 export function pisaLean(t, dur, dir = 1) { return dir * 0.2792 * envelope(t, dur, 0.9, 1.0) * (0.86 + 0.14 * Math.sin(t * 2.3)); } // 0.2792 rad: never past the game's 16 degrees
 
-// pose(id, t, dur, { reduced, dir, count }) -> { env, top, bottom, letter(i, n) -> { y, rz, vis }, shed, post, cam, veil, ghost, gates, jaws, glue, streaks }
+// pose(id, t, dur, { reduced, dir, count }) -> { env, top, bottom, letter(i, n) -> { y, rz, vis }, shed, post, cam, veil, loupe, ghost, gates, jaws, glue, streaks }
 export function titlePose(id, t, dur = 4.6, { reduced = false, dir = 1 } = {}) {
   const env = envelope(t, dur);
   const m = reduced ? 0 : 1; // movement scale: Reduced Motion keeps the look, not the motion
   const p = {
     id, env, t, top: rest(), bottom: rest(), letter: null, shed: 0, shedMode: '',
-    post: {}, cam: { zoom: 1, focus: 0, roll: 0, shake: 0 }, veil: 0, spotSweep: 0, ghost: 0, ghostDx: 0, gates: 0, wrap: 0, jaws: 0, glue: 0, streaks: 0, clip: false, rail: 0
+    post: {}, cam: { zoom: 1, focus: 0, roll: 0, shake: 0 }, veil: 0, loupe: 0, spotSweep: 0, ghost: 0, ghostDx: 0, gates: 0, wrap: 0, jaws: 0, glue: 0, streaks: 0, clip: false, rail: 0
   };
   const e = env * m;
   switch (id) {
@@ -91,7 +91,7 @@ export function titlePose(id, t, dur = 4.6, { reduced = false, dir = 1 } = {}) {
       break;
     }
     case 'zoom': {
-      p.cam.zoom = 1 + 0.85 * env; p.cam.focus = env; break;
+      p.cam.zoom = 1 + 0.85 * env; p.cam.focus = env; p.loupe = env; break;
     }
     case 'double': {
       const dx = 74 * env * (m ? Math.sin(t * 1.8) : 0.55);

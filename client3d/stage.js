@@ -682,6 +682,11 @@ export class Stage {
       const sweepX = pose.spotSweep * (b.x1 - b.x0); const radius = (b.x1 - b.x0) * 0.155;
       const sp = this.spotWorld(tmpTitle.set(sweepX, title.topCenterY * 0.78, 30), radius * (1 + 4.5 * (1 - easeOutCubic(pose.veil))), [0, 0, 1, 1]); if (sp) this.post.spots.push(sp);
     }
+    // Macro Zoom: the same veil, with the game's loupe (rim and handle) closing in on the top tier the camera pushes towards. The View stays free here.
+    if (pose && pose.loupe > 0.01) {
+      const radius = (b.x1 - b.x0) * 0.2;
+      const sp = this.spotWorld(tmpTitle.set(Lb.topOffsetX, title.topCenterY, 30), radius * (1 + 4.5 * (1 - easeOutCubic(pose.loupe))), [0, 0, 1, 1]); if (sp) { sp.loupe = true; this.post.spots.push(sp); }
+    }
     // the focus band of the tilt-shift follows the pointer, and the glow swells a little, while it is over the scene
     this.post.tiltCenter = lerp(0.55, clamp((p.ndc.y + 1) / 2, 0.2, 0.85), reduced ? 0 : 0.8 * hover.energy); this.post.blur = 6;
     if (this.engine.bloomPass.enabled) this.post.bloom = this.palette.bloom * (1 + 0.3 * hover.energy);
