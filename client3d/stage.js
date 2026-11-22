@@ -34,7 +34,7 @@ const EMBLEM_X = BOARD_W / 2 + 118; // the running sabotage's emblem floats besi
 const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits on the other side
 const DUST = [0.82, 0.74, 0.6];
 // Things the pointer must leave alone: controls, and the page's glass panels (their text can be selected, their buttons pressed).
-const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas)'; // (the game's canvas is a role=button for assistive tech, but it is the scene)
+const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas):not(#game-canvas)'; // (the game surface, #game-canvas, is a role=button for assistive tech, but it is the scene)
 const FLOOR_CLEARANCE = 14; // the camera never comes lower than this above the plinth, however far the visitor turns it down
 const HOVER_LOOK = {
   paper: { light: '#FFD9A0', power: 52000, sparkles: ['#E3A33B', '#2F8478', '#D5472F', '#FFF1D0', '#C96F8A'] },

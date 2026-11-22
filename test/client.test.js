@@ -454,12 +454,12 @@ describe('Solo auto-drop countdown ring', skipReason ? { skip: skipReason } : {}
     try {
       const d = page.document, ring = d.getElementById('auto-drop-ring'), left = ring.querySelector('.auto-drop-left');
       d.getElementById('start-button').click(); page.advanceAnimation(300);
-      assert.equal(ring.hidden, true, 'hidden during the first second');
+      assert.equal(ring.classList.contains('is-on'), false, 'hidden during the first second');
       page.advanceAnimation(2000);
-      assert.equal(ring.hidden, false); assert.ok(Number(left.style.strokeDashoffset) > 0 && Number(left.style.strokeDashoffset) < 1, 'part of the ring is used up');
+      assert.equal(ring.classList.contains('is-on'), true); assert.ok(Number(left.style.strokeDashoffset) > 0 && Number(left.style.strokeDashoffset) < 1, 'part of the ring is used up');
       assert.equal(ring.classList.contains('is-urgent'), false);
       let urgent = false;
-      for (let i = 0; i < 160 && !urgent && !ring.hidden; i += 1) { page.advanceAnimation(100); urgent = ring.classList.contains('is-urgent') && !ring.hidden; }
+      for (let i = 0; i < 160 && !urgent && ring.classList.contains('is-on'); i += 1) { page.advanceAnimation(100); urgent = ring.classList.contains('is-urgent') && ring.classList.contains('is-on'); }
       assert.equal(urgent, true, 'urgent in the last second before the auto-drop');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
