@@ -91,11 +91,11 @@ describe('what chat does to the title (title-effects.js)', () => {
       for (const t of [0, dur]) {
         const p = titlePose(id, t, dur, { dir: -1 }); assert.equal(p.env, 0, `${id} @${t}`);
         for (const tier of [p.top, p.bottom]) assert.ok(Math.abs(tier.x) < 1e-6 && Math.abs(tier.y) < 1e-6 && Math.abs(tier.rz) < 1e-6 && Math.abs(tier.sx - 1) < 1e-6, `${id}: tiers back at rest at ${t}`);
-        assert.ok(p.veil === 0 || id === 'spotlight', 'no veil but the spotlight\'s'); assert.ok(p.cam.zoom === 1 || id === 'zoom');
+        assert.ok(p.veil === 0 || id === 'spotlight', 'no veil but the spotlight\'s'); assert.ok(p.cam.zoom === 1 || id === 'zoom'); assert.ok(p.loupe === 0, `${id}: no loupe at rest`);
       }
       for (let t = 0; t <= dur; t += 0.13) {
         const p = titlePose(id, t, dur, { dir: 1 });
-        const nums = [p.env, p.top.x, p.top.y, p.top.rz, p.top.sx, p.bottom.x, p.bottom.y, p.bottom.rz, p.bottom.sx, p.shed, p.cam.zoom, p.cam.roll, p.cam.shake, p.veil, p.ghost, p.gates, p.jaws, p.glue, p.wrap];
+        const nums = [p.env, p.top.x, p.top.y, p.top.rz, p.top.sx, p.bottom.x, p.bottom.y, p.bottom.rz, p.bottom.sx, p.shed, p.cam.zoom, p.cam.roll, p.cam.shake, p.veil, p.loupe, p.ghost, p.gates, p.jaws, p.glue, p.wrap];
         assert.ok(nums.every(Number.isFinite), `${id} @${t}`);
         if (p.letter) { for (let i = 0; i < 8; i += 1) { const l = p.letter(i, 8); assert.ok(Number.isFinite(l.y) && Number.isFinite(l.rz) && (l.vis === 0 || l.vis === 1)); } }
       }
@@ -117,6 +117,8 @@ describe('what chat does to the title (title-effects.js)', () => {
     let lo = 1; let hi = 0; for (let t = 0; t < 4.4; t += 0.02) { const sx = titlePose('accordion', t, 4.4).top.sx; lo = Math.min(lo, sx); hi = Math.max(hi, sx); } assert.ok(lo >= 0.44 && lo < 0.5 && hi > 0.99, `accordion ${lo}..${hi}`);
     for (let t = 0; t < 4.4; t += 0.1) assert.ok(Math.abs(titlePose('spotlight', t, 4.4).spotSweep) <= 0.43);
     assert.ok(titlePose('zoom', 2, 4.4).cam.zoom > 1.8, 'the zoom is the game\'s 1.85x');
+    assert.ok(titlePose('zoom', 2, 4.4).loupe > 0.99, 'Macro Zoom lays its loupe over the title'); assert.ok(titlePose('zoom', 2, 4.4, { reduced: true }).loupe > 0.99, 'the loupe is not movement');
+    for (const id of ['spotlight', 'turbo', 'double']) assert.equal(titlePose(id, 2, 4.4).loupe, 0, `${id} has no loupe`);
   });
   test('the captions read "CHAT VOTED: NAME" in capitals', async () => {
     const { captionFor } = await load('title-effects.js'); assert.equal(captionFor('The Pisa Tilt'), 'CHAT VOTED: THE PISA TILT'); assert.equal(captionFor('Spotlight'), 'CHAT VOTED: SPOTLIGHT'); assert.equal(captionFor(), 'CHAT VOTED: ');

@@ -109,7 +109,7 @@ starts and ends at rest:
 | turbo drunk slowmo magnet accordion | the tiers slide, sway, drag and pull (motion blur, wobble, frost); accordion squeezes SABOTAGE |
 | portal rollercoaster | the top tier runs through two swirling gates; a flowing rail carries the title along |
 | pisa earthquake | the camera rolls (the world leans up to 16 degrees) while the tiers lean; the stage shakes |
-| spotlight peekaboo zoom double | a dark veil with one lit circle sweeping the title; letters vanish and return; a 1.85x macro push-in; a ghost twin |
+| spotlight peekaboo zoom double | a dark veil with one lit circle sweeping the title; letters vanish and return; a 1.85x macro push-in behind the game's loupe (the view stays free); a ghost twin |
 | crumble superglue calipers | bricks shed from the edges and rebuild bottom-up; the wall turns glossy; two caliper jaws close on it |
 
 A click on a ring icon, or the **Trigger sabotage** key, calls one at once (`TitleDirector.force`): a running one winds down, an open
