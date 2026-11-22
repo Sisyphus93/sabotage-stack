@@ -194,6 +194,55 @@ describe('Competitive disconnect grace (F-006)', () => {
   });
 });
 
+describe('non-string host vote options over WebSocket', () => {
+  function request(client, message, responseType) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        client.ws.off('message', receive);
+        reject(new Error(`Timed out waiting for ${responseType}`));
+      }, 2000);
+      function receive(raw) {
+        const response = JSON.parse(raw);
+        if (response.type !== responseType) return;
+        clearTimeout(timer);
+        client.ws.off('message', receive);
+        resolve(response);
+      }
+      client.ws.on('message', receive);
+      client.send(message);
+    });
+  }
+  for (const mode of ['teamwork', 'competitive']) {
+    test(`${mode}: malformed host votes get INVALID_OPTION without exception logging`, async () => {
+      const errors = [];
+      const app = createGameServer({ onError: error => errors.push(error) });
+      try {
+        await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+        const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+        const host = await connect(url);
+        const { code } = await request(host, { type: 'room.create', mode }, 'room.created');
+        for (const name of ['Ada', 'Bo']) {
+          const player = await connect(url);
+          await request(player, { type: 'room.join', code, name }, 'room.joined');
+        }
+        await request(host, { type: 'round.start' }, 'round.started');
+        const engine = app.roomManager.rooms.get(code).engine;
+        assert.equal(engine.openVote(app.roomManager.now()), true);
+        const [first, second] = engine.game.vote.options;
+        await request(host, { type: 'vote.cast', option: first }, 'vote.updated');
+        const before = engine.snapshot().vote;
+        const malformed = JSON.parse('{"type":"vote.cast","option":{"toString":1,"valueOf":1}}');
+        const response = await request(host, malformed, 'error');
+        assert.equal(response.code, 'INVALID_OPTION');
+        assert.deepEqual(engine.snapshot().vote, before);
+        assert.deepEqual(errors, []);
+        await request(host, { type: 'vote.cast', option: second }, 'vote.updated');
+        assert.equal(engine.snapshot().vote[mode === 'teamwork' ? 'hostTiebreak' : 'hostChoice'], second);
+      } finally { await app.close(); }
+    });
+  }
+});
+
 describe('Teamwork vote routing (F-008)', () => {
   function makeRoom(mode) {
     const time = 1e9;

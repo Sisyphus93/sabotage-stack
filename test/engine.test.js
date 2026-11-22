@@ -125,6 +125,20 @@ describe('Teamwork voting (F-008)', () => {
     assert.equal(clear.engine.game.lastVote.tiebreak, undefined);
   });
 
+  test('host tie-break rejects non-string options without replacing an existing choice', () => {
+    const { engine, clock } = makeEngine('teamwork');
+    openBetweenTurns(engine, clock.t);
+    const [first, second] = engine.game.vote.options;
+    assert.deepEqual(engine.castHostTiebreak(first), { ok: true });
+    const before = engine.snapshot().vote;
+    const malformed = JSON.parse('{"toString":1,"valueOf":1}');
+    for (const option of [malformed, {}, [], [second], 1, true, null, undefined, 'invalid']) {
+      assert.deepEqual(engine.castHostTiebreak(option), { ok: false, code: 'INVALID_OPTION' });
+      assert.deepEqual(engine.snapshot().vote, before);
+    }
+    assert.deepEqual(engine.castHostTiebreak(second), { ok: true });
+    assert.equal(engine.snapshot().vote.hostTiebreak, second);
+  });
   test('the host cannot use a Teamwork tie-break as an extra Competitive ballot', () => {
     const { engine, clock } = makeEngine('competitive', 26, 2);
     engine.openVote(clock.t);
@@ -342,6 +356,17 @@ describe('robustness under random play', () => {
 
 describe('shared core invariants', () => {
   const all = Object.values(Core.SABOTAGE_CATEGORIES).flat();
+  test('recordVote rejects non-string options without changing existing ballots', () => {
+    const options = ['turbo', 'ice', 'pisa'];
+    const votes = Core.recordVote(new Map(), { voterId: 'a', option: 'turbo' }, options);
+    assert.deepEqual([...votes], [['a', 'turbo']]);
+    const malformed = JSON.parse('{"toString":1,"valueOf":1}');
+    for (const option of [malformed, {}, [], ['ice'], 1, true, null, undefined, 'invalid']) {
+      assert.equal(Core.recordVote(votes, { voterId: 'a', option }, options), votes);
+      assert.deepEqual([...votes], [['a', 'turbo']]);
+    }
+    assert.deepEqual([...Core.recordVote(votes, { voterId: 'a', option: 'ice' }, options)], [['a', 'ice']]);
+  });
   test('pickOptions always returns three distinct, allowed options', () => {
     const r = rng(2024);
     for (let i = 0; i < 5000; i += 1) {
@@ -566,6 +591,21 @@ describe('Peekaboo opacity (F-025)', () => {
 });
 
 describe('Chat adapter bounds and namespaces (F-029)', () => {
+  test('chat rejects non-string options without changing ballots or consuming update quota', () => {
+    const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
+    const [first, second] = engine.game.vote.options;
+    const voter = { platform: 'twitch', voterId: 'a' };
+    assert.deepEqual(engine.receiveChatVote({ ...voter, option: first }), { ok: true });
+    const before = engine.snapshot().vote;
+    const malformed = JSON.parse('{"toString":1,"valueOf":1}');
+    for (const option of [malformed, {}, [], [second], 1, true, null, undefined, 'invalid']) {
+      assert.deepEqual(engine.receiveChatVote({ ...voter, option }), { ok: false, code: 'INVALID_OPTION' });
+      assert.deepEqual(engine.snapshot().vote, before);
+    }
+    for (let i = 0; i < 19; i++) assert.deepEqual(engine.receiveChatVote({ ...voter, option: second }), { ok: true });
+    assert.deepEqual(engine.receiveChatVote({ ...voter, option: first }), { ok: false, code: 'CHAT_VOTE_LIMIT' });
+    assert.equal(engine.snapshot().vote.totalVotes, 1);
+  });
   test('platform and host identities cannot collide, and chat voters can change their vote', () => {
     const { engine, clock } = makeEngine('competitive'); engine.openVote(clock.t);
     const [first, second] = engine.game.vote.options;

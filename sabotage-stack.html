@@ -2079,9 +2079,9 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
     return weighted;
   }
   function recordVote(votes, event, validOptions) {
-    if (!event || event.voterId == null || event.option == null) return votes;
+    if (!event || event.voterId == null || typeof event.option !== 'string') return votes;
     const voterId = String(event.voterId).trim();
-    const option = String(event.option);
+    const option = event.option;
     if (!voterId || !validOptions.includes(option)) return votes;
     const next = new Map(votes instanceof Map ? votes : []);
     next.set(voterId, option);
