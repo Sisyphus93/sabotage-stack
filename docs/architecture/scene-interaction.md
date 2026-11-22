@@ -23,14 +23,18 @@ implementation inside this module. ZoomController's `reset` is now one case of
   constraint context; the module does not inspect a camera or Stage object.
 - `placeHud(kind, x, y, dt)` receives Stage-computed viewport coordinates. Hint
   age, retirement, reset availability, storage and button actions stay inside.
-- `pointer`, `dragging`, and `view` are observations for scene reactions and
-  raycasting, not state for Stage to mutate. `view` is a value snapshot, not a
+- `pointer`, `dragging`, `moving`, and `view` are observations for scene reactions
+  and raycasting, not state for Stage to mutate. `view` is a value snapshot, not a
   controller reference. Pointer normalized coordinates are plain `{ x, y }`
   values accepted by Three.js raycasting, not a Three.js-owned vector.
+  `moving` covers a drag, a fling still coasting, an orbit tween and the zoom
+  easing towards its target.
 - `samplePointer(event)` preserves the additional sample taken immediately before
-  title picking. `endFrame()` preserves per-frame pointer-speed decay. `wake()`
-  resets idle time for title-toy actions. `setCursor()` applies Stage's picking
-  feedback while the module owns cleanup.
+  title picking. `lastActivity` is the milliseconds timestamp of the latest input
+  path (pointer move/down/up, wheel, keys, clicks, touches); Stage reads it to wake
+  an **Idle Scene**. `endFrame()` preserves per-frame pointer-speed decay.
+  `wake()` resets idle time for title-toy actions. `setCursor()` applies Stage's
+  picking feedback while the module owns cleanup.
 - `hold(reason)` / `release()`: an Effect takes the **View** over (see
   `GLOSSARY.md`; Macro Zoom). `hold` is safe to call every frame: the first call
   saves the View, cancels a drag and eases to the default (0.8 s; at once under

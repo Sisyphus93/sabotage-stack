@@ -447,6 +447,36 @@ test('a held View never idles back to the default on its own', async () => {
   } finally { r.close(); }
 });
 
+test('every input path stamps lastActivity, and moving covers drag, fling, tween and dolly easing', async () => {
+  const r = await rig();
+  try {
+    const stamp = r.interaction.lastActivity;
+    r.fire('pointermove', { clientX: 120 }); assert.ok(r.interaction.lastActivity > stamp, 'pointer move');
+    let before = r.interaction.lastActivity;
+    r.fire('pointerdown', { button: 2, buttons: 2 }); assert.ok(r.interaction.lastActivity > before, 'pointer down');
+    assert.equal(r.interaction.moving, true, 'a drag is motion');
+    r.fire('pointermove', { clientX: 180, buttons: 2 });
+    r.fire('pointerup', { button: 2, clientX: 180 }); before = r.interaction.lastActivity;
+    assert.equal(r.interaction.moving, true, 'the fling carries on after release');
+    r.settle(); assert.equal(r.interaction.moving, false);
+
+    r.fire('keydown', { key: 'ArrowRight' }); assert.ok(r.interaction.lastActivity > before, 'a view key');
+    assert.equal(r.interaction.moving, true, 'the turn tween is motion'); r.settle();
+    before = r.interaction.lastActivity;
+    r.fire('keydown', { key: 'Space' }); assert.ok(r.interaction.lastActivity > before, 'any other key press');
+    before = r.interaction.lastActivity;
+    r.fire('wheel', { deltaY: -100 }); assert.ok(r.interaction.lastActivity > before, 'the wheel');
+    assert.equal(r.interaction.moving, true, 'the dolly ease is motion'); r.settle();
+    assert.equal(r.interaction.moving, false);
+    before = r.interaction.lastActivity;
+    r.fire('wheel', { deltaY: -100, ctrlKey: true }); assert.ok(r.interaction.lastActivity > before, 'even a wheel the scene leaves to the browser');
+
+    before = r.interaction.lastActivity;
+    r.fire('pointerdown', { pointerType: 'touch' }); r.fire('pointercancel', { pointerType: 'touch', buttons: 0 });
+    assert.ok(r.interaction.lastActivity > before, 'a touch and its release');
+  } finally { r.close(); }
+});
+
 test('under Reduced Motion the hold and the hand-back are instant, turn included', async () => {
   const { r, before } = await turnedAndZoomed({ reduced: true });
   try {
