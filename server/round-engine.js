@@ -298,8 +298,8 @@ class RoundEngine {
     const game = this.game;
     if (this.mode !== 'teamwork') return { ok: false, code: 'HOST_TIEBREAK_DISABLED' };
     if (!game || !game.vote) return { ok: false, code: 'VOTE_CLOSED' };
-    const selected = String(option);
-    if (!game.vote.options.includes(selected)) return { ok: false, code: 'INVALID_OPTION' };
+    if (typeof option !== 'string' || !game.vote.options.includes(option)) return { ok: false, code: 'INVALID_OPTION' };
+    const selected = option;
     game.vote.hostTiebreak = selected;
     this.onEvent('vote.updated', {
       counts: Core.countVotes(game.vote.votes, game.vote.options),
@@ -319,7 +319,7 @@ class RoundEngine {
     const voter = event.voterId.trim();
     const platform = event.platform == null ? 'legacy' : typeof event.platform === 'string' ? event.platform.trim().toLowerCase() : '';
     if (!voter || voter.length > MAX_CHAT_VOTER_ID_LENGTH || !/^[a-z0-9_-]{1,32}$/.test(platform)) return { ok: false, code: 'INVALID_VOTER' };
-    if (!game.vote.options.includes(event.option)) return { ok: false, code: 'INVALID_OPTION' };
+    if (typeof event.option !== 'string' || !game.vote.options.includes(event.option)) return { ok: false, code: 'INVALID_OPTION' };
     const voterId = `chat:${platform}:${voter}`;
     const updates = game.vote.chatVoteUpdates;
     if (!updates.has(voterId) && updates.size >= MAX_CHAT_VOTERS) return { ok: false, code: 'CHAT_VOTER_LIMIT' };
