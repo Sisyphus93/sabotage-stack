@@ -164,8 +164,8 @@ test('the How to play text agrees with the lifecycle durations and the drop-coun
   for (const id of Core.TEAM_GLOBAL_IDS) assert.match(text, new RegExp(`${id} lasts for the next ${Core.EFFECT_DROP_BUDGET} team landings`, 'i'), `${id} strikes the whole team`);
 });
 
-test('the page and the 3D stage read the zoom scale from the catalogue', () => {
-  assert.ok(html.includes("const zoomTarget = effectId === 'zoom' ? Core.SABOTAGE_TUNING.zoom.scale : 1;"));
+test('the 3D stage reads the zoom scale from the catalogue', () => {
+  assert.ok(!html.includes('const zoomTarget'), 'the page keeps no zoom scale of its own');
   assert.ok(fs.readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8').includes("const zoomTarget = effectId === 'zoom' ? view.Core.SABOTAGE_TUNING.zoom.scale : 1;"));
   assert.ok(!/const (VOTE_EFFECT_HINTS|STAGE_VOTE_SHORT_NAMES) =/.test(html), 'no second table of Sabotage wording');
 });

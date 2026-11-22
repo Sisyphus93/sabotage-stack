@@ -97,5 +97,5 @@ export function snapshotTower(stage, target, data) {
     for (const o of owned) { o.geometry.dispose(); o.material.dispose(); }
     for (const body of world.bodies) body.data.mesh.geometry && 0;
     return true;
-  } catch (error) { console.warn('3D snapshot failed; using the flat drawing', error); return false; }
+  } catch (error) { console.warn('3D snapshot failed', error); return false; }
 }

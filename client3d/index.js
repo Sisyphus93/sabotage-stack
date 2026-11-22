@@ -1,5 +1,6 @@
 // Entry point of the 3D layer (bundled to public/stack3d.js). It attaches to the page through window.SabotageStackHost,
-// which the page itself defines; if anything is missing or fails, the original 2D game keeps running untouched.
+// which the page itself defines. The 3D world is the only way to see the game: if WebGL is missing or the stage cannot start,
+// the page says so and asks the visitor to try another browser.
 import { Stage } from './stage.js';
 import { webglSupported } from './engine.js';
 import { renderIconSprites, applyIconSprites, applyGlyphSprites, restoreFlatIcons } from './icons3d.js';
@@ -9,30 +10,24 @@ import { installTactileUi } from './tactile.js';
 import { installIconTurn } from './icon-turn.js';
 import { installPixelUi } from './pixel-ui.js';
 
-const VIEW_KEY = 'sabotage-stack-view-v1';
-
-function storedView() { try { return window.localStorage.getItem(VIEW_KEY) || '3d'; } catch (_) { return '3d'; } }
-function storeView(value) { try { window.localStorage.setItem(VIEW_KEY, value); } catch (_) { /* private mode: the choice lasts for this page view */ } }
-
 function boot() {
   const host = window.SabotageStackHost;
   if (!host || window.__stack3d) return;
   const params = new URLSearchParams(window.location.search);
-  const forcedOff = params.get('3d') === 'off' || params.get('view') === 'flat';
-  let wanted = forcedOff ? 'flat' : params.get('3d') === 'on' ? '3d' : storedView();
   const supported = webglSupported();
   const doc = document; const root = doc.documentElement;
   let canvas = null; let stage = null; let raf = 0; let failures = 0; let iconTheme = ''; let tactile = null; let iconTurn = null; let pixel = null;
 
-  const toggle = doc.createElement('button');
-  toggle.type = 'button'; toggle.id = 'view-toggle'; toggle.className = 'button view-toggle';
-  const bar = doc.querySelector('.top-tools'); if (bar) bar.insertBefore(toggle, bar.firstChild);
-  if (!supported) toggle.hidden = true;
-
-  function syncToggle(active) {
-    toggle.setAttribute('aria-pressed', active ? 'true' : 'false');
-    toggle.textContent = active ? '3D view' : 'Flat view';
-    toggle.setAttribute('aria-label', active ? '3D view is on. Activate to switch to the flat 2D view.' : 'Flat view is on. Activate to switch to the 3D view.');
+  function showUnavailable() {
+    if (doc.getElementById('webgl-required')) return;
+    const notice = doc.createElement('div');
+    notice.id = 'webgl-required'; notice.setAttribute('role', 'alert');
+    const heading = doc.createElement('h1'); heading.textContent = 'Sabotage Stack needs WebGL 2';
+    const text = doc.createElement('p');
+    text.textContent = 'Your browser cannot show the 3D world. Turn on hardware acceleration or open the game in a recent Chrome, Firefox, Safari or Edge, then reload.';
+    notice.append(heading, text);
+    doc.body.append(notice);
+    root.classList.add('needs-webgl');
   }
 
   // Bakes the page's sabotage icons from the 3D models once the stage is up (and again after a theme change). It is asked for on
@@ -51,7 +46,7 @@ function boot() {
     try { stage.frame(ts, { render: !window.__stack3dNoRender }); failures = 0; if (stage.theme !== iconTheme) bakeIcons(); }
     catch (error) {
       failures += 1; console.error('3D frame failed', (error && error.stack) || error);
-      if (failures >= 3) { console.warn('Falling back to the flat view.'); disable(true); }
+      if (failures >= 3) { console.warn('3D stopped after repeated frame errors.'); disable(); showUnavailable(); }
     }
   }
 
@@ -62,10 +57,10 @@ function boot() {
       doc.body.insertBefore(canvas, doc.body.firstChild);
       stage = new Stage({ canvas, host, tier: params.get('tier'), scale: Number(params.get('scale')) || 1 });
     } catch (error) {
-      console.warn('3D could not start; staying flat.', error);
+      console.warn('3D could not start.', error);
       if (canvas) canvas.remove(); canvas = null; stage = null; return false;
     }
-    root.classList.add('has-3d'); host.setActive(true); syncToggle(true);
+    host.setActive(true);
     tactile = installTactileUi({ doc, win: window }); iconTurn = installIconTurn({ doc });
     pixel = installPixelUi({ doc, win: window, hooks: { onVoteHover: index => { if (stage) stage.setVoteHover(index); }, onPrimaryHover: () => { if (stage) stage.tickPattern(); } } });
     stage.gridTrail = () => Boolean(pixel && pixel.trailActive); // one trail, not two: the stage's sparkles step aside while the grid trail is on
@@ -73,7 +68,7 @@ function boot() {
     return true;
   }
 
-  function disable(remember) {
+  function disable() {
     cancelAnimationFrame(raf); iconBake.cancel();
     if (tactile) { tactile.dispose(); tactile = null; }
     if (iconTurn) { iconTurn.dispose(); iconTurn = null; }
@@ -81,16 +76,12 @@ function boot() {
     if (stage) { try { stage.dispose(); } catch (_) { /* context already gone */ } }
     if (canvas) canvas.remove();
     stage = null; canvas = null; iconTheme = ''; window.__stack3d = null;
-    root.classList.remove('has-3d'); restoreFlatIcons(doc); host.setActive(false); syncToggle(false);
+    restoreFlatIcons(doc); host.setActive(false);
     document.documentElement.style.cursor = '';
   }
 
-  toggle.addEventListener('click', () => {
-    if (stage) { storeView('flat'); disable(); } else if (enable()) storeView('3d');
-  });
-
   host.snapshot = (target, data) => (stage ? snapshotTower(stage, target, data) : false);
-  if (supported && wanted === '3d') enable(); else syncToggle(false);
+  if (!supported || !enable()) showUnavailable();
   window.__stack3dBoot = { enable, disable, supported };
 }
 

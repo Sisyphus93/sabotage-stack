@@ -1,4 +1,4 @@
-// The pixel-grid feel of the page's own UI, the DOM half (the stepped hovers themselves are CSS under html.has-3d; the logic is in the pure
+// The pixel-grid feel of the page's own UI, the DOM half (the stepped hovers themselves are CSS under html:root; the logic is in the pure
 // modules next to this one). Installed from index.js beside tactile.js and icon-turn.js and disposed with them. Plain DOM, no three.js, and safe
 // where there is no canvas at all (jsdom, getContext() === null): the effects that need one simply do not happen.
 //

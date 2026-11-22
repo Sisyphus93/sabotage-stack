@@ -4,7 +4,7 @@ import { ZoomController } from './view-zoom.js';
 import { createOrbitHud, ZOOM_STEP } from './orbit-hud.js';
 import { clamp, damp } from './util.js';
 
-const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas)'; // (the game's canvas is a role=button for assistive tech, but it is the scene)
+const UI_SELECTOR = 'button, a, select, input, textarea, label, dialog, summary, [role="button"]:not(canvas):not(#game-canvas)'; // (the game surface, #game-canvas, is a role=button for assistive tech, but it is the scene)
 // Controls that read the arrow keys, Home and the digits themselves keep them: a text field, a select, a slider, a radio group, a menu, a dialog. A button or a link does not, so one that
 // happens to hold the focus (the page focuses the Drop button in a round and the main action of each results screen) must not take the view's keys away.
 const KEY_OWNERS = 'input, textarea, select, dialog, video, audio, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="slider"], [role="spinbutton"], [role="radio"], [role="tab"], [role="listbox"], [role="option"], [role="combobox"], [role="menu"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="tree"], [role="treeitem"], [role="grid"], [role="gridcell"]';

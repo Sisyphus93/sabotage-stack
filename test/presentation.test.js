@@ -21,7 +21,7 @@ function pageSlice(startMarker, endMarker) {
 // The page's voteTally and watchingArena, run against a supplied game and multiplayer session.
 function pageRig() {
   const context = { Core, game: null, multiplayer: null };
-  vm.runInNewContext(`${pageSlice('    function voteTally() {', '    // Bridge for the optional 3D layer')}
+  vm.runInNewContext(`${pageSlice('    function voteTally() {', '    // Bridge for the 3D layer')}
     Object.assign(globalThis, { voteTally, watchingArena });`, context);
   return context;
 }

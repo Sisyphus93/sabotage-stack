@@ -1,15 +1,16 @@
 # client3d — the 3D layer of Sabotage Stack
 
-A WebGL renderer and interaction layer that sits **on top of the unchanged game**. The rules (`shared/game-core.js`), the
+The WebGL renderer and interaction layer: **the only way the game is drawn**. The rules (`shared/game-core.js`), the
 WebSocket protocol, the server and the solo logic are untouched. The page (`sabotage-stack.html`) still owns all state and
-all DOM; this layer only *reads* it and draws it in 3D.
+all DOM (the panels, buttons, HUD and the input surface); this layer only *reads* it and draws it in 3D.
 
 ```
 sabotage-stack.html  ── defines window.SabotageStackHost { view(), snapshot, setActive(flag) }
-public/stack3d.js    ── the bundle built from this folder; attaches to the host, injects the 3D/Flat toggle
+public/stack3d.js    ── the bundle built from this folder; attaches to the host and starts the 3D world
 ```
 
-The 2D game stays fully intact as the fallback (and is what the jsdom tests exercise).
+There is no flat renderer. Without WebGL 2 the page shows a notice (`#webgl-required`) and the game is not playable. The jsdom tests run the page
+logic without this layer, since jsdom has no WebGL.
 
 ## Building
 
@@ -30,14 +31,10 @@ ETag, `no-cache` revalidation and brotli/gzip.
 
 | | |
 |---|---|
-| **3D view / Flat view** button | top bar; the choice is remembered in `localStorage['sabotage-stack-view-v1']` |
-| `?3d=off` or `?view=flat` | start flat (links, kiosks, low-end devices) |
-| `?3d=on` | start in 3D regardless of the remembered choice |
 | `?tier=low\|medium\|high\|ultra` | pin the quality tier (turns the adaptive governor off) |
 | `?scale=0.75` | pin the render resolution scale (also turns the governor off) |
 
-Fallbacks, in order: no usable WebGL2 → the toggle is hidden and the flat game runs; three consecutive frame errors →
-the layer disables itself and the flat view takes over mid-run; Reduced Motion (system or the page's Motion menu) is honoured
+Failures: no usable WebGL2, or three consecutive frame errors → the layer stops and the `#webgl-required` notice covers the page. Reduced Motion (system or the page's Motion menu) is honoured
 by every scene (no shake, no confetti, instant reveals).
 
 ## Turning and zooming the scenes
@@ -146,13 +143,13 @@ colours. Buttons, the vote keys and the Space bar are keycaps: a side wall of re
 hover lift and a press that sinks into the wall, by pointer, touch or the key itself (`tactile.js` presses the DROP bar for Space
 and the vote keys for 1 / 2 / 3). The page's sabotage icons have **thickness and a slow turn** (`icon-turn.js` wraps each one in a
 holder with darker copies behind it, kept in step with the real icon, so ids and the page's own queries are untouched). The brand
-emblem and the speaker are sculpted and baked like the 17 sabotage icons and swapped in; Flat view puts the original drawings back.
-All of it is under `html.has-3d`, so the flat page is unchanged.
+emblem and the speaker are sculpted and baked like the 17 sabotage icons and swapped in.
+All of it is under `html:root`.
 
 ## The pixel-grid feel
 
 A crisp, stepped way of answering the pointer, after RASTER/27: hovers and fills move in whole steps (`steps()`, never an ease), nothing
-blurs, and everything new is square-cornered. All of it is under `html.has-3d` (Flat view and the jsdom tests see the original page). The logic
+blurs, and everything new is square-cornered. All of it is under `html:root` (the jsdom tests, which run without this layer, see the original page). The logic
 is in pure, unit-tested modules; `pixel-ui.js` (`installPixelUi({ doc, win })` -> `{ dispose }`, installed next to `tactile.js` and
 `icon-turn.js` and disposed with them) is the thin DOM half, and the CSS is one block in `sabotage-stack.html` ("Pixel-grid feel").
 
@@ -225,7 +222,7 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
   Earthquake shakes it, Spotlight drops a dark veil over the whole view with one lit circle on the tower's beam (the name lands first,
   then the dark closes in as an iris, and the emblem keeps a pool of light of its own), Portal adds two swirling gates, Turbo
   smears, Drunk wobbles, and so on. Accordion works as in the game and has no special 3D cue.
-  Peekaboo hides the moving block exactly as the flat view does (opacity from the shared `peekabooOpacity` rule, not drawn at all below 1 %,
+  Peekaboo hides the moving block exactly as the game's rules say (opacity from the shared `peekabooOpacity` rule, not drawn at all below 1 %,
   and its Sunset outline, shadow and reflection go with it) and marks nothing where it went: no ring, no sparks. The block's material is
   transparent from the moment it is made, because three bakes that flag into the shader and never rebuilds it when it is flipped later
   (a block first drawn while visible could then never fade). `test/peekaboo3d.test.js` guards both.
@@ -289,7 +286,7 @@ upgrade changes the chunk's shape).
 
 `npm test` runs everything. The pure modules (`brick-layout`, `title-effects`, `flight`, `candidates`, `icon-voxel`, `orbit`, `hover`, `podium`)
 are tested in Node (`test/title3d.test.js`, `test/client3d.test.js`, and `test/pixel-ui.test.js` for the pixel-grid feel); the page and the DOM helpers run in the jsdom harness, which has no
-WebGL, so those tests also prove the flat fallback. Visual checks need a real browser: the headless QA used for this work drove
+WebGL, so they cover the page logic with no renderer. Visual checks need a real browser: the headless QA used for this work drove
 Chromium with software WebGL (SwiftShader), so real-GPU performance is untested.
 
 ## Debugging

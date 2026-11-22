@@ -14,8 +14,7 @@ copied are now computed by the page and handed over as plain data.
   `Core.weightSoloPick`, the same function `resolveVote` uses to choose the
   winner. `pick` is the solo player's choice, if any.
 - **`arena`**: `watchingArena()`, true when a host or spectator watches a
-  Competitive round. It also picks the wide 2D host board and the
-  `competitive-host` layout.
+  Competitive round. It also picks the `competitive-host` layout.
 
 The Stage turns `ballot` into crowd fractions and candidate sizes, and `arena`
 into its `arena` mode. Sabotage names come from the catalogue

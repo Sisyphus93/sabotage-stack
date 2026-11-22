@@ -358,3 +358,17 @@ for (const mode of modes) test(`${mode}: Stage forced re-entry resets interactio
     r.close();
   }
 });
+
+test('the game surface (a role=button div) is the scene: a right-drag turns the view and the wheel zooms, though the buttons beside it are chrome', async () => {
+  const r = await rig({ mode: 'play' });
+  try {
+    const surface = r.doc.createElement('div'); surface.id = 'game-canvas'; surface.setAttribute('role', 'button'); r.doc.body.append(surface);
+    r.fire('pointerdown', { button: 2, buttons: 2 }, 'game-canvas');
+    assert.equal(r.interaction.dragging, true, 'a right-press on the game surface starts a turn');
+    r.fire('pointerup', { button: 2 }, 'game-canvas');
+    const before = r.interaction.view.zoom; r.fire('wheel', { deltaY: -100 }, 'game-canvas'); r.settle();
+    assert.notEqual(r.interaction.view.zoom, before, 'the wheel over the game surface zooms');
+    r.fire('pointerdown', { button: 2, buttons: 2 }, 'drop');
+    assert.equal(r.interaction.dragging, false, 'a press on a real button is left to the button');
+  } finally { r.close(); }
+});
