@@ -126,6 +126,9 @@ export class TitleStack {
     this.clear(); this.speed = speed; this.exploded = false; this.gone = false; this.age = 0; this.effectKey = ''; this.rebuildAt = -1;
     const key = this.palette.fontKey; const look = this.look; const cap = look.cap;
     const wordB = brickWord(key, 'STACK', { capHeight: cap, rows: look.rows, xScale: look.xScale }); const wordT = brickWord(key, 'SABOTAGE', { capHeight: cap, rows: look.rows, xScale: look.xScale });
+    // No face yet (or a failed fetch): leave the title unbuilt. The rest of the theme's scene still runs; a later theme
+    // rebuild with the face present builds the full wall.
+    if (!wordB.letters.length || !wordT.letters.length) { this.layout.capHeight = cap; this.introDuration = 0; this.age = 0; return; }
     const slabBW = wordB.width + 96; const slabTW = wordT.width + 120;
     const L = this.layout; L.capHeight = cap; L.slabBW = slabBW; L.slabTW = slabTW; L.cell = wordT.rowHeight; L.brickLength = wordT.brickLength; // (a cell: one course of bricks)
     L.letterCount = wordT.letters.length; L.bottomTop = SLAB_T[0] + cap + 1; L.topOffsetX = -0.04 * slabTW; L.halfTop = slabTW / 2; L.baseB = SLAB_T[0]; L.baseT = SLAB_T[1];

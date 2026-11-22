@@ -4,21 +4,27 @@
 // The bundle is committed on purpose (like the core copy inlined in sabotage-stack.html) so `npm ci && npm start`
 // serves the full 3D experience with no build step on the host. A header comment records a hash of every input,
 // so `--check` (run by `npm test`) fails when the sources changed but the bundle was not rebuilt.
-// The same build/check also extracts the page's fonts into content-versioned files, generates their manifest and
-// rewrites the page's @font-face block, then regenerates the inline HTML's CSP hashes in public/csp-hashes.json.
+// The same build/check also extracts the page's fonts into content-versioned files, copies the 3D typefaces to cacheable
+// content-versioned JSON assets (the bundle carries only their URLs), generates their manifests and rewrites the page's
+// @font-face block, then regenerates the inline HTML's CSP hashes in public/csp-hashes.json.
 //
 //   node scripts/build-client.js            # production bundle (minified)
 //   node scripts/build-client.js --dev      # readable bundle with an inline source map for debugging
-//   node scripts/build-client.js --check    # exit 1 if public/stack3d.js is stale or is a --dev build
+//   node scripts/build-client.js --check    # exit 1 if public/stack3d.js is stale, a --dev build or over budget
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const zlib = require('node:zlib');
 
 const ROOT = path.join(__dirname, '..');
 const SOURCE_DIR = path.join(ROOT, 'client3d');
 const ENTRY = path.join(SOURCE_DIR, 'index.js');
 const OUT_FILE = path.join(ROOT, 'public', 'stack3d.js');
 const HEADER = /^\/\* stack3d-source-hash: ([0-9a-f]{64}) mode=(min|dev) \*\/\n/;
+
+// Set from the measured post-typeface-lift size with modest headroom. The gate is shared with the tests so it can be
+// checked without rebuilding. Brotli is reported because it is what the server negotiates.
+const BUNDLE_BUDGET = Object.freeze({ raw: 950_000, gzip: 270_000 });
 
 function listSources(dir = SOURCE_DIR) {
   const files = [];
@@ -48,9 +54,23 @@ function currentHeader() {
   return match ? { hash: match[1], mode: match[2] } : null;
 }
 
+function bundleSizes(file = OUT_FILE) {
+  const raw = fs.readFileSync(file);
+  return {
+    raw: raw.length,
+    gzip: zlib.gzipSync(raw).length,
+    brotli: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }).length
+  };
+}
+
+function withinBudget(sizes, budget = BUNDLE_BUDGET) {
+  return sizes.raw <= budget.raw && sizes.gzip <= budget.gzip;
+}
+
 // 'fresh' = built from the current sources AND minified. A --dev bundle is never committable (it is several MB with an inline source map).
 function status() {
   if (!require('./fonts').check()) return 'stale';
+  if (!require('./typefaces').check()) return 'stale';
   if (!require('./build-csp').check()) return 'stale';
   const header = currentHeader();
   if (!header || header.hash !== sourceHash()) return 'stale';
@@ -62,6 +82,7 @@ function check() { return status() === 'fresh'; }
 async function build({ dev = false } = {}) {
   const esbuild = require('esbuild');
   require('./fonts').build();
+  require('./typefaces').build();
   const hash = sourceHash();
   const result = await esbuild.build({
     entryPoints: [ENTRY], bundle: true, format: 'iife', target: ['es2020'], platform: 'browser',
@@ -79,13 +100,23 @@ async function build({ dev = false } = {}) {
 async function main() {
   if (process.argv.includes('--check')) {
     const state = status();
-    console.log(state === 'fresh' ? 'Fonts, client bundle and CSP hashes are up to date' : state === 'dev' ? 'public/stack3d.js is a development build: run npm run build before committing' : 'Fonts, client bundle or CSP hashes are stale: run npm run build');
+    let sizes = null;
+    try { sizes = bundleSizes(); } catch (_) { /* a missing bundle is already stale */ }
+    if (sizes) {
+      console.log(`public/stack3d.js: ${sizes.raw} B raw, ${sizes.gzip} B gzip, ${sizes.brotli} B brotli (budget: ${BUNDLE_BUDGET.raw} B raw, ${BUNDLE_BUDGET.gzip} B gzip)`);
+      if (!withinBudget(sizes)) {
+        console.error(`public/stack3d.js is over budget: ${sizes.raw} B raw / ${sizes.gzip} B gzip (budget ${BUNDLE_BUDGET.raw} B / ${BUNDLE_BUDGET.gzip} B)`);
+        process.exit(1);
+      }
+    }
+    console.log(state === 'fresh' ? 'Fonts, typefaces, client bundle and CSP hashes are up to date' : state === 'dev' ? 'public/stack3d.js is a development build: run npm run build before committing' : 'Fonts, typefaces, client bundle or CSP hashes are stale: run npm run build');
     process.exit(state === 'fresh' ? 0 : 1);
   }
   const started = Date.now();
   const { bytes } = await build({ dev: process.argv.includes('--dev') });
-  console.log(`built public/stack3d.js (${(bytes / 1024).toFixed(0)} KB) in ${Date.now() - started} ms`);
+  const sizes = bundleSizes();
+  console.log(`built public/stack3d.js (${(bytes / 1024).toFixed(0)} KB raw, ${(sizes.gzip / 1024).toFixed(0)} KB gzip, ${(sizes.brotli / 1024).toFixed(0)} KB brotli) in ${Date.now() - started} ms`);
 }
 
 if (require.main === module) main().catch(error => { console.error(error); process.exit(1); });
-module.exports = { build, check, status, sourceHash, OUT_FILE };
+module.exports = { build, check, status, sourceHash, BUNDLE_BUDGET, bundleSizes, withinBudget, OUT_FILE };

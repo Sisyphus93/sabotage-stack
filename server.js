@@ -16,30 +16,43 @@ const CLIENTS_PER_KEY = 30;
 const MAX_SOCKETS = 2000;
 const PROJECT_ROOT = __dirname;
 const HTML_PATH = path.join(PROJECT_ROOT, 'sabotage-stack.html');
-// The exact-match static allowlist: the 3D bundle plus the content-versioned font files named by the build manifest.
-// Exact-match routing (no directory serving) keeps path traversal impossible.
+// The exact-match static allowlist: the 3D bundle plus the content-versioned font and typeface files named by the build
+// manifests. Exact-match routing (no directory serving) keeps path traversal impossible.
 const BUNDLE = Object.freeze({ file: ['public', 'stack3d.js'], type: 'text/javascript; charset=utf-8', cache: 'no-cache' });
 const BASE_ASSETS = Object.freeze({ '/public/stack3d.js': BUNDLE, '/assets/stack3d.js': BUNDLE });
-const FONT_CACHE = 'public, max-age=31536000, immutable';
+const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 
-// The font URLs are content-versioned by the build, so the exact names are read from the committed manifest at startup.
-// Matching only the generated basename shape means a damaged or hand-edited manifest still cannot open a directory.
+function readManifest(root, name) {
+  try { return JSON.parse(fs.readFileSync(path.join(root, 'public', name), 'utf8')); }
+  catch (error) {
+    // A custom root may be a fixture without generated assets; the deployed tree may not silently lose them.
+    if (path.resolve(root) === path.resolve(PROJECT_ROOT)) throw new Error(`public/${name} is missing or invalid: ${error.message}`);
+    return null;
+  }
+}
+
+// The font and typeface URLs are content-versioned by the build, so the exact names are read from the committed manifests at
+// startup. Matching only the generated basename shape means a damaged or hand-edited manifest still cannot open a directory.
 function assetsFor(root) {
   const assets = { ...BASE_ASSETS };
-  let manifest;
-  try { manifest = JSON.parse(fs.readFileSync(path.join(root, 'public', 'fonts.json'), 'utf8')); }
-  catch (error) {
-    // A custom root may be a fixture without fonts; the deployed tree may not silently lose its fonts.
-    if (path.resolve(root) === path.resolve(PROJECT_ROOT)) throw new Error(`public/fonts.json is missing or invalid: ${error.message}`);
-    return assets;
-  }
-  if (!Array.isArray(manifest && manifest.fonts) && path.resolve(root) === path.resolve(PROJECT_ROOT)) {
+  const fonts = readManifest(root, 'fonts.json');
+  if (path.resolve(root) === path.resolve(PROJECT_ROOT) && !Array.isArray(fonts && fonts.fonts)) {
     throw new Error('public/fonts.json is missing its fonts list');
   }
-  for (const font of Array.isArray(manifest && manifest.fonts) ? manifest.fonts : []) {
+  for (const font of Array.isArray(fonts && fonts.fonts) ? fonts.fonts : []) {
     if (!font || typeof font.file !== 'string' || !/^[a-z0-9][a-z0-9-]*\.woff2$/.test(font.file)) continue;
     assets[`/public/fonts/${font.file}`] = {
-      file: ['public', 'fonts', font.file], type: 'font/woff2', cache: FONT_CACHE, compress: false
+      file: ['public', 'fonts', font.file], type: 'font/woff2', cache: IMMUTABLE_CACHE, compress: false
+    };
+  }
+  const typefaces = readManifest(root, 'typefaces.json');
+  if (path.resolve(root) === path.resolve(PROJECT_ROOT) && !Array.isArray(typefaces && typefaces.typefaces)) {
+    throw new Error('public/typefaces.json is missing its typefaces list');
+  }
+  for (const face of Array.isArray(typefaces && typefaces.typefaces) ? typefaces.typefaces : []) {
+    if (!face || typeof face.file !== 'string' || !/^[a-z0-9][a-z0-9-]*\.json$/.test(face.file)) continue;
+    assets[`/public/typefaces/${face.file}`] = {
+      file: ['public', 'typefaces', face.file], type: 'application/json; charset=utf-8', cache: IMMUTABLE_CACHE
     };
   }
   return assets;

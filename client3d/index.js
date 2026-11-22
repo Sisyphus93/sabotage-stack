@@ -9,8 +9,9 @@ import { createOnceSoon } from './once-soon.js';
 import { installTactileUi } from './tactile.js';
 import { installIconTurn } from './icon-turn.js';
 import { installPixelUi } from './pixel-ui.js';
+import { loadFace, faceReady } from './text3d.js';
 
-function boot() {
+async function boot() {
   const host = window.SabotageStackHost;
   if (!host || window.__stack3d) return;
   const params = new URLSearchParams(window.location.search);
@@ -81,8 +82,22 @@ function boot() {
   }
 
   host.snapshot = (target, data) => (stage ? snapshotTower(stage, target, data) : false);
+  // The first scene must never show a blank or half-named headline: fetch just the active theme's face before the stage is
+  // built. A failed fetch resolves false (loadFace never rejects), and the layer still starts with that theme's non-text scene.
+  if (supported) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const theme = host.view().theme;
+      if (faceReady(theme)) break;
+      await loadFace(theme);
+      if (host.view().theme === theme) break;
+    }
+    // If the visitor kept changing theme, wait once more for whatever is active now; loadFace times out on its own.
+    const active = host.view().theme;
+    if (!faceReady(active)) await loadFace(active);
+  }
   if (!supported || !enable()) showUnavailable();
   window.__stack3dBoot = { enable, disable, supported };
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+const start = () => boot().catch(error => console.warn('3D could not start.', error));
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

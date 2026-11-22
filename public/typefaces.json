@@ -1,0 +1,28 @@
+{
+  "typefaces": [
+    {
+      "key": "paper",
+      "family": "Fraunces",
+      "url": "/public/typefaces/typeface-paper-d10eceb297f1e4df.json",
+      "file": "typeface-paper-d10eceb297f1e4df.json",
+      "bytes": 41432,
+      "sha256": "d10eceb297f1e4df13079604932ad81ebdb743f5f12d83994e4be4b9478f908b"
+    },
+    {
+      "key": "sunset",
+      "family": "Press Start 2P",
+      "url": "/public/typefaces/typeface-sunset-aab6b3268b60a471.json",
+      "file": "typeface-sunset-aab6b3268b60a471.json",
+      "bytes": 13799,
+      "sha256": "aab6b3268b60a471704920f381b449de348d25927be69866fd79fe26c499439b"
+    },
+    {
+      "key": "primetime",
+      "family": "Alfa Slab One",
+      "url": "/public/typefaces/typeface-primetime-27b8ef75bfb08c7c.json",
+      "file": "typeface-primetime-27b8ef75bfb08c7c.json",
+      "bytes": 15929,
+      "sha256": "27b8ef75bfb08c7c633ad22ba02dc1b39a20b70ab733b3446c2921b0d0bc07c3"
+    }
+  ]
+}

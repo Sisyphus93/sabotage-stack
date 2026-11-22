@@ -109,6 +109,89 @@ test('every theme loads its fonts from same-origin files and a repeat navigation
   } finally { await context.close(); }
 });
 
+test('the first scene fetches only its own theme face; a switch fetches the other once and keeps it', async ({ browser }) => {
+  const context = await browser.newContext();
+  const errors = [];
+  await context.addInitScript(() => {
+    window.cspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => window.cspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
+    window.addEventListener('unhandledrejection', event => window.cspViolations.push({ rejection: String(event.reason) }));
+  });
+  const page = await context.newPage();
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const faces = () => page.evaluate(() => performance.getEntriesByType('resource')
+    .map(entry => entry.name).filter(name => name.includes('/public/typefaces/')));
+  const count = async key => (await faces()).filter(name => name.includes(`typeface-${key}-`)).length;
+  const switchTo = async theme => {
+    await page.evaluate(name => window.SabotageStack.setTheme(name), theme);
+    await expect.poll(() => page.evaluate(() => window.__stack3d?.theme)).toBe(theme);
+    await expect.poll(() => page.evaluate(() => {
+      const title = window.__stack3d?.title;
+      return Boolean(title?.mesh && title.mesh.count > 100 && title.letters.length > 0);
+    })).toBe(true);
+  };
+  try {
+    await page.goto(`${origin}/?tier=low&scale=0.5`);
+    await expect(page.locator('#stage3d')).toBeAttached();
+    await expect.poll(() => page.evaluate(() => window.__stack3d?.theme)).toBe('paper');
+    // The stage is built only after the active face has arrived, so the first scene is complete and the other faces are untouched.
+    expect(await faces()).toHaveLength(1);
+    expect(await count('paper')).toBe(1);
+    expect(await count('sunset')).toBe(0);
+    expect(await count('primetime')).toBe(0);
+    // The switch checks are about fetching and building text, not drawing on a software GPU; keep the frame loop cheap.
+    await page.evaluate(() => { window.__stack3dNoRender = true; });
+
+    await switchTo('sunset');
+    await expect.poll(() => count('sunset')).toBe(1);
+    await switchTo('primetime');
+    await expect.poll(() => count('primetime')).toBe(1);
+    // Going back uses the in-memory face: no second request.
+    await switchTo('sunset');
+    await switchTo('paper');
+    await expect.poll(() => count('paper')).toBe(1);
+    await expect.poll(() => count('sunset')).toBe(1);
+    await expect.poll(() => count('primetime')).toBe(1);
+    expect(await faces()).toHaveLength(3);
+
+    expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally { await context.close(); }
+});
+
+test('a failed typeface fetch leaves the 3D layer running without errors or an unhandled rejection', async ({ browser }) => {
+  const context = await browser.newContext();
+  const pageErrors = [];
+  await context.addInitScript(() => {
+    window.cspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => window.cspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
+    window.addEventListener('unhandledrejection', event => window.cspViolations.push({ rejection: String(event.reason) }));
+  });
+  const page = await context.newPage();
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.route('**/public/typefaces/*.json', route => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }));
+  try {
+    await page.goto(`${origin}/?tier=low&scale=0.5`);
+    await expect(page.locator('#stage3d')).toBeAttached();
+    await expect(page.locator('#webgl-required')).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => Boolean(window.__stack3d))).toBe(true);
+    await page.evaluate(() => { window.__stack3dNoRender = true; });
+    const advanced = await page.evaluate(async () => {
+      const stage = window.__stack3d; const before = stage.time;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return stage.time >= before && !stage.disposed;
+    });
+    expect(advanced).toBe(true);
+    // The theme still switches and its non-text scene renders; only the lettering is omitted.
+    await page.evaluate(() => window.SabotageStack.setTheme('sunset'));
+    await expect.poll(() => page.evaluate(() => window.__stack3d?.theme)).toBe('sunset');
+    await expect(page.locator('#webgl-required')).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+    expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
+  } finally { await context.close(); }
+});
+
 test('real 3D solo client can drop a Mover without CSP violations', async ({ browser }) => {
   const client = await openGame(browser);
   try {

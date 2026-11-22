@@ -13,6 +13,9 @@ const ROOT = path.join(__dirname, '..');
 const HTML_PATH = path.join(ROOT, 'sabotage-stack.html');
 const html = fs.readFileSync(HTML_PATH, 'utf8');
 const Core = require('../shared/game-core.js');
+const { BUNDLE_BUDGET, bundleSizes, withinBudget } = require('../scripts/build-client');
+const typefaces = require('../scripts/typefaces');
+const typefaceManifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'public', 'typefaces.json'), 'utf8'));
 const load = name => import(path.join(ROOT, 'client3d', name));
 
 let boot = null; let skipReason = null;
@@ -25,6 +28,26 @@ describe('build gates', () => {
     const result = run('build-client.js', '--check');
     assert.equal(result.status, 0, result.stdout + result.stderr);
   });
+  test('build-client --check prints the raw, gzip and brotli sizes and shares its budget with the tests', () => {
+    const result = run('build-client.js', '--check');
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /public\/stack3d\.js: \d+ B raw, \d+ B gzip, \d+ B brotli/);
+    const sizes = bundleSizes();
+    assert.ok(withinBudget(sizes), `${sizes.raw} B raw / ${sizes.gzip} B gzip over ${BUNDLE_BUDGET.raw} / ${BUNDLE_BUDGET.gzip}`);
+    assert.deepEqual({ ...BUNDLE_BUDGET }, { raw: 950_000, gzip: 270_000 });
+    assert.equal(withinBudget({ raw: BUNDLE_BUDGET.raw, gzip: BUNDLE_BUDGET.gzip }), true);
+    assert.equal(withinBudget({ raw: BUNDLE_BUDGET.raw + 1, gzip: 0 }), false);
+    assert.equal(withinBudget({ raw: 0, gzip: BUNDLE_BUDGET.gzip + 1 }), false);
+  });
+  test('the committed bundle carries typeface URLs but no glyph outline data', () => {
+    const bundle = fs.readFileSync(path.join(ROOT, 'public', 'stack3d.js'), 'utf8');
+    assert.match(bundle, /\/public\/typefaces\/typeface-paper-[0-9a-f]{16}\.json/);
+    for (const name of ['paper', 'sunset', 'primetime']) {
+      const face = JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', `typeface-${name}.json`), 'utf8'));
+      for (const ch of ['S', 'A', '1']) assert.ok(face.glyphs[ch] && face.glyphs[ch].o, `${name} has a real outline for ${ch}`);
+      assert.ok(!bundle.includes(face.glyphs.S.o), `${name} glyph outlines leaked into the bundle`);
+    }
+  });
   test('the committed bundle is the minified production build (a --dev build is several MB and must never be committed)', () => {
     const file = path.join(ROOT, 'public', 'stack3d.js'); const head = fs.readFileSync(file, 'utf8').slice(0, 160);
     assert.match(head, /^\/\* stack3d-source-hash: [0-9a-f]{64} mode=min \*\/\n/);
@@ -33,6 +56,41 @@ describe('build gates', () => {
   test('the committed 3D typefaces still match the fonts in fonts/ (run npm run typeface)', () => {
     const result = run('make-typeface.js', '--check');
     assert.equal(result.status, 0, result.stdout + result.stderr);
+  });
+  test('the generated typeface manifest, URL map and public copies are current', () => {
+    assert.equal(typefaces.check(), true);
+    assert.deepEqual(typefaceManifest.typefaces.map(face => face.key), ['paper', 'sunset', 'primetime']);
+    const urls = JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', 'typeface-urls.json'), 'utf8'));
+    for (const face of typefaceManifest.typefaces) assert.equal(urls[face.key], face.url);
+  });
+  test('the typeface build is idempotent and rejects changed faces until rebuilt', () => {
+    const os = require('node:os');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'stack-typefaces-'));
+    try {
+      fs.cpSync(path.join(ROOT, 'client3d', 'assets'), path.join(root, 'client3d', 'assets'), { recursive: true });
+      fs.mkdirSync(path.join(root, 'public'));
+      typefaces.build({ root });
+      assert.equal(typefaces.check({ root }), true);
+      const firstManifest = fs.readFileSync(path.join(root, 'public', 'typefaces.json'), 'utf8');
+      const firstUrls = fs.readFileSync(path.join(root, 'client3d', 'assets', 'typeface-urls.json'), 'utf8');
+      const firstFiles = fs.readdirSync(path.join(root, 'public', 'typefaces'));
+      typefaces.build({ root });
+      assert.equal(fs.readFileSync(path.join(root, 'public', 'typefaces.json'), 'utf8'), firstManifest);
+      assert.equal(fs.readFileSync(path.join(root, 'client3d', 'assets', 'typeface-urls.json'), 'utf8'), firstUrls);
+
+      const changed = path.join(root, 'client3d', 'assets', 'typeface-paper.json');
+      fs.writeFileSync(changed, `${fs.readFileSync(changed, 'utf8')} `);
+      assert.equal(typefaces.check({ root }), false, 'a changed face is stale');
+      typefaces.build({ root });
+      assert.equal(typefaces.check({ root }), true);
+      assert.notEqual(fs.readFileSync(path.join(root, 'client3d', 'assets', 'typeface-urls.json'), 'utf8'), firstUrls, 'the URL map gets a new content version');
+      const rebuilt = fs.readdirSync(path.join(root, 'public', 'typefaces'));
+      assert.ok(rebuilt.some(name => name.startsWith('typeface-paper-') && !firstFiles.includes(name)), 'the changed face gets a new content-versioned file');
+      assert.ok(!rebuilt.includes(firstFiles.find(name => name.startsWith('typeface-paper-'))), 'the superseded generated file is removed');
+
+      fs.appendFileSync(path.join(root, 'public', 'typefaces', rebuilt.find(name => name.startsWith('typeface-paper-'))), Buffer.from([0]));
+      assert.equal(typefaces.check({ root }), false, 'a damaged public copy is stale too');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
   test('the page loads the bundle after its own script and the layer is optional (defer, relative URL)', () => {
     assert.match(html, /<\/script>\s*<script src="public\/stack3d\.js" defer><\/script>\s*<\/body>/);
@@ -84,9 +142,40 @@ describe('serving the bundle', () => {
       assert.equal(br.headers.vary, 'Accept-Encoding');
     });
   });
+  test('each generated typeface is served as immutable JSON that revalidates to 304', async () => {
+    await withServer(async (get, head) => {
+      for (const face of typefaceManifest.typefaces) {
+        const file = fs.readFileSync(path.join(ROOT, 'public', 'typefaces', face.file));
+        const res = await get(face.url, { 'accept-encoding': 'br, gzip' });
+        assert.equal(res.status, 200, face.url);
+        assert.equal(res.headers['content-type'], 'application/json; charset=utf-8');
+        assert.equal(res.headers['cache-control'], 'public, max-age=31536000, immutable');
+        assert.equal(res.headers['x-content-type-options'], 'nosniff');
+        assert.equal(res.headers['content-encoding'], 'br');
+        assert.ok(zlib.brotliDecompressSync(res.body).equals(file));
+        assert.ok(res.headers.etag);
+
+        const plain = await get(face.url);
+        assert.equal(plain.status, 200);
+        assert.equal(plain.headers['content-encoding'], undefined);
+        assert.ok(plain.body.equals(file));
+
+        const again = await get(face.url, { 'if-none-match': res.headers.etag });
+        assert.equal(again.status, 304);
+        assert.equal(again.body.length, 0);
+        assert.equal(again.headers.etag, res.headers.etag);
+
+        const probe = await head(face.url);
+        assert.equal(probe.status, 200);
+        assert.equal(probe.body.length, 0);
+        assert.equal(probe.headers['content-length'], String(file.length));
+      }
+    });
+  });
   test('only the listed assets are served: traversal, sibling files and directories are 404', async () => {
     await withServer(async get => {
-      for (const target of ['/public/', '/public', '/public/../server.js', '/assets/../package.json', '/public/stack3d.js/', '/public/other.js', '/client3d/index.js', '/node_modules/three/package.json', '/%2e%2e/server.js']) {
+      const firstFace = typefaceManifest.typefaces[0].file;
+      for (const target of ['/public/', '/public', '/public/../server.js', '/assets/../package.json', '/public/stack3d.js/', '/public/other.js', '/client3d/index.js', '/node_modules/three/package.json', '/%2e%2e/server.js', '/public/typefaces/', '/public/typefaces', '/public/typefaces/other.json', '/public/typefaces.json', '/public/typefaces/../typefaces.json', '/public/typefaces/%2e%2e/typefaces.json', `/public/typefaces/${firstFace}/`, `/public/typefaces/${firstFace}.json`]) {
         const res = await get(target); assert.ok([404, 400].includes(res.status), `${target} -> ${res.status}`);
       }
     });
@@ -133,6 +222,48 @@ describe('parity with the page', () => {
 });
 
 describe('pure logic', () => {
+  test('a face that has not loaded yields no text and is never mistaken for a face with no glyphs', async () => {
+    const { faceReady, faceInfo, hasGlyphs, textGeometry, layoutWord, installFace } = await load('text3d.js');
+    assert.equal(faceReady('paper'), false);
+    assert.equal(faceInfo('paper'), null);
+    assert.equal(hasGlyphs('paper', 'ADA'), true, 'a player name is not stripped while the face is in flight');
+    assert.equal(textGeometry('paper', 'SABOTAGE').width, 0);
+    assert.deepEqual(layoutWord('paper', 'SABOTAGE'), { letters: [], total: 0 });
+    const { brickWord } = await load('brick-layout.js');
+    assert.deepEqual(brickWord('paper', 'SABOTAGE'), { bricks: [], letters: [], width: 0, capHeight: 112, rowHeight: 112 / 21, brickLength: 0 });
+    installFace('paper', JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', 'typeface-paper.json'), 'utf8')));
+    assert.equal(faceReady('paper'), true);
+    assert.equal(faceReady('sunset'), false, 'another theme is not ready just because Paper is');
+    assert.equal(faceInfo('sunset'), null, 'a loading theme never borrows Paper lettering');
+    assert.equal(textGeometry('sunset', 'SABOTAGE').width, 0);
+  });
+  test('each lazy face is fetched once from its generated URL and then feeds the synchronous text functions', async () => {
+    const text = await load('text3d.js');
+    const urls = JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', 'typeface-urls.json'), 'utf8'));
+    const sources = Object.fromEntries(typefaceManifest.typefaces.map(face => [face.url, face.key]));
+    const calls = [];
+    const realFetch = global.fetch;
+    global.fetch = async url => {
+      calls.push(url);
+      const key = sources[url];
+      return {
+        ok: Boolean(key), status: key ? 200 : 404,
+        json: async () => JSON.parse(fs.readFileSync(path.join(ROOT, 'client3d', 'assets', `typeface-${key}.json`), 'utf8'))
+      };
+    };
+    try {
+      assert.equal(await text.loadFace('sunset'), true);
+      assert.equal(text.faceReady('sunset'), true);
+      assert.equal(await text.loadFace('sunset'), true, 'a loaded face is reused');
+      assert.equal(await text.loadFace('primetime'), true);
+      assert.deepEqual(calls, [urls.sunset, urls.primetime], 'one request per face, from the build URL map');
+      const { brickWord } = await load('brick-layout.js');
+      for (const theme of ['paper', 'sunset', 'primetime']) {
+        assert.ok(brickWord(theme, 'SABOTAGE', { capHeight: 112 }).bricks.length > 100, `${theme}: the loaded face builds the title`);
+        assert.equal(text.hasGlyphs(theme, "ADA O'NEIL 3"), true);
+      }
+    } finally { global.fetch = realFetch; }
+  });
   test('rng is deterministic and spread; damp converges without overshoot; springs settle', async () => {
     const { rng, damp, Spring, clamp, smoothstep, mod } = await load('util.js');
     const a = rng(42); const b = rng(42); const seq = Array.from({ length: 6 }, () => a());

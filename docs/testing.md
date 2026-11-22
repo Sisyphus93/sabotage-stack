@@ -4,9 +4,9 @@ Use the Node version in `.nvmrc`, then run `npm ci`.
 
 - `npm test`: browser-free Node/jsdom tests, including generated-artifact freshness checks.
 - `node --test test/csp.test.js`: HTTP security headers, CSP hash freshness and mutation regressions.
-- `npm run build`: regenerate the committed font copies/page font faces, the 3D bundle and `public/csp-hashes.json` after editing `fonts/`, the client or inline HTML scripts/styles.
+- `npm run build`: regenerate the committed font copies/page font faces, the content-versioned 3D typeface assets and their manifests, the 3D bundle and `public/csp-hashes.json` after editing `fonts/`, the client or inline HTML scripts/styles.
 - `npm run typeface`: regenerate `client3d/assets/typeface-*.json` after editing the fonts those 3D lettering assets use.
-- `npm run build:check`: reject stale generated artifacts without writing them.
+- `npm run build:check`: reject stale generated artifacts without writing them; also prints the bundle's raw/gzip/brotli sizes and fails when it is over the shared raw/gzip budget.
 - `npm run benchmark:publication`: time the full room-publication path at 20, 80 and 320 history entries per tower; exits non-zero above the 2x scaling smoke target.
 
 ## Chromium smoke tests
