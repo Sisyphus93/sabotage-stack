@@ -187,7 +187,8 @@ export class Engine {
     const spots = post.spots || [];
     for (let i = 0; i < 6; i += 1) {
       const sp = spots[i]; const target = b.uSpot.value[i]; const rect = b.uSpotRect.value[i];
-      if (sp) { target.set(sp.x, sp.y, sp.r, 1); rect.set(sp.rect[0], sp.rect[1], sp.rect[2], sp.rect[3]); } else target.w = 0;
+      // w: 1 a circle of light, 2 the Macro Zoom loupe (the post shader frames it with a rim and a handle)
+      if (sp) { target.set(sp.x, sp.y, sp.r, sp.loupe ? 2 : 1); rect.set(sp.rect[0], sp.rect[1], sp.rect[2], sp.rect[3]); } else target.w = 0;
     }
     this.composer.render(dt);
   }

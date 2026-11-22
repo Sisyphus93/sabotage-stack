@@ -372,3 +372,87 @@ test('the game surface (a role=button div) is the scene: a right-drag turns the 
     assert.equal(r.interaction.dragging, false, 'a press on a real button is left to the button');
   } finally { r.close(); }
 });
+
+// ---- A held View: an Effect (Macro Zoom) takes the View over, and the visitor gets theirs back afterwards.
+
+const near = (actual, expected, label) => assert.ok(Math.abs(actual - expected) < 0.001, `${label}: ${actual} is not ${expected}`);
+async function turnedAndZoomed(options = {}) {
+  const r = await rig({ mode: 'play', ...options });
+  r.fire('keydown', { key: 'ArrowRight' }); r.fire('keydown', { key: '+' }); r.settle();
+  const before = r.interaction.view; assert.ok(before.yaw > 0.3 && before.zoom > 1.2, 'the visitor has a View of their own');
+  return { r, before };
+}
+
+test('a hold eases the View back to default, and releasing it gives the visitor their View back', async () => {
+  const { r, before } = await turnedAndZoomed();
+  try {
+    r.interaction.hold('Macro Zoom');
+    r.update(0.4); assert.ok(r.interaction.view.yaw > 0.01 && r.interaction.view.yaw < before.yaw, 'eased, not snapped');
+    r.settle(); near(r.interaction.view.yaw, 0, 'held yaw'); near(r.interaction.view.zoom, 1, 'held zoom');
+    r.interaction.release();
+    r.settle(); near(r.interaction.view.yaw, before.yaw, 'restored yaw'); near(r.interaction.view.zoom, before.zoom, 'restored zoom');
+  } finally { r.close(); }
+});
+
+test('the stage may hold every frame: the ease still lands on the default in time, and one release restores', async () => {
+  const { r, before } = await turnedAndZoomed();
+  try {
+    for (let i = 0; i < 18; i++) { r.interaction.hold('Macro Zoom'); r.update(0.05); }
+    near(r.interaction.view.yaw, 0, 'held yaw after 0.9 s'); near(r.interaction.view.zoom, 1, 'held zoom after 0.9 s');
+    r.interaction.release(); r.interaction.release(); r.settle();
+    near(r.interaction.view.yaw, before.yaw, 'restored yaw');
+  } finally { r.close(); }
+});
+
+test('while held, the wheel, a right-drag, the keys and the buttons leave the View alone, and the wheel still never scrolls the page', async () => {
+  const { r } = await turnedAndZoomed();
+  try {
+    r.interaction.hold('Macro Zoom'); r.settle();
+    assert.equal(r.fire('wheel', { deltaY: 300 }).defaultPrevented, true, 'the wheel stays with the scene');
+    r.fire('pointerdown', { button: 2, buttons: 2 }); r.fire('pointermove', { clientX: 260, clientY: 40, buttons: 2 }); r.fire('pointerup', { button: 2, clientX: 260, clientY: 40 });
+    for (const key of ['ArrowLeft', 'ArrowRight', '+', '-']) r.fire('keydown', { key });
+    for (const button of r.doc.querySelectorAll('#orbit-hud-play button')) button.click();
+    r.settle();
+    assert.deepEqual(r.interaction.view, { yaw: 0, pitch: 0, zoom: 1, rotated: false, zoomed: false });
+  } finally { r.close(); }
+});
+
+test('the play controls say who holds the View, and leaving the scene drops the hold without restoring anything', async () => {
+  const { r } = await turnedAndZoomed();
+  try {
+    const buttons = () => [...r.doc.querySelectorAll('#orbit-hud-play button')];
+    r.interaction.hold('Macro Zoom');
+    for (const button of buttons()) {
+      assert.equal(button.getAttribute('aria-disabled'), 'true');
+      assert.match(button.getAttribute('aria-label'), /Held by Macro Zoom/); assert.match(button.title, /Held by Macro Zoom/);
+    }
+    assert.ok(r.doc.getElementById('orbit-hud-play').classList.contains('is-held'));
+    r.interaction.release();
+    for (const button of buttons()) { assert.equal(button.hasAttribute('aria-disabled'), false); assert.doesNotMatch(button.title, /Held/); }
+    r.interaction.hold('Macro Zoom'); r.interaction.setContext({ mode: 'results' });
+    r.interaction.release(); r.settle();
+    assert.deepEqual(r.interaction.view, { yaw: 0, pitch: 0, zoom: 1, rotated: false, zoomed: false });
+    r.fire('keydown', { key: 'ArrowRight' }); r.settle(); assert.ok(r.interaction.view.yaw > 0.3, 'the next scene is free to turn');
+  } finally { r.close(); }
+});
+
+test('a held View never idles back to the default on its own', async () => {
+  const r = await rig({ mode: 'hero' });
+  try {
+    r.interaction.hold('Macro Zoom'); r.settle();
+    for (let i = 0; i < 700; i++) r.update(.05, { idleReset: true });
+    assert.equal(r.interaction.idleFor, 0);
+    r.interaction.release(); r.fire('keydown', { key: 'ArrowRight' }); r.settle();
+    assert.ok(r.interaction.view.yaw > 0.3);
+  } finally { r.close(); }
+});
+
+test('under Reduced Motion the hold and the hand-back are instant, turn included', async () => {
+  const { r, before } = await turnedAndZoomed({ reduced: true });
+  try {
+    r.interaction.hold('Macro Zoom'); r.update(0.016);
+    near(r.interaction.view.yaw, 0, 'held yaw on the next frame'); near(r.interaction.view.zoom, 1, 'held zoom on the next frame');
+    r.interaction.release(); r.update(0.016);
+    near(r.interaction.view.yaw, before.yaw, 'restored yaw on the next frame'); near(r.interaction.view.zoom, before.zoom, 'restored zoom on the next frame');
+  } finally { r.close(); }
+});

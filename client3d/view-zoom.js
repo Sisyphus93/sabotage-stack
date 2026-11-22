@@ -60,10 +60,14 @@ export class ZoomController {
   }
 
   // Back to the default view, over `duration` seconds (at once under Reduced Motion, and when it is already there). The next wheel event takes over again.
-  reset(duration = 0.9) {
-    this.target = 1;
-    if (this.reduced || !(duration > 0) || Math.abs(Math.log(this.value)) < 0.002) { this.value = 1; this.tween = null; return; }
-    this.tween = { t: 0, dur: duration, from: Math.log(this.value) };
+  reset(duration = 0.9) { this.tweenTo(1, duration); }
+
+  // To a given factor over `duration` seconds, the same way (a held View handing the visitor's own back).
+  tweenTo(factor, duration = 0.9) {
+    const to = clamp(Number.isFinite(factor) && factor > 0 ? factor : 1, this.min, this.max);
+    this.target = to;
+    if (this.reduced || !(duration > 0) || Math.abs(Math.log(this.value / to)) < 0.002) { this.value = to; this.tween = null; return; }
+    this.tween = { t: 0, dur: duration, from: Math.log(this.value), to: Math.log(to) };
   }
 
   // Jumps straight back (leaving the scene).
@@ -74,8 +78,8 @@ export class ZoomController {
     if (this.reduced) { this.value = this.target; this.tween = null; return; }
     if (this.tween) {
       const tw = this.tween; tw.t += Math.min(dt, 0.05); const k = clamp(tw.t / tw.dur);
-      this.value = Math.exp(tw.from * (1 - easeInOutCubic(k)));
-      if (k >= 1) { this.tween = null; this.value = 1; }
+      this.value = Math.exp(tw.from + (tw.to - tw.from) * easeInOutCubic(k));
+      if (k >= 1) { this.tween = null; this.value = this.target; }
       return;
     }
     // eased in the logarithm, so a zoom in and the zoom out that undoes it take the same time
