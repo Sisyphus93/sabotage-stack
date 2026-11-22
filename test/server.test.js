@@ -566,9 +566,10 @@ describe('Room-code guessing limit (A-03)', () => {
     assert.equal(a.message, b.message);
   });
 
-  test('with no client key the single shared bucket keeps the old fail-safe behaviour', () => {
+  test('with no client key the shared backstop still stops reconnecting from resetting the budget', () => {
     let now = 1_000_000;
-    const rm = new RoomManager({ now: () => now, random: rng(11), joinFailureLimit: 2, joinFailureWindowMs: 60_000 });
+    // Each connection stays under its own limit; only the shared keyless bucket can stop this pattern.
+    const rm = new RoomManager({ now: () => now, random: rng(11), sharedJoinFailureLimit: 2, connectionJoinFailureLimit: 60, joinFailureWindowMs: 60_000 });
     const code = roomWithHost(rm);
     for (let i = 0; i < 2; i++) {
       const socket = mk(); rm.connect(socket);
@@ -577,6 +578,9 @@ describe('Room-code guessing limit (A-03)', () => {
     const player = mk(); rm.connect(player);
     assert.equal(attempt(rm, player, { type: 'room.join', code, name: 'Guest' }).code, 'JOIN_RATE_LIMITED');
     assert.equal(rm.rooms.get(code).players.length, 0);
+    now += 60_000;
+    attempt(rm, player, { type: 'room.join', code, name: 'Guest' });
+    assert.equal(rm.rooms.get(code).players.length, 1, 'the backstop recovers after the window');
   });
 
   test('the failure map stays bounded when failures arrive from many keys', () => {
@@ -624,7 +628,7 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
 
   test('a client key is capped at ten creations per ten minutes', () => {
     let now = 1_000_000;
-    const rm = new RoomManager({ now: () => now, random: rng(25), idleLimitMs: 1e12 });
+    const rm = new RoomManager({ now: () => now, random: rng(25), idleLimitMs: 1e12, roomCreateBurst: 100 });
     const made = [];
     // each attempt closes the previous room, so the concurrent cap never applies and only the rate is measured
     for (let i = 0; i < 11; i += 1) {
@@ -640,7 +644,8 @@ describe('Room table is not holdable by unauthenticated clients (P0-2)', () => {
   });
 
   test('no client key means no per-key cap, as before', () => {
-    const rm = new RoomManager({ now: () => 1_000_000, random: rng(22), idleLimitMs: 1e12, maxRooms: 50 });
+    // The server-wide creation bucket (#53) is raised here so only the per-key caps are under test.
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(22), idleLimitMs: 1e12, maxRooms: 50, roomCreateBurst: 100 });
     for (let i = 0; i < 20; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.create', mode: 'teamwork' })); }
     assert.equal(rm.rooms.size, 20);
     assert.ok([...rm.rooms.values()].every(room => room.ownerKey === null));
@@ -919,5 +924,197 @@ describe('Spectator role (A-09)', () => {
     rm.disconnect(viewers[0]); now += 120_000; rm.tick();
     rm.receive(viewers[16], JSON.stringify({ type: 'room.join', code: room.code, spectate: true }));
     assert.ok(viewers[16].sent.some(message => message.type === 'room.joined'));
+  });
+});
+
+describe('Damage limits without a client key (#53)', () => {
+  const mk = () => ({ readyState: 1, sent: [], closed: null, send(raw) { this.sent.push(JSON.parse(raw)); }, close(code, reason) { this.closed = { code, reason }; } });
+  const send = (rm, socket, message) => { rm.receive(socket, JSON.stringify(message)); return socket.sent.at(-1); };
+  const hostRoom = (rm, clientKey = null) => {
+    const host = mk(); rm.connect(host, { clientKey });
+    send(rm, host, { type: 'room.create', mode: 'teamwork' });
+    const created = host.sent.find(message => message.type === 'room.created');
+    return { host, code: created.code, token: created.resumeToken };
+  };
+
+  test('an Abandoned Room is swept once its host has been gone for abandonedLimitMs, and not before', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(81), abandonedLimitMs: 60_000 });
+    const { host, code } = hostRoom(rm);
+    rm.disconnect(host);
+    now += 59_999;
+    assert.deepEqual(rm.sweepIdle(), [], 'not before the limit');
+    now += 1;
+    assert.deepEqual(rm.sweepIdle(), [code]);
+    assert.equal(rm.rooms.has(code), false);
+  });
+
+  test('a room with a player or a connected spectator is not abandoned and keeps the ten-minute idle rule', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(82), abandonedLimitMs: 60_000, idleLimitMs: 10 * 60_000 });
+    const withPlayer = hostRoom(rm);
+    const player = mk(); rm.connect(player); send(rm, player, { type: 'room.join', code: withPlayer.code, name: 'P' });
+    rm.disconnect(player);
+    rm.disconnect(withPlayer.host);
+    const withSpectator = hostRoom(rm);
+    const viewer = mk(); rm.connect(viewer); send(rm, viewer, { type: 'room.join', code: withSpectator.code, spectate: true });
+    rm.disconnect(withSpectator.host);
+    now += 5 * 60_000;
+    assert.deepEqual(rm.sweepIdle(), []);
+    now += 5 * 60_000;
+    assert.deepEqual(rm.sweepIdle().sort(), [withPlayer.code, withSpectator.code].sort());
+  });
+
+  test('someone visiting an Abandoned Room restarts its limit from when they leave', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(88), abandonedLimitMs: 60_000 });
+    const { host, code } = hostRoom(rm);
+    rm.disconnect(host);
+    now += 50_000;
+    const viewer = mk(); rm.connect(viewer); send(rm, viewer, { type: 'room.join', code, spectate: true });
+    now += 5_000;
+    rm.disconnect(viewer);
+    now += 10_000;
+    assert.deepEqual(rm.sweepIdle(), [], 'sixty-five seconds after the host left, but only ten since the visitor did');
+    now += 50_000;
+    assert.deepEqual(rm.sweepIdle(), [code]);
+  });
+
+  test('a host that resumes before abandonedLimitMs keeps its room', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(83), abandonedLimitMs: 60_000 });
+    const { host, code, token } = hostRoom(rm);
+    rm.disconnect(host);
+    now += 30_000;
+    const back = mk(); rm.connect(back);
+    assert.equal(send(rm, back, { type: 'room.resume', code, resumeToken: token }).type, 'room.state');
+    assert.equal(back.sent.find(message => message.type === 'room.resumed').role, 'host');
+    now += 60_000;
+    assert.deepEqual(rm.sweepIdle(), []);
+    assert.equal(rm.rooms.has(code), true);
+  });
+
+  test('the server-wide creation bucket refuses with SERVER_BUSY once spent, refills, and a refusal costs nothing', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(84), idleLimitMs: 1e12, roomCreateBurst: 3, roomCreateRefillPerMinute: 60 });
+    const create = () => { const socket = mk(); rm.connect(socket); send(rm, socket, { type: 'room.create', mode: 'teamwork' }); return socket.sent.find(m => m.type === 'room.created' || m.type === 'error'); };
+    assert.deepEqual([create(), create(), create()].map(m => m.type), ['room.created', 'room.created', 'room.created']);
+    const refused = create();
+    assert.equal(refused.code, 'SERVER_BUSY');
+    assert.equal(refused.message, 'The server is hosting as many rooms as it can. Try again shortly.');
+    for (let i = 0; i < 5; i++) assert.equal(create().code, 'SERVER_BUSY', 'refusals keep being refused');
+    now += 1_000;
+    assert.equal(create().type, 'room.created', 'one token back after a second, not used up by the refusals');
+    assert.equal(create().code, 'SERVER_BUSY');
+    assert.equal(rm.rooms.size, 4);
+  });
+
+  test('the creation bucket also applies with a client key, and the per-key ROOM_LIMIT still triggers', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(85), idleLimitMs: 1e12, roomCreateBurst: 2, roomCreateRefillPerMinute: 60, roomsPerClient: 1 });
+    const create = key => { const socket = mk(); rm.connect(socket, { clientKey: key }); send(rm, socket, { type: 'room.create', mode: 'teamwork' }); return socket.sent.find(m => m.type === 'room.created' || m.type === 'error'); };
+    assert.equal(create('A').type, 'room.created');
+    assert.equal(create('A').code, 'ROOM_LIMIT', 'the per-key cap still applies');
+    assert.equal(create('B').type, 'room.created');
+    assert.equal(create('C').code, 'SERVER_BUSY', 'keyed clients share the server-wide bucket');
+  });
+
+  test('without a key one connection that runs out of join failures is refused and closed, and others can still join', () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(86), connectionJoinFailureLimit: 3 });
+    const { code } = hostRoom(rm);
+    const guesser = mk(); rm.connect(guesser);
+    const replies = [];
+    for (let i = 0; i < 4; i++) replies.push(send(rm, guesser, { type: 'room.join', code: 'ZZZZ', name: 'G' }).code);
+    assert.deepEqual(replies, ['ROOM_NOT_FOUND', 'ROOM_NOT_FOUND', 'ROOM_NOT_FOUND', 'JOIN_RATE_LIMITED']);
+    assert.equal(guesser.closed && guesser.closed.code, 1008, 'closed with the policy-violation code');
+    const neighbour = mk(); rm.connect(neighbour);
+    send(rm, neighbour, { type: 'room.join', code, name: 'N' });
+    assert.ok(neighbour.sent.some(message => message.type === 'room.joined'), 'another keyless connection is unaffected');
+    assert.equal(neighbour.closed, null);
+  });
+
+  for (const [label, options, clientKey] of [
+    ['the keyless shared bucket', { sharedJoinFailureLimit: 3 }, null],
+    ['a per-key bucket', { joinFailureLimit: 3 }, 'K']
+  ]) test(`a valid resume token works with ${label} exhausted; a wrong token gets the same refusal whether or not the room exists`, () => {
+    const rm = new RoomManager({ now: () => 1_000_000, random: rng(87), ...options });
+    const { host, code, token } = hostRoom(rm, clientKey);
+    const player = mk(); rm.connect(player, { clientKey }); send(rm, player, { type: 'room.join', code, name: 'P' });
+    const playerToken = player.sent.find(message => message.type === 'room.joined').resumeToken;
+    const viewer = mk(); rm.connect(viewer, { clientKey }); send(rm, viewer, { type: 'room.join', code, spectate: true });
+    const viewerToken = viewer.sent.find(message => message.type === 'room.joined').resumeToken;
+    // Three connections so the per-connection keyless limit is never what throttles here.
+    for (let i = 0; i < 3; i++) { const guesser = mk(); rm.connect(guesser, { clientKey }); send(rm, guesser, { type: 'room.join', code: 'ZZZZ', name: 'G' }); }
+    const probe = mk(); rm.connect(probe, { clientKey });
+    assert.equal(send(rm, probe, { type: 'room.join', code: 'ZZZZ', name: 'G' }).code, 'JOIN_RATE_LIMITED', 'the bucket is exhausted');
+    const wrong = send(rm, probe, { type: 'room.resume', code, resumeToken: 'A'.repeat(32) });
+    const unknown = send(rm, probe, { type: 'room.resume', code: 'ZZZZ', resumeToken: 'A'.repeat(32) });
+    const missing = send(rm, probe, { type: 'room.resume', code, resumeToken: '' });
+    assert.equal(wrong.code, 'JOIN_RATE_LIMITED');
+    assert.deepEqual(unknown, wrong, 'an unknown code answers exactly like a wrong token');
+    assert.deepEqual(missing, wrong);
+    for (const [socket, resumeToken, role] of [[host, token, 'host'], [player, playerToken, 'player'], [viewer, viewerToken, 'spectator']]) {
+      rm.disconnect(socket);
+      const back = mk(); rm.connect(back, { clientKey });
+      send(rm, back, { type: 'room.resume', code, resumeToken });
+      const resumed = back.sent.find(message => message.type === 'room.resumed');
+      assert.equal(resumed && resumed.role, role, `the ${role} resumes with its valid token`);
+    }
+  });
+
+  describe('over real WebSockets with no client key', () => {
+    const start = async () => {
+      const app = createGameServer({ onError: () => {}, clientKeyFor: () => null });
+      await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+      return { app, url: `ws://127.0.0.1:${app.server.address().port}/ws` };
+    };
+    const reply = (client, predicate, ms = 2000) => new Promise((resolve, reject) => {
+      const found = client.inbox.find(predicate); if (found) return resolve(found);
+      const timer = setTimeout(() => reject(new Error('no matching reply')), ms);
+      client.ws.on('message', raw => { const message = JSON.parse(raw); if (predicate(message)) { clearTimeout(timer); resolve(message); } });
+    });
+    const createOnce = async url => {
+      const client = await connect(url);
+      client.send({ type: 'room.create', mode: 'teamwork' });
+      const message = await reply(client, m => m.type === 'room.created' || m.type === 'error');
+      client.ws.terminate();
+      return message;
+    };
+
+    test('a connect, create, disconnect loop cannot fill the room table, and creation recovers within seconds', async () => {
+      const { app, url } = await start();
+      try {
+        const loopEnds = Date.now() + 1500;
+        let attempts = 0;
+        while (Date.now() < loopEnds) { await createOnce(url); attempts += 1; }
+        assert.ok(attempts > 50, `the loop ran (${attempts} attempts)`);
+        assert.ok(app.roomManager.rooms.size <= 15, `rooms.size stayed small: ${app.roomManager.rooms.size} of ${app.roomManager.maxRooms}`);
+        let created = null;
+        for (let i = 0; i < 10 && !created; i++) {
+          const message = await createOnce(url);
+          if (message.type === 'room.created') created = message; else await sleep(500);
+        }
+        assert.ok(created, 'a fresh client can create a room within a few seconds');
+      } finally { await app.close(); }
+    });
+
+    test('61 failed joins close that connection, and another connection can still join a real room', async () => {
+      const { app, url } = await start();
+      try {
+        const host = await connect(url);
+        host.send({ type: 'room.create', mode: 'teamwork' });
+        const { code } = await reply(host, m => m.type === 'room.created');
+        const guesser = await connect(url);
+        const closed = new Promise(resolve => { guesser.ws.on('close', closeCode => resolve(closeCode)); setTimeout(() => resolve('still open'), 3000); });
+        for (let i = 0; i < 61; i++) guesser.send({ type: 'room.join', code: 'ZZZZ', name: 'G' });
+        assert.equal(await closed, 1008);
+        assert.equal(guesser.inbox.filter(m => m.code === 'ROOM_NOT_FOUND').length, 60);
+        assert.equal(guesser.inbox.at(-1).code, 'JOIN_RATE_LIMITED');
+        const neighbour = await connect(url);
+        neighbour.send({ type: 'room.join', code, name: 'N' });
+        assert.equal((await reply(neighbour, m => m.type === 'room.joined' || m.type === 'error')).type, 'room.joined');
+        host.ws.terminate(); neighbour.ws.terminate();
+      } finally { await app.close(); }
+    });
   });
 });
