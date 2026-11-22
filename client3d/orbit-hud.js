@@ -72,6 +72,16 @@ export function createOrbitHud({ doc = document, storage = null, touch = false, 
       x = nx; y = ny; root.style.left = `${Math.round(nx)}px`; root.style.top = `${Math.round(ny)}px`;
     },
     setRotated(flag) { root.classList.toggle('is-rotated', Boolean(flag)); },
+    // An Effect holds the View: every control stays put, greyed, and says what is holding it. `reason` is its name; '' hands the controls back.
+    setHeld(reason = '') {
+      root.classList.toggle('is-held', Boolean(reason));
+      for (const el of row.querySelectorAll('button')) {
+        if (!el.dataset.label) el.dataset.label = el.getAttribute('aria-label');
+        const label = reason ? `${el.dataset.label} (Held by ${reason})` : el.dataset.label;
+        el.setAttribute('aria-label', label); el.title = label;
+        if (reason) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled');
+      }
+    },
     // After the first real drag the hint is no longer needed, here or on later visits.
     quiet() { root.classList.add('is-quiet'); rememberHint(storage, hintKey); },
     // The hint steps aside on its own after a while; it is only remembered for good once someone has actually dragged.

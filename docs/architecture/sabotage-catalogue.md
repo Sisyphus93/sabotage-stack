@@ -57,6 +57,11 @@ room replication) into the page.
 
 `test/sabotage-catalogue.test.js` fails until all of these exist.
 
+The visitor's **View** (see `GLOSSARY.md`) must never weaken an Effect. An
+Effect that works through the camera either acts on the final image (the post
+pass, like Earthquake's shake or Spotlight's veil) or holds the View while it
+lasts (`SceneInteraction.hold` / `release`, like Macro Zoom).
+
 ## Embed step
 
 `scripts/sync-shared.js` holds a manifest of the shared modules and their
@@ -77,7 +82,8 @@ copy, and `test/shared-sync.test.js` is the one freshness test.
 
 `test/fixtures/legacy-catalogue.js` freezes the page's three tables, its
 `announceVoteWinner`, the server's lists, and a full copy of the core from
-before the change. Do not update it. `test/sabotage-catalogue.test.js` checks:
+before the change. Do not update it: a Sabotage reworded on purpose since then
+goes in the test's `REWORDED` table instead. `test/sabotage-catalogue.test.js` checks:
 
 - the derived lists, page text, hints, short names and every vote winner
   announcement (each Sabotage in each mode) against the oracle;

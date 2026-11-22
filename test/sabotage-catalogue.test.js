@@ -12,6 +12,21 @@ const ROOT = path.join(__dirname, '..');
 const html = fs.readFileSync(path.join(ROOT, 'sabotage-stack.html'), 'utf8');
 const copy = value => JSON.parse(JSON.stringify(value));
 const load = name => import(path.join(ROOT, 'client3d', name));
+// Sabotages reworded on purpose after the snapshot was frozen. The snapshot itself stays untouched; every other field still has to match it.
+const REWORDED = Object.freeze({
+  zoom: Object.freeze({
+    hint: 'Only the landing zone is in sight.',
+    effect: 'A 1.85× loupe frames only the landing zone, 24 px beyond the top block’s edges; elsewhere the mover is out of sight, and the view can’t be turned or zoomed.'
+  })
+});
+const legacyHint = id => (REWORDED[id] ? REWORDED[id].hint : LegacyPage.VOTE_EFFECT_HINTS[id]);
+const legacyItem = item => (REWORDED[item.id] ? { ...item, effect: REWORDED[item.id].effect } : item);
+const legacyAnnouncement = (id, state) => {
+  const spoken = LegacyPage.announceVoteWinner(id, state);
+  if (!REWORDED[id]) return spoken;
+  const before = LegacyPage.SABOTAGES.find(item => item.id === id).effect;
+  return spoken.map(text => text.replace(before, REWORDED[id].effect));
+};
 
 function pageSlice(startMarker, endMarker) {
   const start = html.indexOf(startMarker);
@@ -46,12 +61,12 @@ test('the derived rule lists match the frozen ones', () => {
 test('the page view, hints and short names match the frozen page text', () => {
   const page = pageRig();
   assert.deepEqual(copy(page.SABOTAGES).map(item => item.id), [...Core.SABOTAGE_IDS]);
-  const legacy = new Map(LegacyPage.SABOTAGES.map(item => [item.id, copy(item)]));
+  const legacy = new Map(LegacyPage.SABOTAGES.map(item => [item.id, copy(legacyItem(item))]));
   assert.equal(page.SABOTAGES.length, legacy.size);
   for (const item of copy(page.SABOTAGES)) {
     const { hint, short, ...rest } = item;
     assert.deepEqual(rest, legacy.get(item.id), item.id);
-    assert.equal(hint, LegacyPage.VOTE_EFFECT_HINTS[item.id], `${item.id} hint`);
+    assert.equal(hint, legacyHint(item.id), `${item.id} hint`);
     assert.equal(short, LegacyPage.STAGE_VOTE_SHORT_NAMES[item.id], `${item.id} short name`);
   }
   for (const key of ['WIDTH', 'HEIGHT', 'BLOCK_H', 'BASELINE', 'MIN_WIDTH', 'PERFECT_WINDOW', 'PALETTE']) {
@@ -65,9 +80,22 @@ test('vote-winner announcements match the frozen page in every mode', () => {
   for (const id of [...Core.SABOTAGE_IDS, 'unknown', '']) for (const game of games) {
     page.game = game; page.spoken.length = 0;
     page.announceVoteWinner(id);
-    assert.deepEqual(copy(page.spoken), copy(LegacyPage.announceVoteWinner(id, { game })), `${id} in ${game && game.mode}`);
+    assert.deepEqual(copy(page.spoken), copy(legacyAnnouncement(id, { game })), `${id} in ${game && game.mode}`);
   }
   assert.ok(!/\.replace\(\/ for \d+ seconds/.test(html), 'no announcement strips timings out of the guide text');
+});
+
+test('Macro Zoom quotes its own tuning: the push and the loupe margin', () => {
+  assert.deepEqual(copy(Core.SABOTAGE_TUNING.zoom), { scale: 1.85, margin: 24 });
+  assert.equal(Core.sabotageRules('zoom'), REWORDED.zoom.effect);
+  assert.equal(Core.sabotageRules('zoom', { untilDrop: true }), `${REWORDED.zoom.effect} In Teamwork, until the affected player lands.`);
+});
+
+test('the Macro Zoom loupe circles the landing zone, the margin beyond each edge of the top block', () => {
+  assert.deepEqual(Core.macroZoomLens({ left: 100, right: 200, level: 5 }), { x: 150, level: 5, radius: 74 });
+  assert.deepEqual(Core.macroZoomLens({ left: 0, right: 360, level: 0 }), { x: 180, level: 0, radius: 204 });
+  assert.deepEqual(Core.macroZoomLens({ left: 40, right: 70, level: 12 }), { x: 55, level: 12, radius: 39 }, 'a narrow tower gets a narrow loupe');
+  assert.equal(Core.macroZoomLens(null), null);
 });
 
 test('sabotageRules derives its timings from the lifecycle durations', () => {

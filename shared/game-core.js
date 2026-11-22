@@ -82,9 +82,9 @@
     }),
     sabotage({
       id: 'zoom', category: 'optical', name: 'Macro Zoom', short: 'Zoom', minHeight: 12, reducedMotion: 'safe',
-      caption: 'Extreme close-up. Don’t blink.', hint: 'The view zooms in on the tower.',
-      tuning: { scale: 1.85 },
-      rules: t => `A ${t.scale}× view locks onto the top platform; wall rebounds can leave the frame.`
+      caption: 'Extreme close-up. Don’t blink.', hint: 'Only the landing zone is in sight.',
+      tuning: { scale: 1.85, margin: 24 },
+      rules: t => `A ${t.scale}× loupe frames only the landing zone, ${t.margin} px beyond the top block’s edges; elsewhere the mover is out of sight, and the view can’t be turned or zoomed.`
     }),
     sabotage({
       id: 'double', category: 'optical', name: 'The Shell Game', short: 'Shell',
@@ -303,6 +303,12 @@
     const minLeft = Math.max(0, Math.min(worldMax, Number(below.left) - inset));
     const maxLeft = Math.max(minLeft, Math.min(worldMax, Number(below.right) + inset - width));
     return { minLeft, maxLeft };
+  }
+  // The circle Macro Zoom leaves in sight, in board px about the centre of the top block.
+  function macroZoomLens(below, margin = T.zoom.margin) {
+    if (!below || !Number.isFinite(Number(below.left)) || !Number.isFinite(Number(below.right))) return null;
+    const left = Number(below.left); const right = Number(below.right);
+    return { x: (left + right) / 2, level: Number(below.level) || 0, radius: Math.max(0, right - left) / 2 + margin };
   }
   function portalLandingMover(below, moving) {
     if (!below || !moving || !Number.isFinite(Number(moving.left)) || !Number.isFinite(Number(moving.width))) return null;
@@ -753,7 +759,7 @@
     SABOTAGE_IDS, SABOTAGE_CATEGORIES, SABOTAGE_CATEGORY_BY_ID, TEAM_GLOBAL_IDS,
     HARSH_SABOTAGE_IDS, SABOTAGE_MIN_HEIGHT, DROP_COUNTED_IDS, REDUCED_MOTION_EXCLUDED_IDS, REDUCED_MOTION_SAFE_IDS, PALETTE,
     sabotageAvailableAtHeight, speedForHeight, perfectWindowForSpeed, perfectWindowForEffect, gravitySlingshotMultiplier, advanceMover,
-    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, rollercoasterSpeedMultiplier, pisaAngle, earthquakeOffset, createShellDecoy, caliperBounds, portalLandingMover,
+    resizeMover, accordionWidth, accordionPhaseForWidth, slowToDartMultiplier, slowToDartWindup, peekabooOpacity, rollercoasterOffset, rollercoasterSpeedMultiplier, pisaAngle, earthquakeOffset, createShellDecoy, caliperBounds, macroZoomLens, portalLandingMover,
     makeBase, placeDrop, resolveLanding, spawnMover, pickOptions, voteIntervalForHeight,
     SOLO_PICK_WEIGHT, weightSoloPick, countWord, recordVote, countVotes, chooseWinner
   });

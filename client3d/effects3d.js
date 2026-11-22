@@ -296,22 +296,7 @@ const BUILDERS = {
   // Peekaboo has no builder on purpose: while the block is hidden nothing may be drawn where it is. A ring or sparks at the block gave its place away
   // (the flat view draws no marker either); the fade itself is Tower.syncMover's job. EffectRig skips ids without a builder.
 
-  zoom(rig) {
-    const group = new THREE.Group(); const p = rig.palette;
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(1, 0.04, 8, 64), additive(p.amber, 0.9)); group.add(ring);
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.7, 8), additive(p.vermilion, 0.9)); handle.position.set(0.88, -0.88, 0); handle.rotation.z = Math.PI / 4; ring.add(handle);
-    return {
-      group,
-      update({ below, effect, time, reduced }) {
-        if (!below) { group.visible = false; return; }
-        const pulse = 1 + (reduced ? 0 : Math.sin(time * 3) * 0.04);
-        const w = (below.right - below.left) * 0.5 + 24; ring.scale.set(w * pulse, w * pulse, 1);
-        ring.position.set(boardX((below.left + below.right) / 2), levelY(below.level) + 14, FRONT + 4);
-        ring.material.opacity = 0.5 * clamp((effect.remaining ?? 5) / 0.4);
-      },
-      dispose() { ring.geometry.dispose(); ring.material.dispose(); handle.geometry.dispose(); handle.material.dispose(); }
-    };
-  },
+  // Macro Zoom has no builder: its loupe (the veil, the rim and the handle) is drawn by the post pass from Stage.loupePost.
 
   double(rig) {
     const group = new THREE.Group(); const p = rig.palette; let crack = null; let mesh = null;

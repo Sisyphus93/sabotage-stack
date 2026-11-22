@@ -2,8 +2,9 @@
 
 `client3d/scene-interaction.js` owns the visitor's view controls, separate from
 Stage's scene composition and the page's gameplay input. It has no WebGL or
-Three.js dependency. The existing OrbitController and ZoomController remain
-unchanged, private implementation inside this module.
+Three.js dependency. OrbitController and ZoomController are private
+implementation inside this module. ZoomController's `reset` is now one case of
+`tweenTo(factor, duration)`, which a held View uses to hand the visitor's zoom back.
 
 ## Interface and ownership
 
@@ -30,6 +31,14 @@ unchanged, private implementation inside this module.
   title picking. `endFrame()` preserves per-frame pointer-speed decay. `wake()`
   resets idle time for title-toy actions. `setCursor()` applies Stage's picking
   feedback while the module owns cleanup.
+- `hold(reason)` / `release()`: an Effect takes the **View** over (see
+  `GLOSSARY.md`; Macro Zoom). `hold` is safe to call every frame: the first call
+  saves the View, cancels a drag and eases to the default (0.8 s; at once under
+  reduced motion). While held, wheel, drags, keys, double-tap resets and HUD
+  buttons leave the View alone, the vertical wheel is still the scene's, and the
+  scene's HUD greys its buttons (`aria-disabled`, "Held by <reason>").
+  `release` eases the saved View back (0.9 s; at once under reduced motion) and is
+  a no-op when nothing is held. A mode change drops the hold without restoring.
 
 Stage still owns raycasting, title picking, hover effects, camera flights, final
 camera composition, scene animation and rendering. It never sends gameplay
@@ -51,6 +60,7 @@ hint state. There is no back-reference from SceneInteraction to Stage.
 - Keyboard exclusions retain text fields, selects, sliders, menus and dialogs,
   while buttons and links pass view keys through. Space, Enter, 1/2/3 and other
   page-owned keys remain untouched. Existing step sizes and timings are unchanged.
+  A held View (above) is the one deliberate exception to all of the view input.
 - Drag slop, tap duration, right-double-tap reset, context-menu release guard,
   reduced motion, floor constraints and idle reset use their existing constants.
 - Home/results/lobby hints fade after 10 seconds, play after 12. Using a view

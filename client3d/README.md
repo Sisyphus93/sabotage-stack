@@ -69,7 +69,7 @@ limit stays with the scene (`view-zoom.js`), even after a pause, so zooming neve
 Ownership: `SceneInteraction` (`scene-interaction.js`) owns pointer sampling, gestures, orbit/zoom coordination, input listeners, and hint lifecycle. Stage supplies scene context and control placement, handles scene-specific taps, and disposes the interaction module with the renderer. See [the design notes](../docs/architecture/scene-interaction.md).
 
 How it composes: `userView()` in `stage.js` delegates to the interaction module and returns the visitor's turn (`yaw`, `pitch`) and dolly (`zoom`) and every scene adds it **on top of** its own
-camera, so the game's own camera work (the follow, the Pisa roll, the zoom sabotage, shakes) is unchanged and separate. Zooming in closes
+camera, so the game's own camera work (the follow, the Pisa roll, the Macro Zoom push, shakes) is unchanged and separate. Zooming in closes
 on the top block (game), the middle of the towers (arena) or the totems (lobby) rather than the centre of the sky, so a short tower is never zoomed out of
 the frame. The camera cannot go below the floor, whatever the angle. The name plates, the Teamwork name plaques on the blocks, the lobby's totems (on the
 spot, eyes and all), digits, vote candidates and the ruler turn to face the view, the
@@ -211,7 +211,8 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
   turning slowly and lingering face-on (`dwellSpin`). It is off-screen on phones. Only the name shows there.
 * **The view is the player's**: hold the **right** mouse button and drag to walk all the way round the tower (the left button stays DROP), roll the
   wheel to zoom, and use the small controls in the field's bottom-right corner or the keys. The sabotages keep working on top of that view
-  (Pisa still rolls the camera, Zoom still closes in 1.85x).
+  (Pisa still rolls the camera), and none of them can be undone with it: Macro Zoom holds the view (it eases back to the default, the controls
+  grey out and say so) while its loupe leaves only the landing zone in sight, then hands the player's own view back.
 * **The name** of each sabotage slams in above the tower in blocks and shatters (`brick-text.js`).
 * **The height** stands beside the lane as block digits (off-screen on phones). **The final score** floats over the results tower as
   brick digits, with the NEW BEST crown.

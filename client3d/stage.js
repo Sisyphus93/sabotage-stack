@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import { Engine, TIERS } from './engine.js';
 import { SceneInteraction } from './scene-interaction.js';
 import { createWorld } from './worlds.js';
-import { BlockKit } from './blocks.js';
-import { Tower, levelY } from './tower.js';
+import { BlockKit, BLOCK_D } from './blocks.js';
+import { Tower, levelY, boardX } from './tower.js';
 import { Sparks, Confetti, Pulses } from './particles.js';
 import { Popups, Ruler } from './popups.js';
 import { Arsenal } from './hero.js';
@@ -493,19 +493,21 @@ export class Stage {
   update_play(dt, view) {
     const g = view.game; const tower = this.getTower('play');
     tower.root.visible = true;
-    if (!g) { this.placeIdle(dt, view); return; }
+    if (!g) { this.interaction.release(); this.placeIdle(dt, view); return; }
     const state = this.towerStateFromGame(view); this.lastPlayKey = state.id;
     tower.sync(state, dt, this.time);
     const blocks = state.blocks; const count = blocks.length; const effectId = g.activeEffect ? g.activeEffect.id : '';
     const targetFocus = Math.max(220, (count + 1) * 22 - 60);
     this.rig.focusY = this.reduced ? targetFocus : damp(this.rig.focusY, targetFocus, 1 / 0.12, dt);
+    // Macro Zoom holds the visitor's View (no turning or zooming the loupe away) and hands it back when it ends
+    if (effectId === 'zoom') this.interaction.hold(this.sabotages.zoom.name); else this.interaction.release();
     const uv = this.userView(dt, this.rig.focusY); this.facing = uv.yaw; tower.setFacing(uv.yaw); // (the badge, the digits, the labels and the Teamwork plaques turn to face the visitor's view)
     const altitude = clamp(this.rig.focusY / 2200);
     const effect = g.activeEffect; const key = effect ? `${effect.id}:${effect.targetPlayerId || ''}` : '';
     if (key !== this.lastEffectKey) { if (effect) this.announceEffect(effect, view); else this.removeBadge(); this.lastEffectKey = key; }
     this.updateBadge(effect, dt, this.rig.focusY);
-    // zoom sabotage: the catalogue's zoom scale about the top block, like the 2D view. The visitor's own zoom (the wheel) closes in the same way: the closer the view, the more
-    // it centres on the top block, so a short tower is never zoomed off the bottom of the field (and zooming out simply shows more of the world)
+    // Macro Zoom: the catalogue's push about the top block (the View is held meanwhile, so it multiplies a factor of 1). The visitor's own zoom closes in the same way: the closer
+    // the view, the more it centres on the top block, so a short tower is never zoomed off the bottom of the field (and zooming out simply shows more of the world)
     const zoomTarget = effectId === 'zoom' ? view.Core.SABOTAGE_TUNING.zoom.scale : 1;
     this.rig.zoom = this.reduced ? zoomTarget : damp(this.rig.zoom, zoomTarget, 1 / 0.12, dt);
     const zk = clamp((this.rig.zoom * uv.zoom - 1) / 0.85);
@@ -548,6 +550,10 @@ export class Stage {
       const spot = this.spotPost(tower, tower.rig.spot, full, open); if (spot) this.post.spots.push(spot);
       if (open < 0.999) { const lamp = this.emblemLight(); if (lamp) this.post.spots.push(lamp); }
     }
+    if (effectId === 'zoom' && effect) { // Macro Zoom: the same veil over the whole view, closed from its first frame to its last (no iris: an open veil would let the Mover be seen)
+      const full = { x: 0, y: 0, w: this.engine.cssWidth, h: this.engine.cssHeight };
+      const loupe = this.loupePost(tower, view.Core.macroZoomLens(topBlock), full); if (loupe) this.post.spots.push(loupe);
+    }
     const mover = g.moving; const live = mover && Number.isFinite(mover.left) && Number.isFinite(mover.width);
     this.watch(live ? mover.left + mover.width / 2 - BOARD_W / 2 : topX, live ? levelY(mover.level || count) : topY, 0, 1, uv.yaw); // the crowd follows the moving block
     this.updateWorld(dt, this.rig.focusY, altitude, view, tower);
@@ -572,6 +578,12 @@ export class Stage {
   }
   // how far the veil of a running Spotlight is still open: the name slams in first, then the dark closes in (Reduced Motion: it just falls)
   spotOpen(effect) { const t = Number(effect && effect.elapsed) || 0; if (this.reduced) return t < 0.9 ? 1 : 0; return 1 - easeOutCubic(clamp((t - 0.8) / 0.5)); }
+  // The Macro Zoom loupe in the post pass's terms: a spot around the landing zone (just above the top block, where the Mover crosses it) that draws a magnifier's rim and handle.
+  loupePost(tower, lens, rect) {
+    if (!lens) return null;
+    const spot = this.spotPost(tower, { x: boardX(lens.x), y: levelY(lens.level) + 14, z: BLOCK_D / 2, radius: lens.radius }, rect);
+    spot.loupe = true; return spot;
+  }
   // the winning sabotage's emblem keeps a pool of light of its own, so it is still seen under its own veil
   emblemLight() { const b = this.badge; if (!b) return null; return this.spotWorld(b.disc.position, 52 * Math.max(0.05, b.pop || 1), [0, 0, 1, 1]); }
 
@@ -803,9 +815,10 @@ export class Stage {
       const live = !player.ended && !player.collapsed && player.moving;
       tower.sync({ id: `arena:${g.roundNumber}:${player.playerId || i}`, blocks, fallen: player.fallen || [], moving: live ? player.moving : null, effect, helpers: Core, phase: 'playing', collapsed: Boolean(player.collapsed), reduced: this.reduced, ended: Boolean(player.ended) }, dt, this.time);
       this.arenaLabel(i, player, x, scale, maxHeight);
-      if (tower.rig.spot && effect) {
-        const colRect = { x: rect.x + rect.w * (i / n), y: rect.y + 60 * (rect.h / 520), w: rect.w / n, h: rect.h - 66 * (rect.h / 520) };
-        const sp = this.spotPost(tower, tower.rig.spot, colRect); if (sp && this.post.spots.length < 6) this.post.spots.push(sp);
+      const colRect = { x: rect.x + rect.w * (i / n), y: rect.y + 60 * (rect.h / 520), w: rect.w / n, h: rect.h - 66 * (rect.h / 520) };
+      if (tower.rig.spot && effect) { const sp = this.spotPost(tower, tower.rig.spot, colRect); if (sp && this.post.spots.length < 6) this.post.spots.push(sp); }
+      if (effect && effect.id === 'zoom' && this.post.spots.length < 6) {
+        const loupe = this.loupePost(tower, Core.macroZoomLens(blocks[blocks.length - 1]), colRect); if (loupe) this.post.spots.push(loupe);
       }
     });
     this.watch(Math.sin(this.time * 0.8) * colW * Math.max(0.5, (n - 1) / 2), this.rig.focusY, 0, 1, uv.yaw); // the crowd scans the lanes

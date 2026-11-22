@@ -132,7 +132,8 @@ export const passBShader = {
       col = (col - 0.5) * uContrast + 0.5;
       // Spotlight sabotage: everything inside a spot's rectangle is hidden by an opaque veil except its soft-edged circles of light.
       // Spots that share a rectangle light it together (the veil is laid once, over the union of their holes).
-      float veiled = 0.0; float lit = 0.0; float rimSum = 0.0;
+      // A spot with w = 2 is the Macro Zoom loupe: a solid magnifier rim and a handle running down and to the right, drawn over the veil.
+      float veiled = 0.0; float lit = 0.0; float rimSum = 0.0; float frame = 0.0; float handle = 0.0;
       for (int i = 0; i < 6; i++) {
         vec4 sp = uSpot[i];
         if (sp.w > 0.5) {
@@ -143,11 +144,20 @@ export const passBShader = {
             float hole = 1.0 - smoothstep(sp.z * 0.985, sp.z * 1.02, dist);
             float rim = smoothstep(sp.z * 0.93, sp.z, dist) * (1.0 - smoothstep(sp.z, sp.z * 1.05, dist));
             veiled = 1.0; lit = max(lit, hole); rimSum += rim;
+            if (sp.w > 1.5) {
+              float band = sp.z * 0.06;
+              frame = max(frame, 1.0 - smoothstep(band * 0.7, band, abs(dist - sp.z * 1.03)));
+              vec2 dir = vec2(0.70710678, -0.70710678);
+              vec2 rel = d - dir * sp.z * 1.06; float along = clamp(dot(rel, dir), 0.0, sp.z * 0.62);
+              handle = max(handle, 1.0 - smoothstep(sp.z * 0.07, sp.z * 0.09, length(rel - dir * along)));
+            }
           }
         }
       }
       col = mix(col, mix(uVeilColor, col, lit), veiled);
       col += min(rimSum, 1.0) * veiled * vec3(1.0, 0.78, 0.25) * 0.6;
+      col = mix(col, vec3(0.84, 0.28, 0.18), handle * veiled);
+      col = mix(col, vec3(0.89, 0.64, 0.23), frame * veiled);
       vec2 p = (vUv - 0.5) * vec2(uAspect, 1.0);
       float vig = 1.0 - uVignette * smoothstep(0.25, 1.05, length(p) * 1.35);
       col *= vig;

@@ -30,7 +30,7 @@ export class SceneInteraction {
     this.drag = null; this.dragBlend = 0; this.cursor = ''; this.lastRightTap = null;
     this.hud = null; this.playHud = null; this.resultsHud = null; this.lobbyHud = null;
     this.hintAge = 0; this.playHintAge = 0; this.resultsHintAge = 0; this.lobbyHintAge = 0;
-    this.idleFor = 0; this.contextGuardUntil = 0; this.active = false; this.disposed = false;
+    this.idleFor = 0; this.contextGuardUntil = 0; this.active = false; this.disposed = false; this.held = null;
   }
 
   activate() {
@@ -49,7 +49,7 @@ export class SceneInteraction {
       if (turning || !chromeAt(e.target)) e.preventDefault();
     });
     // (a double click is the game's own two drops, so only the scenes where the left button is free reset on it - home, results, the lobby, the podium and the host's arena; the game resets on a double right click)
-    this.win.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode !== 'play' && this.#canOrbit() && !chromeAt(e.target)) this.#resetView(); });
+    this.win.addEventListener('dblclick', this.onDoubleClick = e => { if (this.mode !== 'play' && this.#canOrbit() && !chromeAt(e.target)) this.#userReset(); });
     this.win.addEventListener('wheel', this.onWheel = e => this.#handleWheel(e), { passive: false });
     this.win.addEventListener('keydown', this.onKeyDown = e => this.#handleKey(e));
   }
@@ -60,6 +60,7 @@ export class SceneInteraction {
   setContext({ mode = this.mode, reduced = this.reduced, reenter = false } = {}) {
     this.reduced = Boolean(reduced);
     if (this.disposed || (mode === this.mode && !reenter)) return;
+    if (this.held) { this.held = null; this.#showHeld(); } // (leaving the scene: the View starts over at the default, as it always does, rather than coming back)
     this.mode = mode;
     this.#endDrag(true); this.#orbit.snap(); this.#dolly.snap();
     if (mode === 'hero') this.#openHud();
@@ -68,6 +69,24 @@ export class SceneInteraction {
     if (mode === 'lobby') this.#openLobbyHud();
     if (mode === 'play' || mode === 'arena') this.#openPlayHud(); else this.#closePlayHud();
   }
+
+  // An Effect takes the View over (Macro Zoom): it eases back to the default and stays there, and release() hands the visitor's own View back.
+  // Safe to call every frame: only the first call starts the ease.
+  hold(reason) {
+    if (this.disposed) return;
+    if (this.held) { if (this.held.reason !== reason) { this.held.reason = reason; this.#showHeld(); } return; }
+    const o = this.#orbit; const z = this.#dolly;
+    this.held = { reason, yaw: o.tween ? o.tween.toYaw : o.yaw, pitch: o.tween ? o.tween.toPitch : o.pitch, zoom: z.target };
+    this.#endDrag(true); this.#resetView(this.reduced ? 0 : 0.8); this.#showHeld(); // (Reduced Motion: at once, the turn as well as the zoom)
+  }
+
+  release() {
+    const saved = this.held; if (!saved) return; this.held = null; this.#showHeld();
+    const duration = this.reduced ? 0 : 0.9;
+    this.#orbit.tweenTo(saved.yaw, saved.pitch, duration); this.#dolly.setReduced(this.reduced); this.#dolly.tweenTo(saved.zoom, duration);
+  }
+
+  #showHeld() { const hud = this.#sceneHud(); if (hud) hud.setHeld(this.held ? this.held.reason : ''); }
 
   wake() { this.idleFor = 0; }
   endFrame() { this.pointer.speed *= 0.9; }
@@ -104,7 +123,7 @@ export class SceneInteraction {
     this.onRushIntro(); this.samplePointer(event); this.idleFor = 0;
     if (!this.#canOrbit(event.button) || this.drag || !event.isPrimary) return;
     if (event.button !== 0 && event.button !== 2) return; // the middle button stays the browser's (auto-scroll)
-    if (this.pointer.overUi) return;
+    if (this.pointer.overUi || this.held) return;
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, t: event.timeStamp, button: event.button, moved: false, touch: event.pointerType === 'touch' };
     this.#orbit.begin(event.clientX, event.clientY, event.timeStamp / 1000);
     this.doc.documentElement.classList.add('orbiting');
@@ -130,12 +149,13 @@ export class SceneInteraction {
 
   #handleRightTap(event) {
     const last = this.lastRightTap; const t = event.timeStamp;
-    if (last && t - last.t < 420 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 12) { this.lastRightTap = null; this.#resetView(); } else this.lastRightTap = { t, x: event.clientX, y: event.clientY };
+    if (last && t - last.t < 420 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 12) { this.lastRightTap = null; this.#userReset(); } else this.lastRightTap = { t, x: event.clientX, y: event.clientY };
   }
 
   #handleWheel(event) {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || !this.#canOrbit()) return;
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || chromeAt(event.target) || this.doc.querySelector('dialog[open]')) return;
+    if (this.held) { if (event.deltaY) event.preventDefault(); return; } // (still the scene's: a held View must not turn into a scrolling page)
     this.#dolly.setReduced(this.reduced);
     if (this.#dolly.wheel(event.deltaY, event.deltaMode)) { event.preventDefault(); this.#usedView(); }
   }
@@ -151,11 +171,11 @@ export class SceneInteraction {
     if (!this.#canOrbit() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
     if (closest(event.target, KEY_OWNERS)) return;
     const step = event.shiftKey ? Math.PI / 2 : Math.PI / 8;
-    if (event.key === 'ArrowLeft') { this.#orbit.rotateBy(-step, 0.35); this.#usedView(); event.preventDefault(); }
-    else if (event.key === 'ArrowRight') { this.#orbit.rotateBy(step, 0.35); this.#usedView(); event.preventDefault(); }
-    else if (event.key === 'Home' || event.key === '0') { this.#resetView(); event.preventDefault(); }
-    else if (event.key === '+' || event.key === '=') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(ZOOM_STEP); this.#usedView(); event.preventDefault(); }
-    else if (event.key === '-' || event.key === '_') { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(1 / ZOOM_STEP); this.#usedView(); event.preventDefault(); }
+    if (event.key === 'ArrowLeft') { this.#turnBy(-step, 0.35); event.preventDefault(); }
+    else if (event.key === 'ArrowRight') { this.#turnBy(step, 0.35); event.preventDefault(); }
+    else if (event.key === 'Home' || event.key === '0') { this.#userReset(); event.preventDefault(); }
+    else if (event.key === '+' || event.key === '=') { this.#zoomBy(ZOOM_STEP); event.preventDefault(); }
+    else if (event.key === '-' || event.key === '_') { this.#zoomBy(1 / ZOOM_STEP); event.preventDefault(); }
   }
 
   #canOrbit(button = 2) {
@@ -172,7 +192,7 @@ export class SceneInteraction {
     if (this.hud) return; this.hintAge = 0;
     let storage = null; try { storage = this.win.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(this.win.matchMedia && this.win.matchMedia('(pointer: coarse)').matches);
-    this.hud = createOrbitHud({ doc: this.doc, storage, touch: coarse, onTurn: delta => { this.#orbit.rotateBy(delta); this.#usedView(); }, onReset: () => this.#resetView(), onZoom: factor => this.#zoomBy(factor), onToy: () => this.onToy() });
+    this.hud = createOrbitHud({ doc: this.doc, storage, touch: coarse, onTurn: delta => this.#turnBy(delta), onReset: () => this.#userReset(), onZoom: factor => this.#zoomBy(factor), onToy: () => this.onToy() });
   }
 
   #openResultsHud() { this.resultsHintAge = 0; if (!this.resultsHud) this.resultsHud = this.#makeSceneHud('results-screen', 'orbit-hud-results'); }
@@ -182,7 +202,7 @@ export class SceneInteraction {
   #makeSceneHud(hostId, id) {
     let storage = null; try { storage = this.win.localStorage; } catch (_) { storage = null; }
     const coarse = Boolean(this.win.matchMedia && this.win.matchMedia('(pointer: coarse)').matches);
-    return createOrbitHud({ doc: this.doc, storage, touch: coarse, hostId, id, dock: false, hint: SCENE_HINT, onTurn: delta => { this.#orbit.rotateBy(delta); this.#usedView(); }, onReset: () => this.#resetView(), onZoom: factor => this.#zoomBy(factor) });
+    return createOrbitHud({ doc: this.doc, storage, touch: coarse, hostId, id, dock: false, hint: SCENE_HINT, onTurn: delta => this.#turnBy(delta), onReset: () => this.#userReset(), onZoom: factor => this.#zoomBy(factor) });
   }
 
   #openPlayHud() {
@@ -191,13 +211,16 @@ export class SceneInteraction {
     let storage = null; try { storage = this.win.localStorage; } catch (_) { storage = null; }
     let shown = 0; try { shown = Number(storage.getItem(`${PLAY_HINT_KEY}-shown`)) || 0; storage.setItem(`${PLAY_HINT_KEY}-shown`, String(shown + 1)); } catch (_) { shown = 0; }
     const hint = { mouse: '<span class="orbit-hint-full"><b>Right-drag</b> to look around, <b>scroll</b> to zoom</span><span class="orbit-hint-short"><b>Right-drag</b> to look, <b>scroll</b> to zoom</span>' };
-    this.playHud = createOrbitHud({ doc: this.doc, storage, hostId: 'game-screen', id: 'orbit-hud-play', dock: false, layout: 'stage', hint, hintKey: PLAY_HINT_KEY, onTurn: delta => { this.#orbit.rotateBy(delta); this.#usedView(); }, onReset: () => this.#resetView(), onZoom: factor => this.#zoomBy(factor) });
+    this.playHud = createOrbitHud({ doc: this.doc, storage, hostId: 'game-screen', id: 'orbit-hud-play', dock: false, layout: 'stage', hint, hintKey: PLAY_HINT_KEY, onTurn: delta => this.#turnBy(delta), onReset: () => this.#userReset(), onZoom: factor => this.#zoomBy(factor) });
     if (shown >= 3 && this.playHud) this.playHud.fade(); // (it has said its piece: three games, or the first time it was used)
   }
 
   #closePlayHud() { if (this.playHud) { this.playHud.dispose(); this.playHud = null; } }
 
-  #zoomBy(factor) { this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(factor); this.#usedView(); }
+  // The visitor's own turns, zooms and resets; a held View ignores them all.
+  #turnBy(delta, duration) { if (this.held) return; this.#orbit.rotateBy(delta, duration); this.#usedView(); }
+  #zoomBy(factor) { if (this.held) return; this.#dolly.setReduced(this.reduced); this.#dolly.zoomBy(factor); this.#usedView(); }
+  #userReset() { if (!this.held) this.#resetView(); }
 
   update(dt, focusY, { idleReset = false, cameraDistance = 1700 } = {}) {
     const o = this.#orbit; const z = this.#dolly; const reduced = this.reduced;

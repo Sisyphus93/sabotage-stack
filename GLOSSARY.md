@@ -28,4 +28,12 @@ The misleading second moving block shown during the Double sabotage; it is not t
 A hosted multiplayer session in which players take part in Teamwork or Competitive rounds and spectators can watch.
 
 **Scene**:
-A presentation of the title, lobby, active round, or results that a visitor can look around by turning and zooming the view.
+A presentation of the title, lobby, active round, or results that a visitor can look around by turning and zooming the View.
+
+**View**:
+The visitor's own turn and zoom of a Scene, layered on top of the Scene's own camera; it never changes the game, and it never weakens an Effect.
+_Avoid_: zoom (on its own, it is ambiguous with Macro Zoom)
+
+**Macro Zoom**:
+The Sabotage that frames only the landing zone at the top of the tower, so the Mover is out of sight whenever it travels away from it.
+_Avoid_: zoom, the zoom sabotage
