@@ -13,6 +13,39 @@ function makeEngine(mode, seed = 1, playerCount = 2) {
   return { engine, clock, players };
 }
 
+describe('Mover position tick events (#47)', () => {
+  for (const mode of ['teamwork', 'competitive']) test(`${mode}: one positions event carries every active Mover`, () => {
+    const { engine, clock, players } = makeEngine(mode, 5, 3);
+    const events = [];
+    engine.onEvent = (type, payload) => events.push({ type, payload });
+    clock.t += 100;
+    engine.tick(clock.t);
+    assert.equal(events.filter(event => event.type === 'positions').length, 1);
+    assert.equal(events.some(event => event.type === 'player.position'), false);
+    const [event] = events.filter(item => item.type === 'positions');
+    const expected = mode === 'teamwork' ? [engine.game.team.currentPlayerId] : players.map(player => player.id);
+    assert.deepEqual(event.payload.movers.map(mover => mover.playerId), expected);
+    assert.equal(event.payload.roundNumber, engine.game.roundNumber);
+    if (mode === 'teamwork') assert.equal(event.payload.turnId, engine.game.team.turnId);
+    else assert.equal(Object.hasOwn(event.payload, 'turnId'), false);
+    for (const mover of event.payload.movers) {
+      assert.ok(Number.isFinite(mover.x) && Number.isFinite(mover.width));
+      assert.ok(mover.direction === -1 || mover.direction === 1);
+      assert.ok(mover.motion && typeof mover.motion === 'object');
+    }
+  });
+
+  test('a tick with no active Mover emits no positions event', () => {
+    const { engine, clock } = makeEngine('competitive', 6, 2);
+    for (const competitor of engine.game.competitors) competitor.collapsed = true;
+    const events = [];
+    engine.onEvent = (type, payload) => events.push({ type, payload });
+    clock.t += 100;
+    engine.tick(clock.t);
+    assert.equal(events.some(event => event.type === 'positions'), false);
+  });
+});
+
 describe('one sabotage at a time', () => {
   test('Teamwork: a new sabotage replaces every older one', () => {
     const { engine, clock } = makeEngine('teamwork', 7);

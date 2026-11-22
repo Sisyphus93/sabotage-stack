@@ -365,6 +365,38 @@ describe('broadcast', () => {
     assert.deepEqual(ownCalls, ['room.delta']);
   });
 
+  test('a full room sends one batched positions message per seat per tick (#47)', () => {
+    let now = 1_000_000;
+    const rm = new RoomManager({ now: () => now, random: rng(47), idleLimitMs: 1e12 });
+    const mk = () => ({ readyState: 1, sent: [], send(raw) { this.sent.push(JSON.parse(raw)); } });
+    const host = mk(); rm.connect(host); rm.receive(host, JSON.stringify({ type: 'room.create', mode: 'competitive' }));
+    const code = [...rm.rooms.keys()][0];
+    const players = [];
+    for (let i = 0; i < 6; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `P${i}` })); players.push(socket); }
+    const spectators = [];
+    for (let i = 0; i < 16; i += 1) { const socket = mk(); rm.connect(socket); rm.receive(socket, JSON.stringify({ type: 'room.join', code, name: `S${i}`, spectate: true })); spectators.push(socket); }
+    rm.receive(host, JSON.stringify({ type: 'round.start' }));
+    const seats = [host, ...players, ...spectators];
+    assert.equal(seats.length, 23, 'host + six players + sixteen spectators');
+    for (const socket of seats) socket.sent.length = 0;
+    now += 100; rm.tick();
+    for (const socket of seats) {
+      assert.equal(socket.sent.length, 1, 'exactly one send per seat per tick');
+      assert.equal(socket.sent[0].type, 'positions');
+      assert.equal(socket.sent[0].movers.length, 6, 'one entry per active Mover');
+      assert.equal(socket.sent[0].roundNumber, rm.rooms.get(code).engine.game.roundNumber);
+    }
+    assert.equal(seats.some(socket => socket.sent.some(message => message.type === 'player.position')), false);
+    // The next tick is another single complete snapshot, not a per-Mover stream.
+    for (const socket of seats) socket.sent.length = 0;
+    now += 100; rm.tick();
+    for (const socket of seats) {
+      assert.equal(socket.sent.length, 1);
+      assert.equal(socket.sent[0].type, 'positions');
+      assert.equal(socket.sent[0].movers.length, 6);
+    }
+  });
+
   test('one state change sends one reconstructable delta per socket, with full recovery available', () => {
     let t = 1e9; const rm = new RoomManager({ now: () => t, random: rng(3), idleLimitMs: 1e12 });
     const mk = () => ({ readyState: 1, sent: [], send(m) { this.sent.push(JSON.parse(m)); } });

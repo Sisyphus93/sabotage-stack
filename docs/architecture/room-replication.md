@@ -90,6 +90,38 @@ disconnect and admission retain revision publications even when their seat
 changes no wire-visible fields. Explicit `room.sync` always returns the exact
 published baseline. Existing round-start event snapshots are unchanged.
 
+### Mover position events
+
+Mover motion is a tick event, not a `room.delta`. On each 100 ms tick with at
+least one active Mover, `RoundEngine.advanceMovers()` emits one `positions` event.
+`RoomManager` adds the room `code`, serializes the message once, and sends that
+text to every connected seat:
+
+```js
+{
+  type: 'positions',
+  code,
+  roundNumber,
+  turnId,       // Teamwork only
+  movers: [
+    { playerId, x, width, direction, decoy?, motion }
+  ]
+}
+```
+
+Each batch is the complete set of active Movers for that tick; Movers whose
+position happens to be unchanged are still included. The server emits no
+outbound `player.position` events. A full 23-seat room therefore performs 23
+sends per tick, regardless of how many Movers are active, instead of one send
+per Mover per seat.
+
+The browser applies every entry through the same single-Mover path, preserving
+the self-versus-remote `x` rules and the `direction`, `decoy`, `motion`,
+`roundNumber`, and Teamwork `turnId` checks. It still accepts legacy
+`player.position` packets as a rollback fallback. A malformed batch is ignored
+before any entry is applied. Inbound client-to-server `player.position` messages
+keep their existing shape, sequence checks, cadence, and lag compensation.
+
 ## Receiver adapter
 
 The browser stores the baseline separately from its mutable room view. Stale
