@@ -40,3 +40,7 @@ jobs:
       # test/run.js spawns `node --test --test-concurrency=1` over every test/*.test.js file.
       # build-client --check and make-typeface --check already run inside test/client3d.test.js.
       - run: npm test
+
+      # Required real-browser CSP/WebGL coverage; npm test stays browser-free.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser

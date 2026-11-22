@@ -7,6 +7,8 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 const { WebSocketServer, WebSocket } = require('ws');
 const { RoomManager } = require('./server/room-manager');
+const { inlineHashes, documentHash, contentSecurityPolicy } = require('./server/content-security-policy');
+const generatedCspHashes = require('./public/csp-hashes.json');
 
 // Connection ceilings: one client cannot hold more than a few dozen sockets, and the process refuses new ones
 // outright past the global ceiling so a spread of addresses cannot exhaust file descriptors.
@@ -81,7 +83,7 @@ function sendFile(request, response, filePath, { type, cache }, onError) {
     const version = `${stat.size}-${Math.round(stat.mtimeMs)}`;
     const etag = `W/"${version}"`;
     const headers = { 'Content-Type': type, 'Cache-Control': cache, ETag: etag, Vary: 'Accept-Encoding', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' };
-    if (request.headers['if-none-match'] === etag) { response.writeHead(304, headers); response.end(); return; }
+    if (!type.startsWith('text/html') && request.headers['if-none-match'] === etag) { response.writeHead(304, headers); response.end(); return; }
     const accepted = String(request.headers['accept-encoding'] || '');
     const encoding = /\bbr\b/.test(accepted) ? 'br' : /\bgzip\b/.test(accepted) ? 'gzip' : null;
     let entry = compressionCache.get(filePath);
@@ -93,10 +95,19 @@ function sendFile(request, response, filePath, { type, cache }, onError) {
       const current = compressionCache.get(filePath);
       if (current && current.version === version) { entry = current; return current; }
       entry = { version, raw, br: null, gzip: null };
+      // Use build-generated hashes for the deployed page. Supported live edits still get a matching policy,
+      // derived from the very same buffer we serve, rather than silently breaking until a server restart.
+      if (type.startsWith('text/html')) entry.hashes = documentHash(raw) === generatedCspHashes.documentHash
+        ? generatedCspHashes : inlineHashes(raw.toString('utf8'));
       compressionCache.set(filePath, entry);
       return entry;
     };
     load().then(async loaded => {
+      if (loaded.hashes) {
+        headers['X-Frame-Options'] = 'DENY';
+        headers['Content-Security-Policy'] = contentSecurityPolicy(loaded.hashes, request.headers.host);
+      }
+      if (request.headers['if-none-match'] === etag) { response.writeHead(304, headers); response.end(); return; }
       let body = loaded.raw;
       if (encoding && loaded.raw.length > 1024) {
         body = await (loaded[encoding] && typeof loaded[encoding].then === 'function'

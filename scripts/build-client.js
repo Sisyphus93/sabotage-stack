@@ -4,6 +4,7 @@
 // The bundle is committed on purpose (like the core copy inlined in sabotage-stack.html) so `npm ci && npm start`
 // serves the full 3D experience with no build step on the host. A header comment records a hash of every input,
 // so `--check` (run by `npm test`) fails when the sources changed but the bundle was not rebuilt.
+// The same build/check also generates/verifies the inline HTML's CSP hashes in public/csp-hashes.json.
 //
 //   node scripts/build-client.js            # production bundle (minified)
 //   node scripts/build-client.js --dev      # readable bundle with an inline source map for debugging
@@ -48,6 +49,7 @@ function currentHeader() {
 
 // 'fresh' = built from the current sources AND minified. A --dev bundle is never committable (it is several MB with an inline source map).
 function status() {
+  if (!require('./build-csp').check()) return 'stale';
   const header = currentHeader();
   if (!header || header.hash !== sourceHash()) return 'stale';
   return header.mode === 'min' ? 'fresh' : 'dev';
@@ -67,13 +69,14 @@ async function build({ dev = false } = {}) {
   const code = result.outputFiles[0].text;
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, `/* stack3d-source-hash: ${hash} mode=${dev ? 'dev' : 'min'} */\n${code}`);
+  require('./build-csp').build();
   return { bytes: Buffer.byteLength(code), hash };
 }
 
 async function main() {
   if (process.argv.includes('--check')) {
     const state = status();
-    console.log(state === 'fresh' ? 'public/stack3d.js is up to date' : state === 'dev' ? 'public/stack3d.js is a development build: run npm run build before committing' : 'public/stack3d.js is stale: run npm run build');
+    console.log(state === 'fresh' ? 'Client bundle and CSP hashes are up to date' : state === 'dev' ? 'public/stack3d.js is a development build: run npm run build before committing' : 'Client bundle or CSP hashes are stale: run npm run build');
     process.exit(state === 'fresh' ? 0 : 1);
   }
   const started = Date.now();
