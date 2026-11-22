@@ -12,15 +12,20 @@ const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const PLAYER_COLORS = Object.freeze(['#E3A33B', '#2F8478', '#7FA6BD', '#D5472F', '#7A6AA6', '#C96F8A']);
 const VALID_MODES = new Set(['teamwork', 'competitive']);
 const IDLE_LIMIT_MS = 10 * 60 * 1000;
+// An Abandoned Room (see GLOSSARY.md) has nobody left to come back to it, so it does not get the full idle limit.
+const ABANDONED_LIMIT_MS = 60_000;
 const MAX_ROOMS = 1000;
 // Per-connection message budget. A real client sends ~13 position updates a second plus the occasional drop or ping,
 // so this is an order of magnitude above legitimate traffic and only ever stops floods.
 const MESSAGE_BURST = 200;
 const MESSAGE_REFILL_PER_SECOND = 100;
 const MESSAGE_ABUSE_CLOSE_AFTER = 400;
-// Guess budget, one bucket per client key (see clientKeyOf). With no trustworthy client address the key is
-// null and every connection shares the single legacy bucket, so reconnecting still cannot reset the budget.
+// Guess budget, one bucket per client key (see clientKeyOf). With no trustworthy client address the key is null:
+// each connection then has its own budget (and is closed once it runs out), and every keyless connection also
+// shares a much larger backstop bucket, so reconnecting still cannot reset the budget without limit.
 const JOIN_FAILURE_LIMIT = 60;
+const CONNECTION_JOIN_FAILURE_LIMIT = 60;
+const SHARED_JOIN_FAILURE_LIMIT = 1000;
 const JOIN_FAILURE_WINDOW_MS = 60_000;
 // A real client changes its motion preference when the OS setting or the menu changes, a handful of times per
 // session. Anything faster is either a fight over the toggle or an attempt to amplify traffic.
@@ -35,6 +40,10 @@ const ROOMS_PER_CLIENT = 5;
 const ROOM_CREATE_LIMIT = 10;
 const ROOM_CREATE_WINDOW_MS = 10 * 60 * 1000;
 const ROOM_CREATE_MAX_KEYS = 10_000;
+// One creation bucket for the whole server, whether or not a client key is known: without a key it is the only
+// thing between a connect/create/disconnect loop and a full room table.
+const ROOM_CREATE_BURST = 10;
+const ROOM_CREATE_REFILL_PER_MINUTE = 30;
 
 function cleanDisplayName(value) {
   if (typeof value !== 'string') return '';
@@ -69,21 +78,28 @@ function safeSendRaw(socket, text) {
 }
 
 class RoomManager {
-  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS, preferenceBurst = PREFERENCE_BURST, preferenceRefillPerSecond = PREFERENCE_REFILL_PER_SECOND } = {}) {
+  constructor({ now = Date.now, random = Math.random, randomBytes = crypto.randomBytes, idleLimitMs = IDLE_LIMIT_MS, abandonedLimitMs = ABANDONED_LIMIT_MS, onClose = null, maxRooms = MAX_ROOMS, messageBurst = MESSAGE_BURST, messageRefillPerSecond = MESSAGE_REFILL_PER_SECOND, joinFailureLimit = JOIN_FAILURE_LIMIT, connectionJoinFailureLimit = CONNECTION_JOIN_FAILURE_LIMIT, sharedJoinFailureLimit = SHARED_JOIN_FAILURE_LIMIT, joinFailureWindowMs = JOIN_FAILURE_WINDOW_MS, roomsPerClient = ROOMS_PER_CLIENT, roomCreateLimit = ROOM_CREATE_LIMIT, roomCreateWindowMs = ROOM_CREATE_WINDOW_MS, roomCreateBurst = ROOM_CREATE_BURST, roomCreateRefillPerMinute = ROOM_CREATE_REFILL_PER_MINUTE, preferenceBurst = PREFERENCE_BURST, preferenceRefillPerSecond = PREFERENCE_REFILL_PER_SECOND } = {}) {
     this.now = now;
     this.random = random;
     this.randomBytes = randomBytes;
     this.idleLimitMs = idleLimitMs;
+    this.abandonedLimitMs = abandonedLimitMs;
     this.onClose = onClose;
     this.maxRooms = maxRooms;
     this.messageBurst = messageBurst;
     this.messageRefillPerSecond = messageRefillPerSecond;
     this.joinFailureLimit = Math.max(1, joinFailureLimit);
     this.joinFailureWindowMs = Math.max(1, joinFailureWindowMs);
+    this.connectionJoinFailureLimit = Math.max(1, connectionJoinFailureLimit);
+    this.sharedJoinFailureLimit = Math.max(1, sharedJoinFailureLimit);
     this.joinFailures = new Map();
+    this.connectionJoinFailures = new WeakMap();
     this.roomsPerClient = Math.max(1, roomsPerClient);
     this.roomCreateLimit = Math.max(1, roomCreateLimit);
     this.roomCreateWindowMs = Math.max(1, roomCreateWindowMs);
+    this.roomCreateBurst = Math.max(1, roomCreateBurst);
+    this.roomCreateRefillPerMinute = Math.max(0, roomCreateRefillPerMinute);
+    this.serverRoomCreateBudget = null;
     this.preferenceBurst = Math.max(1, preferenceBurst);
     this.preferenceRefillPerSecond = Math.max(0, preferenceRefillPerSecond);
     this.preferenceBudgets = new WeakMap();
@@ -112,9 +128,20 @@ class RoomManager {
   // One failure bucket per client key, or the single shared bucket when the key is unknown. Bounded so a
   // spread across many addresses cannot grow the map without limit; expired buckets are pruned on write.
   joinBucket(socket, now = this.now()) {
-    const bucket = this.joinFailures.get(this.clientKeyOf(socket) || SHARED_CLIENT_KEY);
+    return this.currentJoinWindow(this.joinFailures.get(this.clientKeyOf(socket) || SHARED_CLIENT_KEY), now);
+  }
+
+  connectionJoinBucket(socket, now = this.now()) {
+    return this.currentJoinWindow(this.connectionJoinFailures.get(socket), now);
+  }
+
+  joinWindowExpired(bucket, now) {
+    return now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart;
+  }
+
+  currentJoinWindow(bucket, now) {
     if (!bucket) return null;
-    if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) {
+    if (this.joinWindowExpired(bucket, now)) {
       bucket.count = 0;
       bucket.windowStart = now;
     }
@@ -123,22 +150,24 @@ class RoomManager {
 
   spendJoinFailure(socket, now = this.now()) {
     const key = this.clientKeyOf(socket) || SHARED_CLIENT_KEY;
-    let bucket = this.joinFailures.get(key);
+    let bucket = this.joinBucket(socket, now);
     if (!bucket) {
       if (this.joinFailures.size >= JOIN_FAILURE_MAX_KEYS) this.pruneJoinFailures(now);
       bucket = { count: 0, windowStart: now };
       this.joinFailures.set(key, bucket);
-    } else if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) {
-      bucket.count = 0;
-      bucket.windowStart = now;
     }
     bucket.count += 1;
+    if (key === SHARED_CLIENT_KEY) {
+      let connectionBucket = this.connectionJoinBucket(socket, now);
+      if (!connectionBucket) { connectionBucket = { count: 0, windowStart: now }; this.connectionJoinFailures.set(socket, connectionBucket); }
+      connectionBucket.count += 1;
+    }
     return bucket.count;
   }
 
   pruneJoinFailures(now = this.now()) {
     for (const [key, bucket] of this.joinFailures) {
-      if (now - bucket.windowStart >= this.joinFailureWindowMs || now < bucket.windowStart) this.joinFailures.delete(key);
+      if (this.joinWindowExpired(bucket, now)) this.joinFailures.delete(key);
     }
     // Every bucket in the window at the cap: drop the oldest so the newest failure is still recorded.
     while (this.joinFailures.size >= JOIN_FAILURE_MAX_KEYS) this.joinFailures.delete(this.joinFailures.keys().next().value);
@@ -146,7 +175,23 @@ class RoomManager {
 
   isJoinThrottled(socket, now = this.now()) {
     const bucket = this.joinBucket(socket, now);
-    return Boolean(bucket && bucket.count >= this.joinFailureLimit);
+    if (this.clientKeyOf(socket) != null) return Boolean(bucket && bucket.count >= this.joinFailureLimit);
+    return Boolean(bucket && bucket.count >= this.sharedJoinFailureLimit) || this.isConnectionJoinExhausted(socket, now);
+  }
+
+  isConnectionJoinExhausted(socket, now = this.now()) {
+    if (this.clientKeyOf(socket) != null) return false;
+    const connectionBucket = this.connectionJoinBucket(socket, now);
+    return Boolean(connectionBucket && connectionBucket.count >= this.connectionJoinFailureLimit);
+  }
+
+  // Answers a throttled join or resume. A keyless connection that ran through its own budget is also closed, as
+  // a message flood is: the shared backstop is the only other limit, and one connection must not drain it.
+  refuseThrottledJoin(socket, now = this.now()) {
+    this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
+    if (this.isConnectionJoinExhausted(socket, now) && typeof socket.close === 'function') {
+      try { socket.close(1008, 'Too many unsuccessful room attempts'); } catch (_) { /* already closing */ }
+    }
   }
 
   // Creation budget, one bucket per client key. Together with the concurrent-room cap it stops one client from
@@ -164,6 +209,15 @@ class RoomManager {
       this.roomCreations.set(key, bucket);
     }
     return bucket;
+  }
+
+  refillServerRoomCreateBudget(now) {
+    let budget = this.serverRoomCreateBudget;
+    if (!budget) budget = this.serverRoomCreateBudget = { tokens: this.roomCreateBurst, at: now };
+    const elapsed = Math.max(0, now - budget.at) / 60_000;
+    budget.tokens = Math.min(this.roomCreateBurst, budget.tokens + elapsed * this.roomCreateRefillPerMinute);
+    budget.at = now;
+    return budget;
   }
 
   hostedRoomCount(key) {
@@ -310,8 +364,11 @@ class RoomManager {
         return this.error(socket, 'ROOM_LIMIT', 'You have too many rooms open. Close one or wait a few minutes.');
       }
     }
+    const serverBudget = this.refillServerRoomCreateBudget(now);
+    if (serverBudget.tokens < 1) return this.error(socket, 'SERVER_BUSY', 'The server is hosting as many rooms as it can. Try again shortly.');
     const code = this.nextRoomCode();
     if (!code) return this.error(socket, 'SERVER_BUSY', 'The server is hosting as many rooms as it can. Try again shortly.');
+    serverBudget.tokens -= 1;
     const token = this.newToken();
     const room = {
       code, mode, phase: 'lobby', createdAt: now, lastActivityAt: now, ownerKey,
@@ -329,7 +386,7 @@ class RoomManager {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before joining another.');
     const now = this.now();
     // The budget is checked before the lookup, so a throttled client cannot tell a real code from an invented one.
-    if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
+    if (this.isJoinThrottled(socket, now)) return this.refuseThrottledJoin(socket, now);
     const code = this.normalizeCode(message.code);
     const room = this.rooms.get(code);
     if (!room) {
@@ -397,25 +454,21 @@ class RoomManager {
   resumeRoom(socket, message) {
     if (this.hasRoomSession(socket)) return this.error(socket, 'ALREADY_IN_ROOM', 'Leave the current room before reconnecting.');
     const now = this.now();
-    // Probing resume is a room-existence oracle too, so it draws on the same per-key guess budget. An unknown
-    // room and a wrong token answer identically, otherwise the reply itself would confirm that a code exists.
-    if (this.isJoinThrottled(socket, now)) return this.error(socket, 'JOIN_RATE_LIMITED', 'Too many unsuccessful room attempts. Please wait a moment and try again.');
+    // Probing resume is a room-existence oracle too, so it draws on the same guess budget. An unknown room and a
+    // wrong token answer identically, otherwise the reply itself would confirm that a code exists. A valid token is
+    // never throttled: a guesser exhausting the budget must not be able to lock the host and players out.
+    const throttled = this.isJoinThrottled(socket, now);
+    const refuseResume = () => {
+      if (throttled) return this.refuseThrottledJoin(socket, now);
+      this.spendJoinFailure(socket, now);
+      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
+    };
     const code = this.normalizeCode(message.code);
     const token = typeof message.resumeToken === 'string' ? message.resumeToken : '';
     // Real tokens are 32 bytes; anything far larger is an attempt to make us allocate on demand.
-    if (token.length > 128) {
-      this.spendJoinFailure(socket, now);
-      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
-    }
+    if (token.length > 128) return refuseResume();
     const room = this.rooms.get(code);
-    if (!room) {
-      this.spendJoinFailure(socket, now);
-      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
-    }
-    if (!token) {
-      this.spendJoinFailure(socket, now);
-      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
-    }
+    if (!room || !token) return refuseResume();
 
     let role = null;
     let playerId = null;
@@ -450,10 +503,7 @@ class RoomManager {
         }
       }
     }
-    if (!role) {
-      this.spendJoinFailure(socket, now);
-      return this.error(socket, 'INVALID_RESUME', 'The room code or reconnect token was not recognized.');
-    }
+    if (!role) return refuseResume();
     room.lastActivityAt = this.now();
     this.sessions.set(socket, { roomCode: code, role, playerId, spectatorId });
     if (playerId && room.engine) room.engine.playerReconnected(playerId, this.now());
@@ -661,12 +711,22 @@ class RoomManager {
     const now = this.now();
     const closed = [];
     for (const room of this.rooms.values()) {
-      if (now - room.lastActivityAt >= this.idleLimitMs) {
+      // lastActivityAt, not the host's disconnect time: every join, leave and disconnect refreshes it, so the limit
+      // runs from when the last person left, and a visitor in the meantime restarts it.
+      if (this.isAbandoned(room) && now - room.lastActivityAt >= this.abandonedLimitMs) {
+        closed.push(room.code);
+        this.closeRoom(room, 'Room closed because the host left.');
+      } else if (now - room.lastActivityAt >= this.idleLimitMs) {
         closed.push(room.code);
         this.closeRoom(room, 'Room closed after ten minutes without activity.');
       }
     }
     return closed;
+  }
+
+  isAbandoned(room) {
+    return !room.host.connected && room.host.disconnectedAt != null && room.players.length === 0
+      && !room.spectators.some(spectator => spectator.connected);
   }
 
   canRematchWithoutHost(room, now = this.now()) {
