@@ -59,6 +59,56 @@ async function assertClean(client) {
   expect(client.errors).toEqual([]);
 }
 
+test('every theme loads its fonts from same-origin files and a repeat navigation reuses the cache', async ({ browser }) => {
+  const context = await browser.newContext();
+  const errors = [];
+  await context.addInitScript(() => {
+    window.cspViolations = [];
+    document.addEventListener('securitypolicyviolation', event => window.cspViolations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
+  });
+  const page = await context.newPage();
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const themes = {
+    paper: [['Fraunces', 400], ['Fraunces', 700], ['Caveat', 400], ['DM Sans', 400]],
+    sunset: [['Press Start 2P', 400], ['VT323', 400]],
+    primetime: [['Alfa Slab One', 400], ['Barlow Condensed', 500], ['Barlow Condensed', 700]]
+  };
+  try {
+    await page.goto(`${origin}/?tier=low&scale=0.5`);
+    await page.waitForFunction(() => window.SabotageStack && typeof window.SabotageStack.setTheme === 'function');
+    for (const [theme, families] of Object.entries(themes)) {
+      const checks = await page.evaluate(async ({ theme, families }) => {
+        window.SabotageStack.setTheme(theme);
+        const result = [];
+        for (const [family, weight] of families) {
+          const text = family === 'Barlow Condensed' ? 'SABOTAGE STACK' : 'Sabotage Stack';
+          const loaded = await document.fonts.load(`${weight} 16px "${family}"`, text);
+          result.push({ family, weight, loaded: loaded.length, available: document.fonts.check(`${weight} 16px "${family}"`, text) });
+        }
+        await document.fonts.ready;
+        return result;
+      }, { theme, families });
+      for (const face of checks) {
+        expect(face.loaded, `${theme}: ${face.weight} ${face.family} loaded`).toBeGreaterThan(0);
+        expect(face.available, `${theme}: ${face.weight} ${face.family} available`).toBe(true);
+      }
+    }
+    expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
+    expect(errors).toEqual([]);
+
+    await page.goto(`${origin}/?tier=low&scale=0.5`);
+    await page.evaluate(() => document.fonts.ready);
+    const cachedFonts = await page.evaluate(() => performance.getEntriesByType('resource')
+      .filter(entry => entry.name.endsWith('.woff2'))
+      .map(entry => ({ name: entry.name, transferSize: entry.transferSize })));
+    expect(cachedFonts.length).toBeGreaterThan(0);
+    expect(cachedFonts.filter(entry => entry.transferSize !== 0)).toEqual([]);
+    expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally { await context.close(); }
+});
+
 test('real 3D solo client can drop a Mover without CSP violations', async ({ browser }) => {
   const client = await openGame(browser);
   try {

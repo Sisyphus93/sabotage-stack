@@ -16,9 +16,34 @@ const CLIENTS_PER_KEY = 30;
 const MAX_SOCKETS = 2000;
 const PROJECT_ROOT = __dirname;
 const HTML_PATH = path.join(PROJECT_ROOT, 'sabotage-stack.html');
-// The only files served besides the page itself. Exact-match routing (no directory serving) keeps path traversal impossible.
+// The exact-match static allowlist: the 3D bundle plus the content-versioned font files named by the build manifest.
+// Exact-match routing (no directory serving) keeps path traversal impossible.
 const BUNDLE = Object.freeze({ file: ['public', 'stack3d.js'], type: 'text/javascript; charset=utf-8', cache: 'no-cache' });
-const ASSETS = Object.freeze({ '/public/stack3d.js': BUNDLE, '/assets/stack3d.js': BUNDLE });
+const BASE_ASSETS = Object.freeze({ '/public/stack3d.js': BUNDLE, '/assets/stack3d.js': BUNDLE });
+const FONT_CACHE = 'public, max-age=31536000, immutable';
+
+// The font URLs are content-versioned by the build, so the exact names are read from the committed manifest at startup.
+// Matching only the generated basename shape means a damaged or hand-edited manifest still cannot open a directory.
+function assetsFor(root) {
+  const assets = { ...BASE_ASSETS };
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(path.join(root, 'public', 'fonts.json'), 'utf8')); }
+  catch (error) {
+    // A custom root may be a fixture without fonts; the deployed tree may not silently lose its fonts.
+    if (path.resolve(root) === path.resolve(PROJECT_ROOT)) throw new Error(`public/fonts.json is missing or invalid: ${error.message}`);
+    return assets;
+  }
+  if (!Array.isArray(manifest && manifest.fonts) && path.resolve(root) === path.resolve(PROJECT_ROOT)) {
+    throw new Error('public/fonts.json is missing its fonts list');
+  }
+  for (const font of Array.isArray(manifest && manifest.fonts) ? manifest.fonts : []) {
+    if (!font || typeof font.file !== 'string' || !/^[a-z0-9][a-z0-9-]*\.woff2$/.test(font.file)) continue;
+    assets[`/public/fonts/${font.file}`] = {
+      file: ['public', 'fonts', font.file], type: 'font/woff2', cache: FONT_CACHE, compress: false
+    };
+  }
+  return assets;
+}
 
 function sendJson(response, status, value) {
   const body = Buffer.from(JSON.stringify(value));
@@ -42,7 +67,8 @@ function requestPathname(request) {
 }
 
 // Serves one file with ETag revalidation and brotli/gzip. The compressed copies are cached per file version, so the
-// 700 KB page and the 3D bundle are compressed once per change instead of once per visitor.
+// 700 KB page and the 3D bundle are compressed once per change instead of once per visitor. Files that are already
+// compressed (woff2) pass `compress: false`: no recompression, no Content-Encoding and no misleading Vary.
 //
 // Two things keep a cold start from stampeding: the read is coalesced, so a burst of first requests shares one
 // fs.readFile, and each (version, encoding) remembers its *promise*, so the burst shares one compression instead of
@@ -72,7 +98,7 @@ function compressOnce(entry, encoding) {
   return shared;
 }
 
-function sendFile(request, response, filePath, { type, cache }, onError) {
+function sendFile(request, response, filePath, { type, cache, compress = true }, onError) {
   fs.stat(filePath, (statError, stat) => {
     if (statError || !stat.isFile()) {
       response.writeHead(statError && statError.code === 'ENOENT' ? 404 : 500, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -82,9 +108,10 @@ function sendFile(request, response, filePath, { type, cache }, onError) {
     }
     const version = `${stat.size}-${Math.round(stat.mtimeMs)}`;
     const etag = `W/"${version}"`;
-    const headers = { 'Content-Type': type, 'Cache-Control': cache, ETag: etag, Vary: 'Accept-Encoding', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' };
+    const headers = { 'Content-Type': type, 'Cache-Control': cache, ETag: etag, 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' };
+    if (compress) headers.Vary = 'Accept-Encoding';
     if (!type.startsWith('text/html') && request.headers['if-none-match'] === etag) { response.writeHead(304, headers); response.end(); return; }
-    const accepted = String(request.headers['accept-encoding'] || '');
+    const accepted = compress ? String(request.headers['accept-encoding'] || '') : '';
     const encoding = /\bbr\b/.test(accepted) ? 'br' : /\bgzip\b/.test(accepted) ? 'gzip' : null;
     let entry = compressionCache.get(filePath);
     const load = async () => {
@@ -163,6 +190,7 @@ function clientKeyResolver(source = process.env.CLIENT_IP_SOURCE) {
 
 function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager(), onError = console.error, clientKeyFor = clientKeyResolver(), clientsPerKey = CLIENTS_PER_KEY, maxSockets = MAX_SOCKETS } = {}) {
   const htmlPath = path.join(root, 'sabotage-stack.html');
+  const assets = assetsFor(root);
   const server = http.createServer((request, response) => {
     const pathname = requestPathname(request);
     if (pathname == null) {
@@ -174,12 +202,12 @@ function createGameServer({ root = PROJECT_ROOT, roomManager = new RoomManager()
       return sendJson(response, 200, { ok: true, service: 'sabotage-stack', protocol: 1, rooms: roomManager.rooms.size });
     }
     if ((request.method === 'GET' || request.method === 'HEAD') && (pathname === '/' || pathname === '/sabotage-stack.html')) {
-      // The page is re-read on every change (never cached by the browser) so edits show up without a restart.
-      sendFile(request, response, htmlPath, { type: 'text/html; charset=utf-8', cache: 'no-store' }, onError);
+      // no-cache keeps live edits visible while letting the ETag answer repeat visits with a bodyless 304.
+      sendFile(request, response, htmlPath, { type: 'text/html; charset=utf-8', cache: 'no-cache' }, onError);
       return;
     }
-    if ((request.method === 'GET' || request.method === 'HEAD') && Object.prototype.hasOwnProperty.call(ASSETS, pathname)) {
-      const asset = ASSETS[pathname];
+    if ((request.method === 'GET' || request.method === 'HEAD') && Object.prototype.hasOwnProperty.call(assets, pathname)) {
+      const asset = assets[pathname];
       sendFile(request, response, path.join(root, ...asset.file), asset, onError);
       return;
     }

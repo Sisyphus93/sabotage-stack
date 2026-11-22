@@ -30,7 +30,7 @@ describe('build gates', () => {
     assert.match(head, /^\/\* stack3d-source-hash: [0-9a-f]{64} mode=min \*\/\n/);
     assert.ok(fs.statSync(file).size < 2 * 1024 * 1024, `bundle is ${fs.statSync(file).size} bytes`);
   });
-  test('the committed 3D typefaces still match the fonts embedded in the page (run npm run typeface)', () => {
+  test('the committed 3D typefaces still match the fonts in fonts/ (run npm run typeface)', () => {
     const result = run('make-typeface.js', '--check');
     assert.equal(result.status, 0, result.stdout + result.stderr);
   });
@@ -100,10 +100,10 @@ describe('serving the bundle', () => {
       }
     });
   });
-  test('the game page is still served fresh (no-store) and compressed on request', async () => {
+  test('the game page is served revalidatable (no-cache) and compressed on request', async () => {
     await withServer(async get => {
       const res = await get('/', { 'accept-encoding': 'br' });
-      assert.equal(res.status, 200); assert.equal(res.headers['cache-control'], 'no-store'); assert.equal(res.headers['content-encoding'], 'br');
+      assert.equal(res.status, 200); assert.equal(res.headers['cache-control'], 'no-cache'); assert.equal(res.headers['content-encoding'], 'br');
       assert.equal(zlib.brotliDecompressSync(res.body).toString('utf8'), html);
     });
   });
