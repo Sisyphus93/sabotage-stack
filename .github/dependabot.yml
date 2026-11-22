@@ -1,8 +1,6 @@
-# Weekly Dependabot version updates for the actions used in .github/workflows.
+# Weekly Dependabot version updates for npm dependencies and GitHub Actions.
 #
-# The pinned major tags (actions/checkout@v7, actions/setup-node@v7) are what rot: v4 was still in the
-# workflow when GitHub announced the Node 20 deprecation, and the first CI run surfaced it as a warning
-# nobody was watching for. This keeps the tags moving on its own.
+# Keep exact npm versions and Action commit SHAs current rather than letting them rot.
 #
 # Every Dependabot pull request runs the full suite, because ci.yml triggers on pull_request and the job
 # only needs `contents: read` — no secrets, so Dependabot's restricted token is enough.
@@ -24,5 +22,23 @@ updates:
     # action instead of a bundle, and the other still lands on its own.
     open-pull-requests-limit: 5
     # Tests decide whether a bump is good; the label is only for finding these later.
+    labels:
+      - 'dependencies'
+
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '05:00'
+      timezone: 'UTC'
+    open-pull-requests-limit: 5
+    groups:
+      # Keep runtime dependencies and major updates separate so failures are easier to isolate.
+      development-minor-patch:
+        dependency-type: 'development'
+        update-types:
+          - 'minor'
+          - 'patch'
     labels:
       - 'dependencies'
