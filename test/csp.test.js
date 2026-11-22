@@ -74,7 +74,8 @@ test('HTML GET, HEAD and revalidation responses enforce hash-based CSP and deny 
       const html = await first.text();
       const policy = first.headers.get('content-security-policy');
       assert.ok(policy, 'HTML must carry an enforced CSP');
-      for (const directive of ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'", "font-src 'self' data:", "img-src 'self' data:"]) assert.ok(policy.includes(directive), directive);
+      for (const directive of ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'", "font-src 'self'", "img-src 'self' data:"]) assert.ok(policy.includes(directive), directive);
+      assert.doesNotMatch(policy, /font-src[^;]*data:/);
       assert.doesNotMatch(policy, /unsafe-inline|unsafe-eval/);
       assert.equal(policy.split(';').find(part => part.trim().startsWith('connect-src')).trim(),
         `connect-src 'self' ws://${new URL(origin).host} wss://${new URL(origin).host}`);

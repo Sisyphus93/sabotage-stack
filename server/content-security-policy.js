@@ -25,7 +25,7 @@ function contentSecurityPolicy(hashes, host) {
   } catch (_) { /* Malformed Host headers must not inject policy directives. */ }
   return ["default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'",
     `script-src 'self' ${hashes.scripts.join(' ')}`, `style-src 'self' ${hashes.styles.join(' ')}`,
-    "font-src 'self' data:", "img-src 'self' data:", `connect-src 'self'${sockets}`].join('; ');
+    "font-src 'self'", "img-src 'self' data:", `connect-src 'self'${sockets}`].join('; ');
 }
 
 module.exports = { inlineHashes, inlineMetadata, documentHash, contentSecurityPolicy };

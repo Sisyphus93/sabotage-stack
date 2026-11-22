@@ -18,10 +18,10 @@ logic without this layer, since jsdom has no WebGL.
 After editing anything in `client3d/`:
 
 ```sh
-npm run build        # minified bundle -> public/stack3d.js (esbuild, three.js bundled in, no CDN)
+npm run build        # fonts manifest/page faces + minified bundle -> public/stack3d.js (esbuild, three.js bundled in, no CDN)
 npm run build:dev    # readable bundle with an inline source map (~6 MB): for debugging only, never commit it
-npm run build:check  # fails if the committed bundle is stale or is a dev build (also run by npm test)
-npm run typeface     # regenerate client3d/assets/typeface-*.json from the fonts embedded in the page
+npm run build:check  # fails if the committed bundle or fonts are stale or if it is a dev build (also run by npm test)
+npm run typeface     # regenerate client3d/assets/typeface-*.json from the fonts committed in fonts/
 ```
 
 The server serves the bundle at `/assets/stack3d.js` (and `/public/stack3d.js`, which is what the page requests) with an
@@ -262,7 +262,7 @@ layout and the camera's framing do not move); the HEIGHT and speed chips stay, a
 | `once-soon.js` | a "run once, soon" latch (the page's icon sprites are baked with it; a restarting debounce would never fire at 60 fps) |
 | `podium.js` | pure layout/reveal rules for the multiplayer results podium |
 | `icons3d.js`, `text3d.js`, `snapshot.js` | 3D icons and baked sprites, typefaces → geometry, result-card snapshots |
-| `assets/typeface-*.json` | glyph outlines extracted from the fonts already embedded in the page |
+| `assets/typeface-*.json` | glyph outlines extracted from the fonts committed in `fonts/` |
 
 ## One bad pixel must not black out the frame
 

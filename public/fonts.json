@@ -1,0 +1,84 @@
+{
+  "fonts": [
+    {
+      "family": "Fraunces",
+      "style": "normal",
+      "weight": "400 700",
+      "display": "swap",
+      "url": "/public/fonts/fraunces-7234ed860a9cc830.woff2",
+      "file": "fraunces-7234ed860a9cc830.woff2",
+      "bytes": 67304,
+      "sha256": "7234ed860a9cc83045413c4faee63c960a8f2d1917adcf728119307d56e0d783"
+    },
+    {
+      "family": "Caveat",
+      "style": "normal",
+      "weight": "400 700",
+      "display": "swap",
+      "url": "/public/fonts/caveat-891951df5e8b5b0f.woff2",
+      "file": "caveat-891951df5e8b5b0f.woff2",
+      "bytes": 74932,
+      "sha256": "891951df5e8b5b0f0bc760d31375405e795c666b5add70437de12d4a6482b33f"
+    },
+    {
+      "family": "DM Sans",
+      "style": "normal",
+      "weight": "400 700",
+      "display": "swap",
+      "url": "/public/fonts/dm-sans-9fea608a947e6702.woff2",
+      "file": "dm-sans-9fea608a947e6702.woff2",
+      "bytes": 36932,
+      "sha256": "9fea608a947e67020c33cad9a6fe3d60c54119dfb8cff87768a8117a15ed7543"
+    },
+    {
+      "family": "Press Start 2P",
+      "style": "normal",
+      "weight": "400",
+      "display": "swap",
+      "url": "/public/fonts/press-start-2p-afec86997fdaf54a.woff2",
+      "file": "press-start-2p-afec86997fdaf54a.woff2",
+      "bytes": 12512,
+      "sha256": "afec86997fdaf54af1f59358fa2c1e2a0f1d04146edad18e5cd141d0384a7548"
+    },
+    {
+      "family": "VT323",
+      "style": "normal",
+      "weight": "400",
+      "display": "swap",
+      "url": "/public/fonts/vt323-8ddbebcc10481541.woff2",
+      "file": "vt323-8ddbebcc10481541.woff2",
+      "bytes": 17936,
+      "sha256": "8ddbebcc1048154132e1d78eb9b1f7850bca1b7d857035ccf1cb4318ebc615b6"
+    },
+    {
+      "family": "Alfa Slab One",
+      "style": "normal",
+      "weight": "400",
+      "display": "swap",
+      "url": "/public/fonts/alfa-slab-one-48a110c7fda81f99.woff2",
+      "file": "alfa-slab-one-48a110c7fda81f99.woff2",
+      "bytes": 19052,
+      "sha256": "48a110c7fda81f9921a6437e1a813dcea56df5a9f52f778c7b2f2151e36e4f2c"
+    },
+    {
+      "family": "Barlow Condensed",
+      "style": "normal",
+      "weight": "500",
+      "display": "swap",
+      "url": "/public/fonts/barlow-condensed-500-460f141ec8f6c9a1.woff2",
+      "file": "barlow-condensed-500-460f141ec8f6c9a1.woff2",
+      "bytes": 21424,
+      "sha256": "460f141ec8f6c9a1516bfd2bd9fe71656246d7a9d04a0955faf53158d8970c4c"
+    },
+    {
+      "family": "Barlow Condensed",
+      "style": "normal",
+      "weight": "700",
+      "display": "swap",
+      "url": "/public/fonts/barlow-condensed-700-3787a5a419171630.woff2",
+      "file": "barlow-condensed-700-3787a5a419171630.woff2",
+      "bytes": 22444,
+      "sha256": "3787a5a419171630e6890cfa47c4da067474d005cd0ff8dc11ec090fdc3ee2b8"
+    }
+  ]
+}
