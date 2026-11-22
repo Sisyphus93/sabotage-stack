@@ -614,15 +614,23 @@ class RoundEngine {
       const dt = stepMs / 1000;
       for (const item of active) this.advanceOneMover(item.actor, item.stack, item.playerId, dt, cursor);
     }
+    // One tick event carries every active Mover: a complete snapshot, not a delta.
+    // The room serializes and broadcasts it once for all seats.
+    const movers = [];
     for (const item of active) {
       const moving = item.actor.moving;
       if (!moving) continue;
-      this.onEvent('player.position', {
-        playerId: item.playerId, roundNumber: game.roundNumber,
-        ...(this.mode === 'teamwork' ? { turnId: game.team.turnId } : {}),
-        x: moving.left, width: moving.width, direction: moving.direction,
+      movers.push({
+        playerId: item.playerId, x: moving.left, width: moving.width, direction: moving.direction,
         ...(moving.decoy ? { decoy: { left: moving.decoy.left, width: moving.decoy.width, direction: moving.decoy.direction } } : {}),
         motion: this.motionSnapshot(item.actor)
+      });
+    }
+    if (movers.length) {
+      this.onEvent('positions', {
+        roundNumber: game.roundNumber,
+        ...(this.mode === 'teamwork' ? { turnId: game.team.turnId } : {}),
+        movers
       });
     }
     return true;

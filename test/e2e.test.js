@@ -528,6 +528,98 @@ describe('Position updates stop for inactive players (A-01)', skipReason ? { ski
   });
 });
 
+describe('Batched Mover positions (#47)', skipReason ? { skip: skipReason } : {}, () => {
+  for (const mode of ['competitive', 'teamwork']) test(`${mode}: batches move the remote Mover and malformed batches are ignored`, async () => {
+    const r = await startRoom(mode);
+    try {
+      const engine = r.room.engine;
+      const currentId = mode === 'teamwork' ? engine.game.team.currentPlayerId : null;
+      const pageIndex = mode === 'teamwork' ? r.room.players.findIndex(player => player.id !== currentId) : 0;
+      const page = r.players[pageIndex];
+      const view = () => page.window.SabotageStackHost.view();
+      const selfId = view().mp.playerId;
+      const remoteId = mode === 'teamwork' ? currentId : r.room.players.find(player => player.id !== selfId).id;
+      const remotePlayer = () => mode === 'teamwork'
+        ? view().game
+        : (view().game && view().game.remotePlayers || []).find(player => player.playerId === remoteId);
+      const remoteMover = () => remotePlayer() && remotePlayer().moving;
+      const moverLeft = () => remoteMover() && remoteMover().left;
+
+      const types = [];
+      const manager = r.app.roomManager;
+      const broadcast = manager.broadcast.bind(manager);
+      manager.broadcast = (room, message, ...rest) => { types.push(message.type); return broadcast(room, message, ...rest); };
+      await sleep(350);
+      assert.ok(types.includes('positions'), 'the server sends a positions batch');
+      assert.equal(types.includes('player.position'), false, 'the server no longer sends per-Mover events');
+
+      const before = moverLeft();
+      assert.ok(Number.isFinite(before), 'the remote Mover has a rendered position');
+      for (let i = 0; i < 20 && moverLeft() === before; i += 1) await sleep(50);
+      assert.notEqual(moverLeft(), before, 'a real batch moved the remote Mover');
+
+      // Freeze server ticks so only the malformed packets below can change client state.
+      engine.game.paused = true;
+      const stable = moverLeft();
+      const roundNumber = engine.game.roundNumber;
+      manager.broadcast(r.room, { type: 'positions', code: r.room.code, roundNumber });
+      manager.broadcast(r.room, { type: 'positions', code: r.room.code, roundNumber, movers: [null] });
+      manager.broadcast(r.room, { type: 'positions', code: r.room.code, roundNumber, movers: [{ playerId: remoteId }] });
+      await sleep(150);
+      assert.equal(moverLeft(), stable, 'a malformed batch leaves the Mover where it was');
+      assert.deepEqual(page.errors, []);
+
+      const turnId = mode === 'teamwork' ? engine.game.team.turnId : undefined;
+      const sendPositions = (movers, round = roundNumber) => manager.broadcast(r.room, {
+        type: 'positions', code: r.room.code, roundNumber: round,
+        ...(mode === 'teamwork' ? { turnId } : {}),
+        movers
+      });
+      sendPositions([{ playerId: remoteId, x: 42, width: 100, direction: 1 }]);
+      await sleep(120);
+      assert.equal(moverLeft(), 42, 'a valid batch still applies after a malformed one');
+
+      // A stale round is ignored through the batch path.
+      sendPositions([{ playerId: remoteId, x: 7, width: 100, direction: 1 }], roundNumber + 1);
+      await sleep(120);
+      assert.equal(moverLeft(), 42, 'a stale roundNumber leaves the Mover alone');
+
+      // direction, decoy, and motion travel through the same per-Mover path.
+      remoteMover().decoy = { left: 1, width: 100, direction: 1 };
+      sendPositions([{
+        playerId: remoteId, x: 42, width: 100, direction: -1,
+        decoy: { left: 123, width: 80, direction: 1 },
+        motion: { drunkClock: 12.5, drunkMode: 'lurch' }
+      }]);
+      await sleep(120);
+      assert.equal(remoteMover().direction, -1);
+      assert.equal(remoteMover().decoy.left, 123);
+      assert.equal(remotePlayer().drunkClock, 12.5);
+      assert.equal(remotePlayer().drunkMode, 'lurch');
+
+      // The legacy outbound packet still moves the same Mover as a rollback fallback.
+      manager.broadcast(r.room, {
+        type: 'player.position', code: r.room.code, roundNumber,
+        ...(mode === 'teamwork' ? { turnId } : {}),
+        playerId: remoteId, x: 77, width: 100, direction: 1
+      });
+      await sleep(120);
+      assert.equal(moverLeft(), 77, 'legacy player.position is still accepted');
+
+      if (mode === 'competitive') {
+        // The self entry updates the local direction but must not overwrite the predicted x.
+        view().game.paused = true;
+        const ownLeft = view().game.moving.left;
+        sendPositions([{ playerId: selfId, x: 5, width: 100, direction: -1 }]);
+        await sleep(120);
+        assert.equal(view().game.moving.left, ownLeft, 'self x stays locally predicted');
+        assert.equal(view().game.moving.direction, -1, 'self direction still follows the batch');
+      }
+      assert.deepEqual(page.errors, []);
+    } finally { await r.close(); }
+  });
+});
+
 describe('Multiplayer results focus (A-02)', skipReason ? { skip: skipReason } : {}, () => {
   for (const mode of ['teamwork', 'competitive']) test(`${mode}: focus enters an available result action without stealing later focus`, async () => {
     const r = await startRoom(mode);
