@@ -20,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing here pushes, so the job token does not need to sit in .git/config during npm ci.
           persist-credentials: false
 
       # v7 runs on node24 (the v4 tags this replaced ran their own runtime on node20, which GitHub is retiring).
       # The project's Node version still comes from .nvmrc, which test/node-version.test.js pins against engines.
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
