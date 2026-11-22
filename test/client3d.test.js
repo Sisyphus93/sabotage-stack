@@ -111,7 +111,7 @@ describe('serving the bundle', () => {
 
 describe('parity with the page', () => {
   const mapFrom = name => { const body = new RegExp(`const ${name} = Object\\.freeze\\(\\{([^}]*)\\}\\)`).exec(html)[1]; return Object.fromEntries([...body.matchAll(/'(#[0-9A-Fa-f]{6})':\s*'(#[0-9A-Fa-f]{6})'/g)].map(m => [m[1], m[2]])); };
-  test('block colours are recoloured exactly like the flat renderer does', async () => {
+  test('block colours are recoloured exactly like the page does', async () => {
     const { BLOCK_COLOR_MAPS, themedBlockColor } = await load('palette.js');
     assert.deepEqual(BLOCK_COLOR_MAPS.sunset, mapFrom('SUNSET_COLOR_MAP'));
     assert.deepEqual(BLOCK_COLOR_MAPS.primetime, mapFrom('PRIMETIME_COLOR_MAP'));
@@ -120,7 +120,7 @@ describe('parity with the page', () => {
   });
   test('the three worlds are the three themes of the page, in the same order', async () => {
     const { THEMES, PALETTES, normalizeTheme } = await load('palette.js');
-    const themes = /const CANVAS_THEMES = Object\.freeze\(\{\s*paper:[\s\S]*?\n      sunset:[\s\S]*?\n      primetime:/.test(html);
+    const themes = /const THEME_INK = Object\.freeze\(\{ paper: [^}]*sunset: [^}]*primetime: /.test(html);
     assert.ok(themes); assert.deepEqual([...THEMES], ['paper', 'sunset', 'primetime']);
     assert.deepEqual(Object.keys(PALETTES), [...THEMES]); assert.equal(normalizeTheme('nope'), 'paper');
     assert.equal(PALETTES.sunset.ink, '#170B33'); assert.equal(PALETTES.primetime.paper, '#0A1A55');
@@ -608,20 +608,15 @@ describe('results podium rules', () => {
 });
 
 describe('host bridge in the real page', skipReason ? { skip: skipReason } : {}, () => {
-  test('the page exposes a read-only view and an on/off switch; the flat drawing steps aside while 3D is active', async () => {
+  test('the page exposes a read-only view and an on/off switch for the 3D layer', async () => {
     const page = await boot(HTML_PATH);
     try {
       const host = page.window.SabotageStackHost; assert.ok(host && host.version === 1, 'host bridge is defined');
       let view = host.view(); assert.equal(view.screen, 'title'); assert.equal(view.theme, 'paper'); assert.equal(view.game, null); assert.ok(view.Core && view.Core.placeDrop);
-      const canvas = page.document.getElementById('game-canvas');
       page.document.getElementById('start-button').click(); await page.sleep(400);
       view = host.view(); assert.equal(view.screen, 'game'); assert.ok(view.game && Array.isArray(view.game.stack), 'the live game is visible to the layer');
-      assert.deepEqual(page.pixel(canvas, 10, 10), [244, 237, 223, 255], 'flat drawing paints the paper sky while 3D is off');
-      host.setActive(true); await page.sleep(300);
-      assert.equal(page.pixel(canvas, 10, 10)[3], 0, 'the flat canvas is cleared and left transparent for the 3D world behind it');
-      assert.equal(page.pixel(canvas, 200, 400)[3], 0);
-      host.setActive(false); await page.sleep(300);
-      assert.deepEqual(page.pixel(canvas, 10, 10), [244, 237, 223, 255], 'switching back redraws the flat view at once');
+      assert.equal(host.active, false); host.setActive(true); assert.equal(host.active, true); host.setActive(false); assert.equal(host.active, false);
+      assert.equal(page.document.getElementById('game-canvas').tagName, 'DIV', 'the game surface is an input target, not a drawing surface');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
@@ -632,13 +627,26 @@ describe('host bridge in the real page', skipReason ? { skip: skipReason } : {},
       page.document.getElementById('start-button').click(); page.advanceAnimation(200);
       const hud = page.document.getElementById('height-display'); const before = Number(hud.textContent);
       page.advanceAnimation(3900);
-      assert.ok(Number(hud.textContent) >= before + 1, 'auto-drop still places blocks with no flat drawing');
+      assert.ok(Number(hud.textContent) >= before + 1, 'auto-drop still places blocks');
       const view = page.window.SabotageStackHost.view(); assert.ok(view.game.stack.length >= 2);
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
-  test('result cards ask the layer for a snapshot first and fall back to the flat drawing when it declines', async () => {
-    assert.match(html, /stackHost\.active && stackHost\.snapshot && stackHost\.snapshot\(canvas, \{ blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h \}\)/);
-    assert.match(html, /function drawResults\(data, reveal\) \{\n      if \(stackHost\.active\) return;/);
+  test('without WebGL the page says the game needs it, and offers no flat game or view switch', async () => {
+    const page = await boot(HTML_PATH);
+    try {
+      assert.equal(page.document.getElementById('webgl-required'), null);
+      page.window.eval(fs.readFileSync(path.join(ROOT, 'public', 'stack3d.js'), 'utf8')); await page.sleep(100);
+      const notice = page.document.getElementById('webgl-required');
+      assert.ok(notice, 'the notice is shown'); assert.equal(notice.getAttribute('role'), 'alert'); assert.match(notice.textContent, /needs WebGL 2/);
+      assert.equal(page.document.documentElement.classList.contains('has-3d'), false);
+      assert.equal(page.document.getElementById('view-toggle'), null, 'there is no flat view to switch to');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+  test('result cards ask the layer for a snapshot and have no drawing of their own', async () => {
+    assert.match(html, /if \(stackHost\.snapshot\) stackHost\.snapshot\(canvas, \{ blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h \}\);/);
+    assert.doesNotMatch(html, /getContext\('2d'\)/);
+    assert.doesNotMatch(html, /function drawResults\(/);
   });
 });

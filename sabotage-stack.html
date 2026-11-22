@@ -192,6 +192,7 @@ h1 span { display: block; color: var(--vermilion); }
   box-shadow: 3px 3px 0 var(--paper-deep); touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 canvas { display: block; width: 100%; height: 100%; }
+#game-canvas, #results-canvas { display: block; width: 100%; height: 100%; }
 #game-canvas { touch-action: none; cursor: crosshair; }
 .canvas-hud { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .game-stage.competitive-host .height-chip, .game-stage.competitive-host .motion-chip { display: none; }
@@ -215,6 +216,10 @@ canvas { display: block; width: 100%; height: 100%; }
   transition: opacity .22s ease;
 }
 .canvas-message.is-visible { opacity: 1; }
+.auto-drop-ring { position: absolute; left: calc(100% * 336 / 360 - 14px); top: calc(100% * 82 / 520 - 14px); width: 28px; height: 28px; fill: none; stroke-width: 3.5; stroke-linecap: round; }
+.auto-drop-track { stroke: var(--soft-ink); opacity: .3; }
+.auto-drop-left { stroke: var(--amber); stroke-dasharray: 1 1; }
+.auto-drop-ring.is-urgent .auto-drop-left { stroke: var(--vermilion); }
 #perfect-banner { top: 151px; border-color: var(--vermilion); color: var(--vermilion); font: 700 25px/1 var(--font-note); }
 .chat-flavor-pop {
   display: none; padding: 7px 10px;
@@ -825,9 +830,11 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 }
   /* ===== 3D layer (client3d -> public/stack3d.js) ===================================================================
    The world is a fixed WebGL canvas behind the whole app; panels turn to glass and the stage frames become transparent
-   so the 3D tower lands exactly inside the same rectangles the flat canvases used. All rules live under html.has-3d. */
+   so the 3D tower lands inside the stage frames the page lays out. All rules live under html.has-3d. */
 #stage3d { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
-.view-toggle { min-height: 36px; padding: 0 12px; font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+#webgl-required { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; background: var(--paper); color: var(--ink); }
+#webgl-required h1 { margin: 0; font-size: 28px; }
+#webgl-required p { margin: 0; max-width: 460px; }
 html.has-3d { --glass: rgba(244,237,223,.82); --edge: rgba(42,37,32,.3); }
 @supports (background: color-mix(in srgb, red, blue)) { html.has-3d { --glass: color-mix(in srgb, var(--paper) 80%, transparent); --edge: color-mix(in srgb, var(--ink) 32%, transparent); } }
 html.has-3d body { background: transparent; }
@@ -1301,12 +1308,16 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
         <div class="game-layout">
           <section class="play-card" aria-label="Stacking game">
             <div id="game-stage" class="game-stage">
-              <canvas id="game-canvas" width="360" height="520" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space">Your browser does not support canvas. Use the Drop button or Space to play.</canvas>
+              <div id="game-canvas" tabindex="0" role="button" aria-label="Stacking game. Press Space to drop the moving block." aria-keyshortcuts="Space"></div>
               <div class="canvas-hud" aria-hidden="false">
                 <div class="height-chip" role="group" aria-label="Blocks placed">
                   <span>HEIGHT</span><strong id="height-display">0</strong>
                 </div>
                 <div id="motion-chip" class="motion-chip">140 px/s</div>
+                <svg id="auto-drop-ring" class="auto-drop-ring" viewBox="0 0 28 28" aria-hidden="true" hidden>
+                  <circle class="auto-drop-track" cx="14" cy="14" r="11"></circle>
+                  <circle class="auto-drop-left" cx="14" cy="14" r="11" pathLength="1" transform="rotate(-90 14 14)"></circle>
+                </svg>
                 <div id="canvas-toast" class="canvas-message" aria-hidden="true"></div>
                 <div id="perfect-banner" class="canvas-message" aria-hidden="true">PERFECT!</div>
                 <div id="stage-vote-strip" class="stage-vote-strip" role="group" aria-label="Chat vote options" hidden>
@@ -1408,7 +1419,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
         <div id="multiplayer-results" class="multiplayer-results" hidden></div>
         <div id="solo-result-layout" class="result-layout">
           <div class="results-frame">
-            <canvas id="results-canvas" width="360" height="520" role="img" aria-label="Final tower results drawing"></canvas>
+            <div id="results-canvas" role="img" aria-label="Final tower results"></div>
           </div>
           <section class="result-info" aria-label="Run summary">
             <div class="eyebrow">Final height</div>
@@ -1512,46 +1523,9 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       '#D5472F': '#E5322D', '#7A6AA6': '#9B8CFF', '#C96F8A': '#FF7FA8'
     });
     const THEME_COLOR_MAPS = Object.freeze({ sunset: SUNSET_COLOR_MAP, primetime: PRIMETIME_COLOR_MAP });
-    const CANVAS_THEMES = Object.freeze({
-      paper: Object.freeze({
-        pixel: false, bg: '#F4EDDF', ink: '#2A2520', inkDeep: '#2A2520', onDark: '#F4EDDF', blockHighlight: 'rgba(244,237,223,.58)',
-        muted: '#6E6558', amber: '#E3A33B', vermilion: '#D5472F', teal: '#2F8478', fallbackBlock: '#2F8478',
-        veil: '#2A2520', beam: 'rgba(227,163,59,.95)', gridLine: 'rgba(42,37,32,.09)', glowBlob: 'rgba(47,132,120,.045)',
-        baselineBar: 'rgba(47,132,120,.22)', floor: 'rgba(231,220,197,.70)', tagBg: 'rgba(42,37,32,.82)', separator: 'rgba(42,37,32,.16)', endedBg: 'rgba(42,37,32,.76)',
-        portalFill: 'rgba(47,132,120,.055)', portalStroke: 'rgba(47,132,120,.86)', portalAccent: 'rgba(227,163,59,.9)',
-        caliper: 'rgba(183,126,39,.94)', crumble: 'rgba(42,37,32,.78)', glue: 'rgba(227,163,59,.95)', glueGlow: 'rgba(227,163,59,.75)', glueDot: 'rgba(244,237,223,.9)',
-        magnet: 'rgba(47,132,120,.62)', crack: 'rgba(42,37,32,.82)', ringTrack: 'rgba(42,37,32,.16)',
-        collapse: 'rgba(213,71,47,.72)', collapseSoft: 'rgba(213,71,47,.35)',
-        nameFont: '700 9px "DM Sans", sans-serif', subFont: '8px "DM Sans", sans-serif', endedFont: '700 8px "DM Sans", sans-serif',
-        tagFont: '9px "DM Sans", sans-serif', stackTagFont: '8px "DM Sans", sans-serif', teamFont: '700 12px "DM Sans", sans-serif'
-      }),
-      sunset: Object.freeze({
-        pixel: true, bg: '#2B1155', ink: '#FFF3E2', inkDeep: '#170B33', onDark: '#FFF3E2', blockHighlight: 'rgba(255,243,226,.58)',
-        muted: '#DEC7F2', amber: '#FFC53D', vermilion: '#FF5964', teal: '#2EC4B6', fallbackBlock: '#2EC4B6',
-        veil: '#170B33', beam: 'rgba(255,197,61,.95)', gridLine: 'rgba(255,243,226,.13)', glowBlob: 'rgba(255,107,53,.10)',
-        baselineBar: 'rgba(255,197,61,.8)', floor: '#170B33', tagBg: 'rgba(23,11,51,.88)', separator: 'rgba(255,243,226,.22)', endedBg: 'rgba(23,11,51,.86)',
-        portalFill: 'rgba(46,196,182,.12)', portalStroke: 'rgba(46,196,182,.9)', portalAccent: 'rgba(255,197,61,.95)',
-        caliper: 'rgba(255,197,61,.95)', crumble: 'rgba(23,11,51,.85)', glue: 'rgba(255,197,61,.95)', glueGlow: 'rgba(255,197,61,.8)', glueDot: '#FFF3E2',
-        magnet: 'rgba(46,196,182,.75)', crack: 'rgba(23,11,51,.88)', ringTrack: 'rgba(255,243,226,.22)',
-        collapse: 'rgba(255,89,100,.85)', collapseSoft: 'rgba(255,89,100,.45)',
-        nameFont: '15px "VT323", monospace', subFont: '13px "VT323", monospace', endedFont: '13px "VT323", monospace',
-        tagFont: '14px "VT323", monospace', stackTagFont: '13px "VT323", monospace', teamFont: '16px "VT323", monospace'
-      }),
-      primetime: Object.freeze({
-        pixel: false, sky: 'primetime', bg: '#0A1A55', ink: '#FFFFFF', inkDeep: '#061238', blockStroke: '#061238', blockLine: 1.6, onDark: '#FFFFFF', blockHighlight: 'rgba(255,255,255,.55)',
-        muted: '#C9D6FF', amber: '#FFC83D', vermilion: '#FF5A52', teal: '#35D0E8', fallbackBlock: '#35D0E8',
-        veil: '#061238', beam: 'rgba(255,200,61,.95)', gridLine: 'rgba(255,255,255,.10)', glowBlob: 'rgba(255,200,61,.07)',
-        baselineBar: 'rgba(255,200,61,.9)', floor: '#061238', tagBg: 'rgba(6,18,56,.88)', separator: 'rgba(255,255,255,.22)', endedBg: 'rgba(6,18,56,.86)',
-        portalFill: 'rgba(53,208,232,.12)', portalStroke: 'rgba(53,208,232,.9)', portalAccent: 'rgba(255,200,61,.95)',
-        caliper: 'rgba(255,200,61,.95)', crumble: 'rgba(6,18,56,.85)', glue: 'rgba(255,200,61,.95)', glueGlow: 'rgba(255,200,61,.8)', glueDot: '#FFFFFF',
-        magnet: 'rgba(53,208,232,.75)', crack: 'rgba(6,18,56,.88)', ringTrack: 'rgba(255,255,255,.22)',
-        collapse: 'rgba(255,90,82,.85)', collapseSoft: 'rgba(255,90,82,.45)',
-        nameFont: '700 12px "Barlow Condensed", sans-serif', subFont: '500 11px "Barlow Condensed", sans-serif', endedFont: '700 11px "Barlow Condensed", sans-serif',
-        tagFont: '500 12px "Barlow Condensed", sans-serif', stackTagFont: '500 11px "Barlow Condensed", sans-serif', teamFont: '700 15px "Barlow Condensed", sans-serif'
-      })
-    });
+    const THEME_INK = Object.freeze({ paper: '#2A2520', sunset: '#FFF3E2', primetime: '#FFFFFF' });
     let currentTheme = normalizeTheme(document.documentElement && document.documentElement.dataset.theme);
-    function canvasTheme() { return CANVAS_THEMES[currentTheme] || CANVAS_THEMES.paper; }
+    function themeInk() { return THEME_INK[currentTheme] || THEME_INK.paper; }
     function themedColor(color) {
       const map = THEME_COLOR_MAPS[currentTheme];
       if (!map || typeof color !== 'string') return color;
@@ -1574,7 +1548,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       if (persist) {
         try { if (window.localStorage) window.localStorage.setItem(THEME_STORAGE_KEY, next); } catch (_) { /* storage unavailable: theme lasts for this page view */ }
       }
-      if (resultData) drawResults(resultData, resultReveal);
       if (game) drawGame();
       if (multiplayer.resultPayload && elements.mpResults && !elements.mpResults.hidden && document.body.dataset.screen === 'results') {
         const pickerHadFocus = document.activeElement === elements.themeSelect;
@@ -2449,14 +2422,14 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       teamSkip: document.getElementById('team-skip-button'), teamReady: document.getElementById('team-ready-button'),
       mpCard: document.getElementById('multiplayer-card'), mpMode: document.getElementById('multiplayer-mode-label'), mpCode: document.getElementById('multiplayer-room-code'), mpTurnHeading: document.getElementById('multiplayer-turn-heading'), mpTurnStatus: document.getElementById('multiplayer-turn-status'), mpSabotageAnnouncement: document.getElementById('multiplayer-sabotage-announcement'), mpTurnTimerLabel: document.getElementById('multiplayer-turn-timer-label'), mpTurnTimer: document.getElementById('multiplayer-turn-timer'), mpPlayers: document.getElementById('multiplayer-player-list'), mpResults: document.getElementById('multiplayer-results'), soloResultLayout: document.getElementById('solo-result-layout'),
       pause: document.getElementById('solo-pause-button'), menu: document.getElementById('menu-button'), again: document.getElementById('again-button'), resultsMenu: document.getElementById('results-menu-button'), gameHeading: document.getElementById('game-heading'), controlRow: document.getElementById('control-row'), controlHelp: document.getElementById('control-help'),
-      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), resultsCanvas: document.getElementById('results-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
+      gameStage: document.getElementById('game-stage'), gameCanvas: document.getElementById('game-canvas'), drop: document.getElementById('drop-button'), dropLabel: document.getElementById('drop-label'), dropKey: document.getElementById('drop-key'),
       height: document.getElementById('height-display'), statHeight: document.getElementById('stat-height'), statPerfects: document.getElementById('stat-perfects'), statSpeed: document.getElementById('stat-speed'), bestInline: document.getElementById('best-inline'),
       motion: document.getElementById('motion-chip'), canvasHint: document.getElementById('canvas-hint'), roundStatus: document.getElementById('round-status'),
       voteCard: document.getElementById('vote-card'), statsCard: document.getElementById('stats-card'), effectCard: document.getElementById('effect-card'),
       voteCountdown: document.getElementById('vote-countdown'), voteSubtitle: document.getElementById('vote-subtitle'), voteHelp: document.getElementById('vote-help'), voteState: document.getElementById('vote-state-label'), voteProgress: document.getElementById('vote-progress-fill'), voteButtons: Array.from(document.querySelectorAll('.vote-option')),
       stageVoteStrip: document.getElementById('stage-vote-strip'), stageVoteButtons: Array.from(document.querySelectorAll('.stage-vote-chip')),
       effectIconUse: document.getElementById('effect-icon-use'), effectName: document.getElementById('effect-name'), effectCaption: document.getElementById('effect-caption'), effectTime: document.getElementById('effect-time'), effectMeter: document.getElementById('effect-meter-fill'),
-      toast: document.getElementById('canvas-toast'), perfect: document.getElementById('perfect-banner'), chatFlavor: document.getElementById('chat-flavor-pop'),
+      toast: document.getElementById('canvas-toast'), autoDropRing: document.getElementById('auto-drop-ring'), autoDropLeft: document.querySelector('#auto-drop-ring .auto-drop-left'), perfect: document.getElementById('perfect-banner'), chatFlavor: document.getElementById('chat-flavor-pop'),
       resultTitle: document.getElementById('result-title'), resultSubtitle: document.getElementById('result-subtitle'), resultScore: document.getElementById('result-score'), resultBest: document.getElementById('result-best'), resultPerfects: document.getElementById('result-perfects'), resultFallen: document.getElementById('result-fallen'), resultScale: document.getElementById('result-scale'),
       titleBest: document.getElementById('title-best'), titleBestMobile: document.getElementById('title-best-mobile'), sabotageList: document.getElementById('sabotage-list')
     };
@@ -2476,16 +2449,12 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
     }
     elements.soloAutoDropSelect.value = soloAutoDropSetting;
     updateSoloAutoDropHelp();
-    // Keep alpha enabled: Spotlight masks a hole in its dark overlay to reveal the world below.
-    const gameContext = elements.gameCanvas.getContext('2d');
-    const resultsContext = elements.resultsCanvas.getContext('2d');
     const MOTION_STORAGE_KEY = 'sabotage-stack-motion-v1';
     const motionPreferenceQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     let motionSetting = 'system';
     try { const saved = window.localStorage && window.localStorage.getItem(MOTION_STORAGE_KEY); if (['system', 'full', 'reduced'].includes(saved)) motionSetting = saved; } catch (_) {}
     function localReducedMotion() { return motionSetting === 'reduced' || (motionSetting === 'system' && motionPreferenceQuery.matches); }
     let reducedMotion = localReducedMotion();
-    let dpr = 1;
     let game = null;
     let devReturnState = null;
     let devSelectedId = 'turbo';
@@ -2498,9 +2467,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
     let soloVoteNumber = 0;
     let spaceDropKeyHeld = false;
     let spaceDropTarget = null;
-    let camera = 0;
-    let frameDt = 0;
-    let zoomScale = 1;
     let lastFrame = 0;
     let uiClock = 0;
     const MP_SESSION_KEY = 'sabotage-stack-room-session-v1';
@@ -2548,8 +2514,8 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       return Boolean(game && game.multiplayer && game.mode === 'competitive' && multiplayer.role !== 'player');
     }
 
-    // Bridge for the optional 3D layer (public/stack3d.js). It exposes a read-only view of the live state. While the layer is
-    // active it draws the world, so the flat canvas drawing is skipped; DOM state, announcements, audio and input stay here.
+    // Bridge for the 3D layer (public/stack3d.js). It exposes a read-only view of the live state. The layer draws the world;
+    // DOM state, announcements, audio and input stay here.
     const stackHostView = { screen: 'title', theme: 'paper', reduced: false, game: null, mp: multiplayer, results: null, resultReveal: 0, Core, ballot: null, arena: false };
     const stackHost = {
       version: 1, active: false, snapshot: null,
@@ -2561,37 +2527,10 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       },
       setActive(flag) {
         stackHost.active = Boolean(flag);
-        for (const [canvas, context] of [[elements.gameCanvas, gameContext], [elements.resultsCanvas, resultsContext]]) {
-          context.save(); context.setTransform(1, 0, 0, 1, 0, 0); context.clearRect(0, 0, canvas.width, canvas.height); context.restore();
-        }
-        if (!stackHost.active) { if (game) drawGame(); if (resultData) drawResults(resultData, resultReveal); }
+        if (game) drawGame();
       }
     };
     window.SabotageStackHost = stackHost;
-    function setCanvasResolution(canvas, context) {
-      const deviceDpr = Number(window.devicePixelRatio) || 1;
-      const nextDpr = Math.min(2, deviceDpr > 0 ? deviceDpr : 1);
-      const wideBoard = canvas === elements.gameCanvas && watchingArena();
-      const canvasWidth = wideBoard ? WIDTH * 2 : WIDTH;
-      if (canvas.width !== Math.round(canvasWidth * nextDpr) || canvas.height !== Math.round(HEIGHT * nextDpr)) {
-        canvas.width = Math.round(canvasWidth * nextDpr);
-        canvas.height = Math.round(HEIGHT * nextDpr);
-      }
-      context.setTransform(nextDpr, 0, 0, nextDpr, 0, 0);
-      dpr = nextDpr;
-    }
-    function resizeCanvases() {
-      setCanvasResolution(elements.gameCanvas, gameContext);
-      setCanvasResolution(elements.resultsCanvas, resultsContext);
-      if (resultData) drawResults(resultData, resultReveal);
-    }
-    window.addEventListener('resize', resizeCanvases, { passive: true });
-    if ('ResizeObserver' in window) {
-      const observer = new ResizeObserver(resizeCanvases);
-      observer.observe(document.getElementById('game-stage'));
-      observer.observe(elements.resultsCanvas.parentElement);
-    }
-
     function setScreen(name) {
       const changed = document.body.dataset.screen !== name;
       const screens = [['title', elements.title], ['lobby', elements.lobby], ['game', elements.game], ['results', elements.results]];
@@ -2694,8 +2633,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       elements.mpMotionStatus.hidden = !roomReduced;
       if (game) {
         if (reducedMotion) {
-          camera = Math.max(0, 200 - (BASELINE - (game.stack.length + 1) * BLOCK_H));
-          zoomScale = 1;
           stepLocalMover(0, { advanceDrunk: false, advance: false });
         }
         syncHud(true);
@@ -3080,7 +3017,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       const dot = document.createElement('span');
       dot.className = 'player-color-dot';
       dot.setAttribute('aria-hidden', 'true');
-      dot.style.backgroundColor = themedColor(player.color) || canvasTheme().ink;
+      dot.style.backgroundColor = themedColor(player.color) || themeInk();
       const name = document.createElement('strong');
       name.textContent = String(player.name || 'Player');
       li.append(dot, name);
@@ -3313,7 +3250,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       view.turnWarningSent = !newRound && previous.currentTurnId === view.currentTurnId && previous.turnWarningSent;
       game = view;
       multiplayer.forceServerPosition = false;
-      if (newRound) { camera = 0; zoomScale = 1; lastFrame = 0; }
+      if (newRound) { lastFrame = 0; }
       if (pendingDropStateTransition(view)) clearMultiplayerPendingDrop(null, false);
       elements.mpCard.hidden = false;
       elements.gameModeKicker.textContent = `${remote.mode === 'teamwork' ? 'Teamwork' : 'Competitive'} · ${multiplayer.role === 'spectator' ? 'Spectator · ' : ''}Room ${multiplayer.code || ''}`;
@@ -3633,7 +3570,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       cancelPendingConnection();
       resetGameAnnouncements();
       resultData = null;
-      camera = 0; zoomScale = 1;
       const autoDropSeconds = soloAutoDropSetting === 'off' ? 0 : Number(soloAutoDropSetting);
       game = {
         phase: 'playing', soloPaused: false, elapsed: 0, nextVoteAt: 8, vote: null, effects: [], activeEffect: null,
@@ -4015,10 +3951,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       updateBestLabels();
       populateResults(resultData);
       setScreen('results');
-      if (!reducedMotion) {
-        resultReveal = 0;
-        drawResults(resultData, resultReveal);
-      }
+      if (!reducedMotion) resultReveal = 0;
       elements.again.focus({ preventScroll: true });
     }
 
@@ -4113,636 +4046,31 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       }
       updateFallingActors(dt);
     }
-    function drawPixelBlock(ctx, x, y, width, height, color, alpha = 1, perfect = false) {
-      if (width <= 0 || height <= 0) return;
-      const theme = canvasTheme();
-      const fill = themedColor(color) || theme.fallbackBlock;
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      if (width < 7 || height < 5) {
-        ctx.fillStyle = fill; ctx.fillRect(x, y, width, height);
-        ctx.strokeStyle = theme.inkDeep; ctx.lineWidth = .8; ctx.strokeRect(x, y, width, height);
-        ctx.restore();
-        return;
-      }
-      const cut = Math.min(3, width / 4, Math.max(1, height / 3));
-      ctx.beginPath();
-      ctx.moveTo(x + cut, y); ctx.lineTo(x + width - cut, y); ctx.lineTo(x + width, y + cut);
-      ctx.lineTo(x + width, y + height - cut); ctx.lineTo(x + width - cut, y + height); ctx.lineTo(x + cut, y + height);
-      ctx.lineTo(x, y + height - cut); ctx.lineTo(x, y + cut); ctx.closePath();
-      ctx.fillStyle = fill; ctx.fill();
-      ctx.strokeStyle = theme.inkDeep; ctx.lineWidth = Math.min(1.6, Math.max(.8, height / 14)); ctx.stroke();
-      const strip = Math.max(1, Math.min(4, height * .22));
-      ctx.fillStyle = mixColor(fill, '#FFFFFF', .42);
-      ctx.fillRect(x + cut, y + 1.5, Math.max(0, width - cut * 2), strip);
-      ctx.fillStyle = mixColor(fill, theme.inkDeep, .34);
-      ctx.fillRect(x + cut, y + height - 1.5 - strip, Math.max(0, width - cut * 2), strip);
-      if (width > 20 && height > 10) {
-        ctx.fillStyle = 'rgba(23,11,51,.42)';
-        ctx.fillRect(x + 4, y + height / 2 - 1, 2, 2); ctx.fillRect(x + width - 6, y + height / 2 - 1, 2, 2);
-      }
-      if (perfect && width > 11 && height > 9) {
-        ctx.fillStyle = theme.inkDeep;
-        const cx = x + width / 2; const cy = y + height / 2;
-        ctx.fillRect(cx - 1, cy - 4, 2, 8); ctx.fillRect(cx - 4, cy - 1, 8, 2);
-      }
-      ctx.restore();
-    }
-    function drawRoundedBlock(ctx, x, y, width, height, color, alpha = 1, perfect = false) {
-      if (width <= 0) return;
-      if (canvasTheme().pixel) { drawPixelBlock(ctx, x, y, width, height, color, alpha, perfect); return; }
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      const radius = Math.min(5, Math.max(1, width / 8));
-      ctx.beginPath();
-      ctx.roundRect(x, y, width, height, radius);
-      ctx.fillStyle = themedColor(color);
-      ctx.fill();
-      ctx.strokeStyle = canvasTheme().blockStroke || canvasTheme().ink;
-      ctx.lineWidth = canvasTheme().blockLine || .9;
-      ctx.stroke();
-      ctx.fillStyle = canvasTheme().blockHighlight;
-      ctx.fillRect(x + radius, y + 2, Math.max(0, width - radius * 2), 1.2);
-      if (perfect && width > 11) {
-        ctx.fillStyle = canvasTheme().blockStroke || canvasTheme().ink;
-        drawStar(ctx, x + width / 2, y + height / 2, 4, 2, 5);
-      }
-      ctx.restore();
-    }
-    // A visual centre reference only: perfect-window calculations remain in the shared core.
-    function drawCenterTick(ctx, block, baseline, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!block) return;
-      const x = origin + (block.left + block.right) / 2 * scaleX;
-      const y = baseline - (block.level + 1) * BLOCK_H * scaleY + cameraOffset;
-      const height = Math.max(2, 7 * scaleY);
-      ctx.save();
-      ctx.globalAlpha = .8;
-      ctx.fillStyle = '#101010';
-      ctx.fillRect(x - Math.max(1, 1.5 * scaleX), y + scaleY, Math.max(2, 3 * scaleX), height);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(x - Math.max(.5, .5 * scaleX), y + scaleY, Math.max(1, scaleX), height);
-      ctx.restore();
-    }
-    function drawAutoDropRing(ctx) {
-      if (!game || game.devMode || game.multiplayer || game.phase !== 'playing' || !game.moving || game.autoDropSeconds <= 0) return;
-      const elapsed = Number(game.blockClock) || 0;
-      if (elapsed < SOLO_AUTO_DROP_RING_AFTER) return;
-      const left = Math.max(0, game.autoDropSeconds - elapsed);
-      const fraction = Math.min(1, left / game.autoDropSeconds);
-      const x = WIDTH - 24; const y = 82; const radius = 11;
-      ctx.save();
-      ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-      ctx.strokeStyle = canvasTheme().ringTrack;
-      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = left <= 1 ? canvasTheme().vermilion : canvasTheme().amber;
-      ctx.beginPath(); ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * fraction); ctx.stroke();
-      ctx.restore();
-    }
-    function drawStar(ctx, cx, cy, outer, inner, points) {
-      ctx.beginPath();
-      for (let i = 0; i < points * 2; i += 1) {
-        const radius = i % 2 === 0 ? outer : inner;
-        const angle = -Math.PI / 2 + i * Math.PI / points;
-        const x = cx + Math.cos(angle) * radius;
-        const y = cy + Math.sin(angle) * radius;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.fill();
-    }
-    function paintSunsetSky(ctx, w, h) {
-      const gradient = ctx.createLinearGradient(0, 0, 0, h);
-      gradient.addColorStop(0, '#FF6B35'); gradient.addColorStop(.32, '#FF5964');
-      gradient.addColorStop(.58, '#6D28C4'); gradient.addColorStop(1, '#24104A');
-      ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < 28; i += 1) {
-        const x = (i * 67 + 13) % Math.max(1, w);
-        const y = (i * 41 + 9) % Math.max(1, Math.round(h * .48));
-        ctx.fillStyle = `rgba(255,243,226,${i % 3 === 0 ? .5 : .22})`;
-        ctx.fillRect(x, y, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
-      }
-      // Banded pixel sun: slices thin out below the centre so the sky shows through as stripes.
-      const cx = w * .72; const cy = h * .22; const r = Math.min(w, h) * .16;
-      for (let dy = -r; dy < r; dy += 5) {
-        const half = Math.sqrt(Math.max(0, r * r - dy * dy));
-        ctx.fillStyle = dy < -r * .25 ? '#FFC53D' : dy < r * .35 ? '#FF8A3D' : '#FF5964';
-        ctx.fillRect(cx - half, cy + dy, half * 2, dy > 0 ? 3 : 4);
-      }
-      // Distant rooftops / mountains silhouette.
-      ctx.fillStyle = '#2A1450';
-      ctx.beginPath(); ctx.moveTo(0, h * .68);
-      for (let x = 0; x <= w; x += 36) ctx.lineTo(x, h * .68 - ((x * 29) % 37));
-      ctx.lineTo(w, h * .68); ctx.lineTo(w, h * .72); ctx.lineTo(0, h * .72); ctx.closePath(); ctx.fill();
-    }
-    function paintPrimeTimeSky(ctx, w, h) {
-      const gradient = ctx.createLinearGradient(0, 0, 0, h);
-      gradient.addColorStop(0, '#1B3CAA'); gradient.addColorStop(.55, '#0F2680'); gradient.addColorStop(1, '#061238');
-      ctx.fillStyle = gradient; ctx.fillRect(0, 0, w, h);
-      // Two studio spotlight cones crossing over the stage.
-      [[w * .18, w * .22], [w * .82, -w * .22]].forEach(([cx, drift]) => {
-        const beam = ctx.createLinearGradient(0, 0, 0, h * .8);
-        beam.addColorStop(0, 'rgba(255,255,255,.14)'); beam.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.fillStyle = beam; ctx.beginPath();
-        ctx.moveTo(cx - 6, 0); ctx.lineTo(cx + 6, 0); ctx.lineTo(cx + drift + 70, h * .8); ctx.lineTo(cx + drift - 70, h * .8); ctx.closePath(); ctx.fill();
-      });
-      for (let i = 0; i < 22; i += 1) {
-        const x = (i * 71 + 29) % Math.max(1, w);
-        const y = 40 + (i * 47 + 11) % Math.max(1, Math.round(h * .55));
-        ctx.fillStyle = `rgba(255,200,61,${i % 3 === 0 ? .45 : .2})`;
-        ctx.fillRect(x, y, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
-      }
-    }
-    function paintThemeSky(ctx, w, h) {
-      const theme = canvasTheme();
-      if (theme.pixel) { paintSunsetSky(ctx, w, h); return; }
-      if (theme.sky === 'primetime') { paintPrimeTimeSky(ctx, w, h); return; }
-      ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, w, h);
-    }
-    function drawPrimeTimeBackground(ctx, cameraOffset) {
-      paintPrimeTimeSky(ctx, WIDTH, HEIGHT);
-      ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = 1;
-      const gridOffset = (cameraOffset * .18) % 54;
-      for (let y = 22 - gridOffset; y < HEIGHT; y += 54) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke(); }
-      // Marquee rails: gold bulbs scroll with the camera so climbing the tower feels like moving up the set.
-      ctx.strokeStyle = 'rgba(255,200,61,.35)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(14, HEIGHT); ctx.moveTo(WIDTH - 14, 0); ctx.lineTo(WIDTH - 14, HEIGHT); ctx.stroke();
-      const bulbOffset = (cameraOffset * .5) % 30;
-      for (let y = bulbOffset - 30; y < HEIGHT + 30; y += 30) {
-        for (const x of [14, WIDTH - 14]) {
-          ctx.fillStyle = 'rgba(255,200,61,.25)'; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#FFE9A8'; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, Math.PI * 2); ctx.fill();
-        }
-      }
-    }
-    function drawSunsetBackground(ctx, cameraOffset) {
-      paintSunsetSky(ctx, WIDTH, HEIGHT);
-      ctx.strokeStyle = 'rgba(255,197,61,.20)'; ctx.lineWidth = 1;
-      const gridOffset = (cameraOffset * .18) % 44;
-      for (let y = 292 - gridOffset; y < HEIGHT; y += 44) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke(); }
-      for (let x = 20; x < WIDTH; x += 34) { ctx.beginPath(); ctx.moveTo(x, 250); ctx.lineTo(x, HEIGHT); ctx.stroke(); }
-      ctx.strokeStyle = 'rgba(255,243,226,.38)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(14, HEIGHT); ctx.moveTo(WIDTH - 14, 0); ctx.lineTo(WIDTH - 14, HEIGHT); ctx.stroke();
-    }
-    function drawBackground(ctx, elapsed, cameraOffset) {
-      if (canvasTheme().pixel) { drawSunsetBackground(ctx, cameraOffset); return; }
-      if (canvasTheme().sky === 'primetime') { drawPrimeTimeBackground(ctx, cameraOffset); return; }
-      ctx.fillStyle = '#F4EDDF';
-      ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      ctx.fillStyle = 'rgba(47,132,120,.055)';
-      ctx.beginPath(); ctx.ellipse(285, 155, 130, 170, -.3, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(42,37,32,.095)';
-      ctx.lineWidth = 1;
-      const gridOffset = (cameraOffset * .18) % 54;
-      for (let y = 22 - gridOffset; y < HEIGHT; y += 54) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke();
-      }
-      for (let x = 18; x < WIDTH; x += 60) {
-        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, HEIGHT); ctx.stroke();
-      }
-      for (let i = 0; i < 18; i += 1) {
-        const x = (i * 73 + 17) % WIDTH;
-        const y = (i * 127 + 31) % HEIGHT;
-        ctx.fillStyle = `rgba(42,37,32,${i % 3 === 0 ? .14 : .075})`;
-        ctx.fillRect(x, y, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? 2 : 1);
-      }
-      ctx.strokeStyle = 'rgba(42,37,32,.24)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(14, HEIGHT); ctx.moveTo(WIDTH - 14, 0); ctx.lineTo(WIDTH - 14, HEIGHT); ctx.stroke();
-    }
-    function drawActor(ctx, actor, cameraOffset) {
-      ctx.save();
-      ctx.translate(actor.x + actor.width / 2, actor.y + cameraOffset + actor.height / 2);
-      ctx.rotate(actor.angle);
-      drawRoundedBlock(ctx, -actor.width / 2, -actor.height / 2, actor.width, actor.height, actor.color, Math.max(.2, 1 - actor.age / 1.35));
-      ctx.restore();
-    }
-    function spotlight(ctx, beamX, beamY, viewport = { x: -40, y: -40, width: WIDTH + 80, height: HEIGHT + 80 }, radius = 52) {
-      ctx.save();
-      // Everything the effect draws stays inside its own viewport (a Competitive host column must not paint on its neighbours).
-      ctx.beginPath();
-      ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height);
-      ctx.clip();
-      // The veil is fully opaque. Any translucency lets the tower silhouette and the moving block show through
-      // everywhere, which defeats the sabotage; only the beam may reveal the world.
-      ctx.fillStyle = canvasTheme().veil;
-      ctx.beginPath();
-      ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height);
-      ctx.moveTo(beamX + radius, beamY);
-      ctx.arc(beamX, beamY, radius, 0, Math.PI * 2);
-      ctx.closePath();
-      ctx.fill('evenodd');
-      ctx.strokeStyle = canvasTheme().beam; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(beamX, beamY, radius, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
-    }
-    function drawPortalWalls(ctx, elapsed, direction = 1, viewport = { x: 0, y: 58, width: WIDTH, height: HEIGHT - 66 }, animated = !reducedMotion) {
-      const scaleX = viewport.width / WIDTH;
-      const leftGate = viewport.x + 5 * scaleX;
-      const rightGate = viewport.x + viewport.width - 5 * scaleX;
-      const bottom = viewport.y + viewport.height;
-      ctx.save();
-      ctx.beginPath(); ctx.rect(viewport.x, viewport.y, viewport.width, viewport.height); ctx.clip();
-      ctx.fillStyle = canvasTheme().portalFill;
-      ctx.fillRect(viewport.x, viewport.y, 10 * scaleX, viewport.height);
-      ctx.fillRect(viewport.x + viewport.width - 10 * scaleX, viewport.y, 10 * scaleX, viewport.height);
-      ctx.strokeStyle = canvasTheme().portalStroke; ctx.lineWidth = Math.max(1, 2 * scaleX);
-      ctx.setLineDash([4 * scaleX, 4 * scaleX]);
-      ctx.lineDashOffset = animated ? -elapsed * 18 * (direction < 0 ? -1 : 1) : 0;
-      for (const x of [leftGate, rightGate]) {
-        ctx.beginPath(); ctx.moveTo(x, viewport.y + 5); ctx.lineTo(x, bottom - 5); ctx.stroke();
-      }
-      ctx.setLineDash([]);
-      ctx.strokeStyle = canvasTheme().portalAccent; ctx.lineWidth = Math.max(1, 1.35 * scaleX);
-      for (let y = viewport.y + 25; y < bottom - 16; y += 52) {
-        for (const [x, sign] of [[leftGate, 1], [rightGate, -1]]) {
-          ctx.beginPath(); ctx.ellipse(x + sign * 2 * scaleX, y, 3.5 * scaleX, 8, 0, 0, Math.PI * 2); ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-    function drawWorldBlock(ctx, left, y, width, height, color, portal = false, origin = 0, scaleX = 1, alpha = 1, perfect = false) {
-      const draw = x => drawRoundedBlock(ctx, origin + x * scaleX, y, width * scaleX, height, color, alpha, perfect);
-      draw(left);
-      if (portal && left < 0) draw(left + WIDTH);
-      if (portal && left + width > WIDTH) draw(left - WIDTH);
-    }
-    function drawCaliperGuides(ctx, below, moving, baseline = BASELINE, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!below || !moving) return;
-      const bounds = Core.caliperBounds(below, moving);
-      const railLeft = origin + bounds.minLeft * scaleX;
-      const railRight = origin + (bounds.maxLeft + moving.width) * scaleX;
-      const moverY = baseline - ((moving.level || 0) + 1) * BLOCK_H * scaleY + cameraOffset;
-      const supportY = baseline - ((below.level || 0) + 1) * BLOCK_H * scaleY + cameraOffset;
-      const top = Math.min(moverY, supportY) - 9 * scaleY;
-      const bottom = supportY + BLOCK_H * scaleY + 5 * scaleY;
-      ctx.save();
-      ctx.strokeStyle = canvasTheme().caliper; ctx.lineWidth = Math.max(1, 1.35 * scaleX); ctx.lineCap = 'square';
-      for (const [x, inward] of [[railLeft, 1], [railRight, -1]]) {
-        ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x, moverY); ctx.lineTo(x + inward * 7 * scaleX, moverY); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(x, supportY + BLOCK_H * scaleY); ctx.lineTo(x + inward * 7 * scaleX, supportY + BLOCK_H * scaleY); ctx.stroke();
-      }
-      ctx.restore();
-    }
-    function drawCrumbleCue(ctx, block, baseline = BASELINE, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!block) return;
-      const x = origin + block.left * scaleX;
-      const width = (block.right - block.left) * scaleX;
-      const y = baseline - ((block.level || 0) + 1) * BLOCK_H * scaleY + cameraOffset;
-      const height = (BLOCK_H - 1) * scaleY;
-      ctx.save();
-      ctx.strokeStyle = canvasTheme().crumble; ctx.lineWidth = Math.max(.9, 1.1 * scaleX); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-      for (const [fraction, lean] of [[.24, 1], [.68, -1]]) {
-        const cx = x + width * fraction;
-        ctx.beginPath();
-        ctx.moveTo(cx, y + 1 * scaleY);
-        ctx.lineTo(cx + lean * 2.6 * scaleX, y + height * .34);
-        ctx.lineTo(cx - lean * 2 * scaleX, y + height * .62);
-        ctx.lineTo(cx + lean * 1.4 * scaleX, y + height - 1 * scaleY);
-        ctx.moveTo(cx + lean * 2.6 * scaleX, y + height * .34);
-        ctx.lineTo(cx + lean * 6.5 * scaleX, y + height * .5);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    function drawGlueCue(ctx, block, baseline = BASELINE, cameraOffset = 0, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!block) return;
-      const x = origin + block.left * scaleX;
-      const width = (block.right - block.left) * scaleX;
-      const y = baseline - ((block.level || 0) + 1) * BLOCK_H * scaleY + cameraOffset;
-      ctx.save();
-      ctx.strokeStyle = canvasTheme().glue; ctx.lineWidth = Math.max(1.5, 2.2 * scaleX); ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(x + 3 * scaleX, y + 2 * scaleY); ctx.quadraticCurveTo(x + width / 2, y + 5 * scaleY, x + width - 3 * scaleX, y + 2 * scaleY); ctx.stroke();
-      ctx.fillStyle = canvasTheme().amber;
-      ctx.beginPath(); ctx.ellipse(x + width / 2, y + 3 * scaleY, Math.max(2.1, Math.min(4.2, width * .035)), 2.2 * scaleY, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = canvasTheme().glueDot;
-      ctx.beginPath(); ctx.arc(x + width / 2 - 1 * scaleX, y + 2.3 * scaleY, .8 * scaleX, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
-    function drawMagneticArcs(ctx, moving, below, movingY, origin = 0, scaleX = 1, scaleY = 1) {
-      if (!moving || !below) return;
-      const moverCenter = origin + (moving.left + moving.width / 2) * scaleX;
-      const targetCenter = origin + ((below.left + below.right) / 2) * scaleX;
-      const endY = movingY + BLOCK_H * scaleY + 3 * scaleY;
-      ctx.save();
-      ctx.strokeStyle = canvasTheme().magnet; ctx.lineWidth = Math.max(.8, scaleX); ctx.setLineDash([3 * scaleX, 4 * scaleX]);
-      for (let index = 0; index < 3; index += 1) {
-        const offset = (index - 1) * 6 * scaleX;
-        ctx.beginPath(); ctx.moveTo(moverCenter + offset, movingY + (BLOCK_H - 2) * scaleY);
-        ctx.quadraticCurveTo((moverCenter + targetCenter) / 2 + offset, endY + (13 + index * 3) * scaleY, targetCenter + offset, endY);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    function drawKineticCue(ctx, id, x, y, width, height) {
-      if (!['turbo', 'drunk', 'slowmo'].includes(id)) return;
-      ctx.save(); ctx.strokeStyle = canvasTheme().inkDeep || canvasTheme().ink;
-      ctx.lineWidth = 1.5; ctx.lineCap = 'round'; ctx.beginPath();
-      if (id === 'turbo') {
-        for (let i = 0; i < 3; i += 1) { const yy = y + height * (.25 + i * .25); ctx.moveTo(x + width * .2, yy); ctx.lineTo(x + width * .8, yy); }
-      } else if (id === 'drunk') {
-        ctx.moveTo(x + width * .2, y + height * .65); ctx.lineTo(x + width * .35, y + height * .35); ctx.lineTo(x + width * .5, y + height * .65); ctx.lineTo(x + width * .65, y + height * .35); ctx.lineTo(x + width * .8, y + height * .65);
-      } else {
-        ctx.moveTo(x + width * .4, y + height * .22); ctx.lineTo(x + width * .6, y + height * .78); ctx.moveTo(x + width * .6, y + height * .22); ctx.lineTo(x + width * .4, y + height * .78);
-      }
-      ctx.stroke(); ctx.restore();
-    }
-    function drawShellCrack(ctx, x, y, width) {
-      ctx.save();
-      ctx.strokeStyle = canvasTheme().crack;
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(x + width * .53, y + 4);
-      ctx.lineTo(x + width * .48, y + 8);
-      ctx.lineTo(x + width * .55, y + 11);
-      ctx.lineTo(x + width * .49, y + 16);
-      ctx.stroke();
-      ctx.restore();
-    }
-    function drawCompetitiveHostBoard(ctx) {
-      ctx.save();
-      ctx.scale(2, 1);
-      drawBackground(ctx, game.elapsed, 0);
-      ctx.restore();
-      const players = game.remotePlayers || [];
-      const columnWidth = (WIDTH * 2) / Math.max(1, players.length);
-      const maxHeight = Math.max(0, ...players.map(player => Number(player.height) || 0));
-      const baseline = BASELINE + 38;
-      const horizontalScale = columnWidth / WIDTH;
-      const verticalScale = Math.max(.035, Math.min(.9, (baseline - 78) / (Math.max(1, maxHeight + 1) * BLOCK_H)));
-      ctx.save();
-      for (let index = 0; index < players.length; index += 1) {
-        const player = players[index];
-        const columnLeft = columnWidth * index;
-        const center = columnLeft + columnWidth / 2;
-        const effect = (game.remoteEffects || []).find(item => item.targetPlayerId === player.playerId || item.targetPlayerId == null);
-        const effectElapsed = Number(effect && effect.elapsed) || 0;
-        if (index > 0) { ctx.strokeStyle = canvasTheme().separator; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(columnLeft, 48); ctx.lineTo(columnLeft, HEIGHT - 8); ctx.stroke(); }
-        ctx.fillStyle = themedColor(player.color) || canvasTheme().ink; ctx.beginPath(); ctx.arc(center, 24, 5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = canvasTheme().ink; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.font = canvasTheme().nameFont; ctx.fillText(String(player.name || 'Player').slice(0, 9), center, 39, columnWidth - 3);
-        ctx.font = canvasTheme().subFont; ctx.fillStyle = canvasTheme().muted;
-        ctx.fillText(`${player.height || 0} high`, center, 51);
-        ctx.save();
-        const topBlock = (player.blocks || []).slice(-1)[0] || Core.makeBase();
-        if (effect && effect.id === 'earthquake') {
-          const tremor = Core.earthquakeOffset(effectElapsed, effect.remaining, reducedMotion);
-          ctx.translate(tremor.x * horizontalScale, tremor.y * verticalScale);
-        }
-        if (effect && effect.id === 'pisa') {
-          const pivotY = baseline - ((player.height || 0) + 1) * BLOCK_H * verticalScale + BLOCK_H * verticalScale / 2;
-          const angle = Core.pisaAngle(effectElapsed, effect.remaining, effect.tiltDirection, reducedMotion);
-          ctx.translate(center, pivotY); ctx.rotate(angle); ctx.translate(-center, -pivotY);
-        }
-        if (effect && effect.id === 'portal') {
-          drawPortalWalls(ctx, effectElapsed, 1, { x: columnLeft, y: 58, width: columnWidth, height: HEIGHT - 66 }, !reducedMotion);
-        }
-        const blocks = player.blocks || [];
-        for (const block of blocks) {
-          const width = block.right - block.left;
-          const x = columnLeft + block.left * horizontalScale;
-          const y = baseline - ((block.level || 0) + 1) * BLOCK_H * verticalScale;
-          drawRoundedBlock(ctx, x, y, Math.max(1, width * horizontalScale), Math.max(1.5, BLOCK_H * verticalScale - .5), block.color || player.color, 1, Boolean(block.perfect));
-        }
-        if (!player.ended && !player.collapsed && player.moving) drawCenterTick(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
-        if (effect && effect.id === 'superglue') drawGlueCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
-        if (effect && effect.id === 'crumble') drawCrumbleCue(ctx, topBlock, baseline, 0, columnLeft, horizontalScale, verticalScale);
-        if (effect && effect.id === 'calipers' && player.moving) drawCaliperGuides(ctx, topBlock, player.moving, baseline, 0, columnLeft, horizontalScale, verticalScale);
-        const moving = player.moving;
-        if (!player.ended && !player.collapsed && moving) {
-          const alpha = reducedMotion || !effect || effect.id !== 'peekaboo' ? 1 : Core.peekabooOpacity(effectElapsed);
-          const vertical = effect && effect.id === 'rollercoaster' && !reducedMotion
-            ? Core.rollercoasterOffset(effectElapsed, Number(moving.rollerPhase) || 0) * verticalScale : 0;
-          const y = baseline - (moving.level + 1) * BLOCK_H * verticalScale + vertical;
-          if (effect && effect.id === 'magnet') drawMagneticArcs(ctx, moving, topBlock, y, columnLeft, horizontalScale, verticalScale);
-          if (alpha > 0.01) {
-            if (effect && effect.id === 'double' && moving.decoy) {
-              drawWorldBlock(ctx, moving.decoy.left, y, moving.decoy.width, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.decoy.color || player.color, false, columnLeft, horizontalScale, alpha);
-            }
-            const windup = effect && effect.id === 'slowmo' ? Core.slowToDartWindup(effectElapsed) : 0;
-            const drawnWidth = moving.width * (1 - 0.08 * windup);
-            const drawnLeft = moving.left + (moving.width - drawnWidth) / 2;
-            const screenLeft = columnLeft + drawnLeft * horizontalScale;
-            const screenWidth = drawnWidth * horizontalScale;
-            if (effect && effect.id === 'superglue') {
-              ctx.save(); ctx.shadowColor = canvasTheme().glueGlow; ctx.shadowBlur = reducedMotion ? 0 : 5;
-              drawWorldBlock(ctx, drawnLeft, y, drawnWidth, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.color || player.color, Boolean(effect && effect.id === 'portal'), columnLeft, horizontalScale, alpha);
-              ctx.restore();
-            } else {
-              drawWorldBlock(ctx, drawnLeft, y, drawnWidth, Math.max(1.5, BLOCK_H * verticalScale - .5), moving.color || player.color, Boolean(effect && effect.id === 'portal'), columnLeft, horizontalScale, alpha);
-            }
-            if (effect) drawKineticCue(ctx, effect.id, screenLeft, y, screenWidth, Math.max(1.5, BLOCK_H * verticalScale - .5));
-            if (effect && effect.id === 'double') drawShellCrack(ctx, screenLeft, y, screenWidth);
-          }
-          if (effect && effect.id === 'spotlight') {
-            const side = Number(effect.spotlightSide) < 0 ? -1 : 1;
-            const beamWorldX = side < 0 ? topBlock.left + 7 : topBlock.right - 7;
-            const beamX = columnLeft + beamWorldX * horizontalScale;
-            const beamY = baseline - ((topBlock.level || 0) + 1) * BLOCK_H * verticalScale + BLOCK_H * verticalScale / 2;
-            spotlight(ctx, beamX, beamY, { x: columnLeft, y: 60, width: columnWidth, height: HEIGHT - 66 }, Math.max(9, 52 * horizontalScale));
-          }
-        }
-        ctx.restore();
-        ctx.fillStyle = canvasTheme().baselineBar; ctx.fillRect(center - columnWidth / 2 + 1, baseline, columnWidth - 2, 2);
-        if (player.ended || player.disconnected || player.collapsed) {
-          ctx.fillStyle = canvasTheme().endedBg; ctx.beginPath(); ctx.roundRect(center - columnWidth / 2 + 3, HEIGHT - 31, columnWidth - 6, 17, canvasTheme().pixel ? 0 : 4); ctx.fill();
-          ctx.fillStyle = canvasTheme().onDark; ctx.font = canvasTheme().endedFont;
-          ctx.fillText(player.disconnected ? 'OFFLINE' : player.collapsed ? 'COLLAPSED' : 'FINISHED', center, HEIGHT - 22, columnWidth - 8);
-        }
-      }
-      ctx.restore();
+    function syncAutoDropRing() {
+      const ring = elements.autoDropRing;
+      const show = Boolean(game && !game.devMode && !game.multiplayer && game.phase === 'playing' && game.moving && game.autoDropSeconds > 0
+        && (Number(game.blockClock) || 0) >= SOLO_AUTO_DROP_RING_AFTER);
+      ring.hidden = !show;
+      if (!show) return;
+      const left = Math.max(0, game.autoDropSeconds - (Number(game.blockClock) || 0));
+      elements.autoDropLeft.style.strokeDashoffset = String(1 - Math.min(1, left / game.autoDropSeconds));
+      ring.classList.toggle('is-urgent', left <= 1);
     }
     function syncGameOverlays() {
+      syncAutoDropRing();
       if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
       else elements.toast.classList.remove('is-visible');
       if (game.perfectTime > 0) elements.perfect.classList.add('is-visible');
       else elements.perfect.classList.remove('is-visible');
     }
     function drawGame() {
-      if (!game) return;
-      if (stackHost.active) { syncGameOverlays(); return; }
-      setCanvasResolution(elements.gameCanvas, gameContext);
-      const ctx = gameContext;
-      if (watchingArena()) {
-        drawCompetitiveHostBoard(ctx);
-        if (game.toastTime > 0 && game.toastText) { if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText; elements.toast.classList.add('is-visible'); }
-        else elements.toast.classList.remove('is-visible');
-        return;
-      }
-      const moving = game.moving;
-      const topWorldY = BASELINE - (game.stack.length + 1) * BLOCK_H;
-      const targetCamera = Math.max(0, 200 - topWorldY);
-      if (reducedMotion) camera = targetCamera;
-      else camera += (targetCamera - camera) * (1 - Math.exp(-Math.max(0, frameDt) / 0.12));
-      const cameraOffset = camera;
-      const effectId = game.activeEffect ? game.activeEffect.id : '';
-      const effectElapsed = Number(game.activeEffect && game.activeEffect.elapsed) || 0;
-      const zoomTarget = effectId === 'zoom' ? Core.SABOTAGE_TUNING.zoom.scale : 1;
-      const effectEase = frameDt > 0 ? Math.min(1, frameDt / 0.12) : 0;
-      if (reducedMotion) zoomScale = zoomTarget;
-      else zoomScale += (zoomTarget - zoomScale) * effectEase;
-      if (Math.abs(zoomScale - zoomTarget) < 0.001) zoomScale = zoomTarget;
-      ctx.save();
-      if (!reducedMotion && game.phase === 'collapse' && game.collapseShake > 0) {
-        const shakeScale = Math.min(1, game.collapseShake / 0.62);
-        const shakeTime = (0.62 - game.collapseShake) * 70;
-        ctx.translate(Math.sin(shakeTime) * 3.2 * shakeScale, Math.cos(shakeTime * 1.3) * 1.1 * shakeScale);
-      }
-      drawBackground(ctx, game.elapsed, cameraOffset);
-      ctx.save();
-      if (Math.abs(zoomScale - 1) > 0.001) {
-        const topBlock = game.stack[game.stack.length - 1] || Core.makeBase();
-        const focusX = (topBlock.left + topBlock.right) / 2;
-        const focusY = BASELINE - game.stack.length * BLOCK_H + cameraOffset + BLOCK_H / 2;
-        ctx.translate(focusX, focusY); ctx.scale(zoomScale, zoomScale); ctx.translate(-focusX, -focusY);
-      }
-      if (effectId === 'earthquake') {
-        const tremor = Core.earthquakeOffset(effectElapsed, game.activeEffect.remaining, reducedMotion);
-        ctx.translate(tremor.x, tremor.y);
-      }
-      if (effectId === 'pisa') {
-        const topBlock = game.stack[game.stack.length - 1] || Core.makeBase();
-        const pivotY = BASELINE - game.stack.length * BLOCK_H + cameraOffset + BLOCK_H / 2;
-        const angle = Core.pisaAngle(effectElapsed, game.activeEffect.remaining, game.activeEffect.tiltDirection, reducedMotion);
-        ctx.translate((topBlock.left + topBlock.right) / 2, pivotY);
-        ctx.rotate(angle);
-        ctx.translate(-(topBlock.left + topBlock.right) / 2, -pivotY);
-      }
-      if (effectId === 'portal') drawPortalWalls(ctx, effectElapsed, Number(game.activeEffect.windDirection) < 0 ? -1 : 1);
-      const worldBase = BASELINE + cameraOffset;
-      if (worldBase < HEIGHT + 20 && worldBase > -10) {
-        ctx.fillStyle = canvasTheme().baselineBar; ctx.fillRect(0, worldBase, WIDTH, 2);
-        ctx.fillStyle = canvasTheme().floor; ctx.fillRect(0, worldBase + 2, WIDTH, HEIGHT - worldBase);
-        if (canvasTheme().pixel) {
-          ctx.fillStyle = 'rgba(255,243,226,.12)';
-          for (let cx = 0; cx < WIDTH; cx += 18) { if (((cx / 18) | 0) % 2 === 0) ctx.fillRect(cx, worldBase + 8, 18, 7); else ctx.fillRect(cx, worldBase + 19, 18, 7); }
-        }
-      }
-      const collapsingLevels = new Set(game.collapsingLevels || []);
-      for (const block of game.stack) {
-        if (collapsingLevels.has(block.level)) continue;
-        const y = BASELINE - (block.level + 1) * BLOCK_H + cameraOffset;
-        drawRoundedBlock(ctx, block.left, y, block.right - block.left, BLOCK_H - 1, block.color, 1, block.perfect);
-        if (game.multiplayer && game.mode === 'teamwork' && block.placer && block.placer !== 'Base') {
-          const tag = String(block.placer).slice(0, 12);
-          ctx.save();
-          ctx.font = canvasTheme().tagFont;
-          const tagHeight = canvasTheme().pixel ? 15 : 12;
-          const tagWidth = Math.min(84, ctx.measureText(tag).width + 8);
-          const onLeft = block.left > WIDTH * .56;
-          const tagX = onLeft ? Math.max(2, block.left - tagWidth - 4) : Math.min(WIDTH - tagWidth - 2, block.right + 4);
-          ctx.fillStyle = canvasTheme().tagBg;
-          ctx.beginPath(); ctx.roundRect(tagX, y + 5, tagWidth, tagHeight, canvasTheme().pixel ? 0 : 4); ctx.fill();
-          ctx.fillStyle = canvasTheme().onDark; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.fillText(tag, tagX + tagWidth / 2, y + 5 + tagHeight / 2, tagWidth - 5);
-          ctx.restore();
-        }
-      }
-      const below = game.stack[game.stack.length - 1] || Core.makeBase();
-      if (moving && game.phase === 'playing' && !collapsingLevels.has(below.level)) drawCenterTick(ctx, below, BASELINE, cameraOffset);
-      if (effectId === 'superglue') drawGlueCue(ctx, below, BASELINE, cameraOffset);
-      if (effectId === 'crumble') drawCrumbleCue(ctx, below, BASELINE, cameraOffset);
-      if (effectId === 'calipers' && moving) drawCaliperGuides(ctx, below, moving, BASELINE, cameraOffset);
-      for (const actor of game.fallingActors) {
-        if (actor.collapseActor && !actor.started) continue;
-        drawActor(ctx, actor, cameraOffset);
-      }
-      let movingY = moving ? BASELINE - (moving.level + 1) * BLOCK_H + cameraOffset : 0;
-      if (moving && game.phase === 'playing') {
-        const verticalOffset = effectId === 'rollercoaster' && !reducedMotion
-          ? Core.rollercoasterOffset(effectElapsed, Number(moving.rollerPhase) || 0) : 0;
-        movingY += verticalOffset;
-        const alpha = reducedMotion || effectId !== 'peekaboo' ? 1 : Core.peekabooOpacity(effectElapsed);
-        if (effectId === 'magnet') drawMagneticArcs(ctx, moving, below, movingY);
-        if (alpha > 0.01) {
-          if (effectId === 'double' && moving.decoy) {
-            drawWorldBlock(ctx, moving.decoy.left, movingY, moving.decoy.width, BLOCK_H - 1, moving.decoy.color || moving.color, false, 0, 1, alpha);
-          }
-          const windup = effectId === 'slowmo' ? Core.slowToDartWindup(effectElapsed) : 0;
-          const drawnWidth = moving.width * (1 - 0.08 * windup);
-          const drawnLeft = moving.left + (moving.width - drawnWidth) / 2;
-          if (effectId === 'superglue') {
-            ctx.save(); ctx.shadowColor = canvasTheme().glueGlow; ctx.shadowBlur = reducedMotion ? 0 : 8;
-            drawWorldBlock(ctx, drawnLeft, movingY, drawnWidth, BLOCK_H - 1, moving.color, effectId === 'portal', 0, 1, alpha);
-            ctx.restore();
-          } else {
-            drawWorldBlock(ctx, drawnLeft, movingY, drawnWidth, BLOCK_H - 1, moving.color, effectId === 'portal', 0, 1, alpha);
-          }
-          drawKineticCue(ctx, effectId, drawnLeft, movingY, drawnWidth, BLOCK_H - 1);
-          if (effectId === 'double') drawShellCrack(ctx, drawnLeft, movingY, drawnWidth);
-        }
-      }
-      if (effectId === 'spotlight') {
-        const side = Number(game.activeEffect.spotlightSide) < 0 ? -1 : 1;
-        const beamX = side < 0 ? below.left + 7 : below.right - 7;
-        const beamY = BASELINE - ((below.level || 0) + 1) * BLOCK_H + cameraOffset + BLOCK_H / 2;
-        spotlight(ctx, beamX, beamY);
-      }
-      ctx.restore();
-      drawAutoDropRing(ctx);
-      if (game.toastTime > 0 && game.toastText) {
-        if (elements.toast.textContent !== game.toastText) elements.toast.textContent = game.toastText;
-        elements.toast.classList.add('is-visible');
-      } else elements.toast.classList.remove('is-visible');
-      if (game.perfectTime > 0) elements.perfect.classList.add('is-visible');
-      else elements.perfect.classList.remove('is-visible');
-      ctx.restore();
+      if (game) syncGameOverlays();
     }
 
-        function resultCanvasContext(canvas, width, height) {
-      const ratio = Math.min(2, Math.max(1, Number(window.devicePixelRatio) || 1));
-      canvas.width = Math.round(width * ratio);
-      canvas.height = Math.round(height * ratio);
-      const ctx = canvas.getContext('2d');
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      return ctx;
-    }
     function drawMultiplayerStack(canvas, blocks, fallen, maxHeight, collapseLevel, teamwork = false) {
       const w = teamwork ? 360 : 220;
       const h = teamwork ? 470 : 300;
-      if (stackHost.active && stackHost.snapshot && stackHost.snapshot(canvas, { blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h })) return;
-      const ctx = resultCanvasContext(canvas, w, h);
-      paintThemeSky(ctx, w, h);
-      ctx.strokeStyle = canvasTheme().gridLine; ctx.lineWidth = 1;
-      for (let y = 28; y < h - 20; y += 42) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
-      const baseline = teamwork ? 422 : 252;
-      const commonScale = Math.min(1, (baseline - 26) / (Math.max(1, maxHeight + 1) * BLOCK_H));
-      ctx.fillStyle = canvasTheme().baselineBar; ctx.fillRect(0, baseline, w, 2);
-      ctx.fillStyle = canvasTheme().floor; ctx.fillRect(0, baseline + 2, w, h - baseline - 2);
-      for (const block of blocks || []) {
-        const scale = commonScale;
-        const left = w / 2 + ((Number(block.left) || 0) - WIDTH / 2) * scale;
-        const width = Math.max(1, ((Number(block.right) || 0) - (Number(block.left) || 0)) * scale);
-        const level = Number.isInteger(block.level) ? block.level : (blocks || []).indexOf(block);
-        const y = baseline - (level + 1) * BLOCK_H * scale;
-        drawRoundedBlock(ctx, left, y, width, Math.max(1, BLOCK_H * scale - .8), block.color || canvasTheme().fallbackBlock, 1, Boolean(block.perfect));
-        if (teamwork && block.placer && block.placer !== 'Base' && w > 250) {
-          const tag = String(block.placer).slice(0, 10);
-          ctx.save(); ctx.font = canvasTheme().stackTagFont;
-          const tagHeight = canvasTheme().pixel ? 15 : 11;
-          const tagWidth = Math.min(72, ctx.measureText(tag).width + 6);
-          const tagX = left > w * .56 ? Math.max(2, left - tagWidth - 3) : Math.min(w - tagWidth - 2, left + width + 3);
-          ctx.fillStyle = canvasTheme().tagBg; ctx.beginPath(); ctx.roundRect(tagX, y + 4, tagWidth, tagHeight, canvasTheme().pixel ? 0 : 3); ctx.fill();
-          ctx.fillStyle = canvasTheme().onDark; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(tag, tagX + tagWidth / 2, y + 4 + tagHeight / 2, tagWidth - 4); ctx.restore();
-        }
-      }
-      if (collapseLevel != null) {
-        const levelY = baseline - (Math.max(0, collapseLevel) + 1) * BLOCK_H * commonScale;
-        ctx.save(); ctx.strokeStyle = canvasTheme().collapse; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(8, levelY); ctx.lineTo(w - 8, levelY); ctx.stroke(); ctx.restore();
-      }
-      for (let i = 0; i < Math.min((fallen || []).length, 12); i += 1) {
-        const piece = fallen[i];
-        const x = (i * 37 + 24) % Math.max(1, w - 48);
-        const y = baseline + 9 + (i % 5) * 7;
-        const width = Math.max(5, ((piece.right || 0) - (piece.left || 0)) * commonScale);
-        ctx.save(); ctx.translate(x + width / 2, y + 3); ctx.rotate(Math.sin(i * 1.7) * .22);
-        drawRoundedBlock(ctx, -width / 2, -3, width, Math.max(2, 11 * commonScale), piece.color || canvasTheme().vermilion, .92, false); ctx.restore();
-      }
-      if (teamwork) {
-        ctx.fillStyle = canvasTheme().ink; ctx.font = canvasTheme().teamFont; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-        ctx.fillText('Shared tower · colored by player', 10, h - 9);
-      }
+      if (stackHost.snapshot) stackHost.snapshot(canvas, { blocks, fallen, maxHeight, collapseLevel, teamwork, width: w, height: h });
     }
     function appendResultHeading(titleText, descriptionText) {
       const heading = document.createElement('h3'); heading.textContent = titleText;
@@ -4777,7 +4105,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
         const legend = document.createElement('ul'); legend.className = 'room-player-list teamwork-result-legend';
         for (const player of result.players || []) {
           const li = document.createElement('li');
-          const dot = document.createElement('span'); dot.className = 'player-color-dot'; dot.style.backgroundColor = themedColor(player.color) || canvasTheme().ink; dot.setAttribute('aria-hidden', 'true');
+          const dot = document.createElement('span'); dot.className = 'player-color-dot'; dot.style.backgroundColor = themedColor(player.color) || themeInk(); dot.setAttribute('aria-hidden', 'true');
           const text = document.createElement('span'); text.textContent = `${player.name}: ${player.blocks} ${player.blocks === 1 ? 'block' : 'blocks'} · ${player.perfects} perfect`;
           li.append(dot, text); legend.append(li);
         }
@@ -4803,7 +4131,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
         players.forEach((player, index) => {
           const card = document.createElement('article'); card.className = `multiplayer-result-card${winners.has(player.id) ? ' is-winner' : ''}`;
           const name = document.createElement('h4');
-          const dot = document.createElement('span'); dot.className = 'player-color-dot'; dot.style.backgroundColor = themedColor(player.color) || canvasTheme().ink; dot.setAttribute('aria-hidden', 'true');
+          const dot = document.createElement('span'); dot.className = 'player-color-dot'; dot.style.backgroundColor = themedColor(player.color) || themeInk(); dot.setAttribute('aria-hidden', 'true');
           name.append(dot);
           const nameText = document.createElement('span'); nameText.textContent = `${index + 1}. ${player.name}`; name.append(nameText);
           if (winners.has(player.id)) { const crown = document.createElement('span'); crown.textContent = '★'; crown.setAttribute('aria-label', 'Winner'); crown.style.color = 'var(--amber)'; name.append(crown); }
@@ -4846,68 +4174,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       const totalHeight = Math.max(BLOCK_H, data.blocks.length * BLOCK_H);
       resultScale = Math.min(1, 338 / totalHeight);
       elements.resultScale.textContent = resultScale < .999 ? `Stack fitted to ${(resultScale * 100).toFixed(1)}% so every block stays in frame. Fallen pieces are drawn beneath the shared baseline.` : 'Full-size block geometry. The collapse point and fallen pieces are shown below.';
-      drawResults(data, resultReveal);
     }
-    function drawResults(data, reveal) {
-      if (stackHost.active) return;
-      setCanvasResolution(elements.resultsCanvas, resultsContext);
-      const ctx = resultsContext;
-      paintThemeSky(ctx, WIDTH, HEIGHT);
-      ctx.fillStyle = canvasTheme().glowBlob;
-      ctx.beginPath(); ctx.ellipse(280, 110, 110, 132, -.25, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = canvasTheme().gridLine; ctx.lineWidth = 1;
-      for (let y = 24; y < HEIGHT; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(WIDTH, y); ctx.stroke(); }
-      const blocks = Array.isArray(data.blocks) ? data.blocks : [];
-      const scale = Math.min(1, 338 / Math.max(BLOCK_H, blocks.length * BLOCK_H));
-      const xOffset = (WIDTH - WIDTH * scale) / 2;
-      const baseline = 440;
-      const count = Math.max(blocks.length ? 1 : 0, Math.ceil(blocks.length * Math.max(0, Math.min(1, reveal))));
-      const collapsedBlocks = Array.isArray(data.collapsedBlocks) ? data.collapsedBlocks : [];
-      const collapsedLevels = new Set(collapsedBlocks.map(block => block.level));
-      for (const block of blocks) {
-        if (block.level >= count || collapsedLevels.has(block.level)) continue;
-        const x = xOffset + block.left * scale;
-        const width = (block.right - block.left) * scale;
-        const y = baseline - (block.level + 1) * BLOCK_H * scale;
-        drawRoundedBlock(ctx, x, y, width, Math.max(1.3, (BLOCK_H - 1) * scale), block.color, 1, block.perfect && scale > .28);
-      }
-      if (data.collapsed && blocks.length) {
-        const level = Math.max(0, Math.min(blocks.length - 1, Number(data.collapseLevel) || 0));
-        if (level < count) {
-          const marked = blocks.find(block => block.level === level) || blocks[blocks.length - 1];
-          const y = baseline - (marked.level + 1) * BLOCK_H * scale;
-          const left = xOffset + marked.left * scale;
-          const width = Math.max(5, (marked.right - marked.left) * scale);
-          ctx.save();
-          ctx.strokeStyle = canvasTheme().vermilion; ctx.lineWidth = Math.max(1.2, 2 * scale); ctx.setLineDash([4, 3]);
-          ctx.beginPath(); ctx.moveTo(Math.max(3, left - 6), y + BLOCK_H * scale / 2); ctx.lineTo(Math.min(WIDTH - 3, left + width + 6), y + BLOCK_H * scale / 2); ctx.stroke();
-          ctx.setLineDash([]); ctx.fillStyle = canvasTheme().vermilion;
-          ctx.beginPath(); ctx.arc(Math.max(8, left - 7), y + BLOCK_H * scale / 2, 3.2, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-        }
-      }
-      ctx.fillStyle = canvasTheme().baselineBar; ctx.fillRect(0, baseline, WIDTH, 2);
-      ctx.fillStyle = canvasTheme().floor; ctx.fillRect(0, baseline + 2, WIDTH, HEIGHT - baseline - 2);
-      const fallen = Array.isArray(data.fallen) ? data.fallen : [];
-      const debris = [...collapsedBlocks.map(block => ({ ...block, kind: 'collapse' })), ...fallen];
-      for (let i = 0; i < debris.length; i += 1) {
-        const piece = debris[i];
-        const pieceWidth = Math.max(1.2, (piece.right - piece.left) * scale);
-        const pileX = Math.max(2, Math.min(WIDTH - pieceWidth - 2, xOffset + ((piece.left + piece.right) / 2) * scale - pieceWidth / 2 + Math.sin(i * 2.31) * 26));
-        const pileY = baseline + 10 + (i % 7) * 8;
-        const pieceHeight = piece.kind === 'collapse' ? Math.max(1.3, (BLOCK_H - 1) * scale) : Math.max(1.2, 12 * scale);
-        ctx.save();
-        ctx.translate(pileX + pieceWidth / 2, pileY + 4);
-        ctx.rotate(Math.sin(i * 1.71) * .24 + (piece.kind === 'miss' ? .18 : 0));
-        drawRoundedBlock(ctx, -pieceWidth / 2, -pieceHeight / 2, pieceWidth, pieceHeight, piece.color || canvasTheme().vermilion, .92, false);
-        ctx.restore();
-      }
-      if (!debris.length && data.collapsed) {
-        ctx.save(); ctx.strokeStyle = canvasTheme().collapseSoft; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.moveTo(155, baseline + 13); ctx.lineTo(171, baseline + 25); ctx.lineTo(190, baseline + 12); ctx.stroke(); ctx.restore();
-      }
-    }
-
     function syncVotePanel() {
       if (!game) return;
       const voting = Boolean(game.vote && game.phase === 'playing');
@@ -5217,7 +4484,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
 
     function frame(timestamp) {
       const dt = lastFrame ? Math.min(50, Math.max(0, timestamp - lastFrame)) / 1000 : 0;
-      frameDt = game && game.soloPaused ? 0 : dt;
       lastFrame = timestamp;
       if (game && game.soloPaused) { /* All solo simulation clocks stay frozen. */ }
       else if (multiplayer.active && game && game.multiplayer) updateMultiplayerView(dt);
@@ -5227,7 +4493,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       if (game && (document.body.dataset.screen === 'game' || game.phase === 'collapse')) drawGame();
       if (resultData && document.body.dataset.screen === 'results') {
         if (!reducedMotion && resultReveal < 1) resultReveal = Math.min(1, resultReveal + dt / .5);
-        drawResults(resultData, resultReveal);
       }
       uiClock += dt;
       if (uiClock >= .12) { uiClock = 0; if (game) syncHud(); }
@@ -5345,7 +4610,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       const sabotage = normal ? null : effectById(id);
       if ((!normal && !sabotage) || !game || !game.devMode) return false;
       devSelectedId = normal ? 'normal' : sabotage.id;
-      camera = 0; zoomScale = 1;
       game = {
         devMode: true, phase: 'playing', elapsed: 0, nextVoteAt: Number.POSITIVE_INFINITY, vote: null, effects: [], activeEffect: null,
         stack: makeDevStack(), fallenPieces: [], fallingActors: [], moving: null, perfects: 0, toastText: '', toastTime: 0, perfectTime: 0,
@@ -5386,7 +4650,7 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       if (game && game.devMode) return resetDevSandbox(id);
       if (!devReturnState) {
         devReturnState = {
-          game, screen: document.body.dataset.screen || 'title', camera, zoomScale,
+          game, screen: document.body.dataset.screen || 'title',
           heading: elements.gameHeading.textContent, kicker: elements.gameModeKicker.textContent
         };
       }
@@ -5407,8 +4671,6 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
       const saved = devReturnState;
       devReturnState = null;
       game = saved ? saved.game : null;
-      camera = saved ? saved.camera : 0;
-      zoomScale = saved ? saved.zoomScale : 1;
       elements.devPanel.hidden = true;
       elements.voteCard.hidden = false;
       elements.statsCard.hidden = false;
@@ -5657,9 +4919,8 @@ html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * 
     populateDevEffects();
     syncSoundButton();
     applyTheme(currentTheme, false);
-    resizeCanvases();
     updateBestLabels();
-    window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(CANVAS_THEMES)), getTheme: () => currentTheme, setTheme: name => applyTheme(name) });
+    window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(THEME_INK)), getTheme: () => currentTheme, setTheme: name => applyTheme(name) });
     const savedMultiplayerSession = mpSessionRead();
     if (savedMultiplayerSession) {
       multiplayer.active = true;

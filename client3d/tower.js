@@ -11,6 +11,7 @@ export const boardX = x => x - BOARD_W / 2;
 const MAX_BODIES = 70;
 // The moving block counts as gone below this opacity, exactly as the flat renderer draws nothing at or under it (Peekaboo).
 export const MOVER_MIN_ALPHA = 0.01;
+const CENTRE_TICK_H = 7; // board units, as tall as the 2D tick was
 const EDGE_OPACITY = 0.85; // the Sunset outline of a block
 
 export class Tower {
@@ -29,6 +30,26 @@ export class Tower {
     this.listeners = { land: [], perfect: [], collapse: [], piece: [], impact: [] };
     this.collapseQueue = [];
     this.alpha = 1;
+    this.tick = this.makeCentreTick();
+  }
+
+  // The centre reference: a dark bar with a white core on the front face of the top block, at its centre, while a block is moving.
+  makeCentreTick() {
+    const group = new THREE.Group(); group.visible = false; group.renderOrder = 5;
+    const part = (width, color) => {
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthTest: false });
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, CENTRE_TICK_H, 1), material); mesh.renderOrder = 5; group.add(mesh); return mesh;
+    };
+    const dark = part(3, 0x101010); const light = part(1, 0xffffff); light.position.z = 0.5;
+    group.userData.parts = [dark, light];
+    this.body.add(group);
+    return group;
+  }
+
+  syncCentreTick(state) {
+    const top = this.topMesh(); const show = Boolean(state.moving && top);
+    this.tick.visible = show; if (!show) return;
+    this.tick.position.set(top.userData.baseX, levelY(top.userData.level) + BLOCK_T / 2 - 1 - CENTRE_TICK_H / 2, this.depth / 2 + 1);
   }
 
   on(name, fn) { this.listeners[name].push(fn); return this; }
@@ -130,6 +151,7 @@ export class Tower {
     this.updateCollapseQueue(dt);
     this.syncMover(state, dt, time);
     this.animateBlocks(dt, time, state);
+    this.syncCentreTick(state);
     this.stepDebris(dt * this.timeScale, time);
     this.applyBodyTransform(state, time);
     this.rig.update(state, this.mover, dt, time);
@@ -343,5 +365,7 @@ export class Tower {
 
   dispose() {
     this.clear(); this.rig.dispose();
+    for (const mesh of this.tick.userData.parts) { mesh.geometry.dispose(); mesh.material.dispose(); }
+    this.body.remove(this.tick);
   }
 }

@@ -60,10 +60,9 @@ describe('Peekaboo in 3D: the block is really gone while it is hidden', () => {
     }
   });
 
-  test('visible exactly when the rules draw it (the flat view draws a block above 1 % opacity), opacity follows the rules, in every world and over several cycles', async () => {
+  test('visible exactly when the rules draw it (a block above 1 % opacity), opacity follows the rules, in every world and over several cycles', async () => {
     const { MOVER_MIN_ALPHA } = await load('tower.js');
-    assert.equal(MOVER_MIN_ALPHA, 0.01, 'the same threshold as the flat renderer');
-    assert.equal((html.match(/if \(alpha > 0\.01\) \{/g) || []).length, 2, 'the page still draws by that rule (column view and main board)');
+    assert.equal(MOVER_MIN_ALPHA, 0.01, 'the rules treat a block at or under 1 % opacity as hidden');
     for (const theme of THEMES) {
       const { tower, state, peek, frame } = await makeRig(theme); let hiddenFrames = 0; let visibleFrames = 0; let fadeFrames = 0;
       for (let t = 0; t < 3 * CYCLE + 0.1; t += 0.005) {

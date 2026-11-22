@@ -50,7 +50,7 @@ room replication) into the page.
 ## Adding a Sabotage
 
 1. Add a row.
-2. Add its behaviour in the core, the 2D page and client3d.
+2. Add its behaviour in the core, the page logic and client3d.
 3. Add a `sabotage-symbol-<id>` SVG, a 3D icon (`ICON_IDS`) and a title
    reaction (`TITLE_EFFECT_IDS`, `titlePose`).
 4. If it lasts a number of drops, mention it in the How to play text.
