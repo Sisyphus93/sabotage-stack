@@ -27,6 +27,10 @@ The misleading second moving block shown during the Double sabotage; it is not t
 **Room**:
 A hosted multiplayer session in which players take part in Teamwork or Competitive rounds and spectators can watch.
 
+**Abandoned Room**:
+A Room whose host has disconnected, with no players in it and no connected spectators; nobody is left to come back to it.
+_Avoid_: empty room, dead room
+
 **Scene**:
 A presentation of the title, lobby, active round, or results that a visitor can look around by turning and zooming the View.
 
