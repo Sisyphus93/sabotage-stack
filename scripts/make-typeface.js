@@ -3,7 +3,8 @@
 //
 // The glyph outlines come from the very fonts committed in fonts/, so the 3D lettering is the same design as the
 // page typography (Paper: Fraunces, Sunset Stack ’94: Press Start 2P, Prime Time: Alfa Slab One).
-// Only the characters the 3D scenes actually draw are kept, which keeps each typeface around 15 KB.
+// Only the characters the 3D scenes actually draw are kept, which keeps each typeface small. These committed files are the
+// source of truth; scripts/typefaces.js copies them to cacheable content-versioned assets that the client fetches per theme.
 //
 //   node scripts/make-typeface.js            # regenerate client3d/assets/typeface-*.json
 //   node scripts/make-typeface.js --check    # exit 1 if the committed files are stale

@@ -20,7 +20,7 @@ import { flightFor, blendSpec } from './flight.js';
 import { TitleDirector, titlePose, captionFor, TITLE_EFFECT_IDS } from './title-effects.js';
 import { normalizeTheme, paletteFor, BALLOT_COLORS, themedBlockColor } from './palette.js';
 import { buildIcon, ICON_IDS } from './icons3d.js';
-import { hasGlyphs } from './text3d.js';
+import { hasGlyphs, faceReady, loadFace } from './text3d.js';
 import { HoverField, offsetFromPointer } from './hover.js';
 import { PatternTick, TICK_STEP } from './pattern-tick.js';
 import { Totems, totemSlot, totemHeight } from './totems.js';
@@ -79,7 +79,13 @@ export class Stage {
     this.groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 60);
     this.cursorLight = new THREE.PointLight('#FFD9A0', 0, 900, 1.8); this.cursorLight.name = 'cursor-light'; // always in the scene (intensity 0 when idle): adding a light later would recompile every material
     this.scene.add(this.cursorLight);
+    this.pendingTheme = null; this.disposed = false;
     this.buildTheme(this.theme);
+    // Normally boot has fetched this theme's face already. If the visitor changed theme while that was in flight, fill the
+    // lettering in as soon as the face arrives (unless by then they have moved on again).
+    if (!faceReady(this.theme)) loadFace(this.theme).then(() => {
+      if (!this.disposed && !this.pendingTheme && faceReady(this.theme) && normalizeTheme(this.host.view().theme) === this.theme) this.buildTheme(this.theme, true);
+    }).catch(error => console.warn('3D typeface retry failed.', error));
     this.engine.on('tier', tier => this.applyTier(tier));
     this.engine.on('restored', () => this.buildTheme(this.theme, true));
     this.interaction.activate();
@@ -98,6 +104,24 @@ export class Stage {
   }
 
   // -------------------------------------------------------------------------------------------------------------------
+  // A theme switch waits for that theme's typeface before rebuilding, so its text is complete on the first frame it is
+  // shown. The old theme keeps running meanwhile; a failed fetch still commits, with the non-text scene.
+  requestTheme(theme) {
+    if (this.disposed || theme === this.theme || theme === this.pendingTheme) return;
+    this.pendingTheme = theme;
+    if (faceReady(theme)) { this.commitTheme(theme); return; }
+    loadFace(theme).then(() => this.commitTheme(theme)).catch(error => {
+      console.warn('3D theme switch failed.', error);
+      if (this.pendingTheme === theme) this.pendingTheme = null;
+    });
+  }
+
+  commitTheme(theme) {
+    if (this.disposed || this.pendingTheme !== theme) return;
+    this.pendingTheme = null;
+    this.buildTheme(theme);
+  }
+
   buildTheme(theme, force = false) {
     if (this.world) { this.scene.remove(this.world.root); this.world.dispose(); }
     this.theme = theme; this.engine.setTheme(theme); this.palette = this.engine.palette;
@@ -268,7 +292,8 @@ export class Stage {
     this.time += dt;
     const view = this.host.view(); this.view = view; this.reduced = Boolean(view.reduced); this.engine.reducedMotion = this.reduced; this.interaction.setContext({ reduced: this.reduced });
     const theme = normalizeTheme(view.theme);
-    if (theme !== this.theme) this.buildTheme(theme);
+    if (theme !== this.theme) this.requestTheme(theme);
+    else if (this.pendingTheme) this.pendingTheme = null; // switched back before the awaited face arrived: drop it
     const mode = this.pickMode(view);
     if (mode !== this.mode) this.enterMode(mode, view);
     this.modeTime += dt;
@@ -1014,6 +1039,7 @@ export class Stage {
   }
 
   dispose() {
+    this.disposed = true; this.pendingTheme = null;
     this.interaction.dispose();
     if (this.bricks) this.bricks.destroy(); if (this.voxel) this.voxel.dispose(); if (this.candidates) this.candidates.dispose();
     this.releaseMenu(); if (this.caption) { this.caption.el.remove(); this.caption = null; }

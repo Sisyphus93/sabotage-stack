@@ -2,16 +2,18 @@
 // The opening and the play field of the 3D layer, as pure logic: SABOTAGE STACK built of bricks from each theme's typeface, what chat does
 // to it for each of the sixteen sabotages, the camera flights between screens, the vote candidates, the block sculptures made from the
 // page's icon artwork, the brick lettering, the panel icons' thickness, the floor mirror, and the page rules that dress them.
-const { test, describe } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { installTypefaces } = require('./helpers/typefaces');
 
 const ROOT = path.join(__dirname, '..');
 const HTML_PATH = path.join(ROOT, 'sabotage-stack.html');
 const html = fs.readFileSync(HTML_PATH, 'utf8');
 const Core = require('../shared/game-core.js');
 const load = name => import(path.join(ROOT, 'client3d', name));
+before(installTypefaces);
 let boot = null; let skipReason = null;
 try { ({ boot } = require('./helpers/client-harness')); } catch (error) { skipReason = `Client harness failed to load: ${error.message}`; }
 const THEMES = ['paper', 'sunset', 'primetime'];
@@ -67,6 +69,14 @@ describe('brick lettering (brick-layout.js)', () => {
     const seamsOf = row => word.bricks.filter(b => b.row === row).map(b => Math.round((b.x + b.w / 2) * 10) / 10).slice(0, -1);
     let shared = 0; let total = 0; for (let r = 2; r < 14; r += 1) { const a = seamsOf(r); const b = seamsOf(r + 1); total += a.length; shared += a.filter(x => b.some(y => Math.abs(x - y) < 1.5)).length; }
     assert.ok(total > 10 && shared / total < 0.25, `${shared}/${total} seams line up`);
+  });
+  test('a player-name podium headline keeps every printable character in all three faces', async () => {
+    const { hasGlyphs } = await load('text3d.js');
+    for (const theme of THEMES) {
+      assert.equal(hasGlyphs(theme, "ADA O'NEIL 3"), true, `${theme}: a normal name survives the filter`);
+      assert.equal(hasGlyphs(theme, 'WOW!?'), true, `${theme}: punctuation the faces carry survives`);
+      assert.equal(hasGlyphs(theme, '★★★'), false, `${theme}: only characters outside the glyph set are stripped`);
+    }
   });
   test('digits and sabotage names can be built too (the height beside the lane, the name above the tower)', async () => {
     const { brickWord } = await load('brick-layout.js');

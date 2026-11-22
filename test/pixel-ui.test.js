@@ -3,16 +3,18 @@
 // sculptures, a pattern tick behind the stage, and a brick title that scatters in whole-brick steps. The logic is pure (tested here in Node);
 // pixel-ui.js, title-stack.js and candidates.js are thin adapters, tested below with the real page in jsdom and with real TitleStack /
 // VoteCandidates objects. It is all render / interaction layer: the rules, the protocol and the game state are untouched.
-const { test, describe } = require('node:test');
+const { test, describe, before } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { installTypefaces } = require('./helpers/typefaces');
 
 const ROOT = path.join(__dirname, '..');
 const HTML_PATH = path.join(ROOT, 'sabotage-stack.html');
 const html = fs.readFileSync(HTML_PATH, 'utf8');
 const load = name => import(path.join(ROOT, 'client3d', name));
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
+before(installTypefaces);
 
 describe('where the pixel feel is welcome (pixel-gate.js)', () => {
   test('menus yes, a live round no, a paused round is a menu again', async () => {

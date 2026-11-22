@@ -1,31 +1,85 @@
 // Real extruded lettering. Outlines come from the page's own fonts (see scripts/make-typeface.js), one typeface per theme:
 // Fraunces (Paper), Press Start 2P (Sunset Stack ’94), Alfa Slab One (Prime Time).
+//
+// The bundles carry only the generated URLs of the faces (client3d/assets/typeface-urls.json): each face is fetched from a
+// same-origin, content-versioned asset the first time its theme is needed, then kept in memory. The synchronous geometry
+// functions below are only ever called when faceReady(key) is true; if a face could not be fetched they return empty
+// results so the rest of that theme's scene still runs.
 import { ExtrudeGeometry, BufferGeometry, Float32BufferAttribute } from 'three';
 import { Font } from 'three/examples/jsm/loaders/FontLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import paperFace from './assets/typeface-paper.json' with { type: 'json' };
-import sunsetFace from './assets/typeface-sunset.json' with { type: 'json' };
-import primetimeFace from './assets/typeface-primetime.json' with { type: 'json' };
+import faceUrls from './assets/typeface-urls.json' with { type: 'json' };
 
-const FACES = { paper: paperFace, sunset: sunsetFace, primetime: primetimeFace };
+const FACES = Object.create(null);
+const REQUESTS = new Map();
 const fonts = new Map();
 const glyphCache = new Map();
 const textCache = new Map();
 
+function knownFace(key) { return Object.prototype.hasOwnProperty.call(faceUrls, key); }
+// The loaded face to use for a key: exact when it is known, Paper for an unknown key (the old fallback), null while a known
+// theme's face is still in flight or failed.
+function faceKey(key) {
+  if (FACES[key]) return key;
+  return !knownFace(key) && FACES.paper ? 'paper' : null;
+}
+
+export function faceReady(key) { return Boolean(FACES[key]) || (!knownFace(key) && Boolean(FACES.paper)); }
+
+// Installs face data directly (used by the Node tests; the browser gets it through loadFace).
+export function installFace(key, face) {
+  if (!face || !face.glyphs || typeof face.resolution !== 'number') throw new Error(`invalid typeface data for "${key}"`);
+  FACES[key] = face; fonts.delete(key);
+  return face;
+}
+
+// Starts (or joins) the one request for a theme's face. A failure or timeout resolves false: the caller may still build
+// the scene without text, and a later request retries. It never rejects.
+export function loadFace(key) {
+  const name = faceUrls[key] ? key : 'paper';
+  if (FACES[name]) return Promise.resolve(true);
+  if (REQUESTS.has(name)) return REQUESTS.get(name);
+  const request = (async () => {
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+    try {
+      const response = await fetch(faceUrls[name], { credentials: 'same-origin', signal: controller ? controller.signal : undefined });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const face = await response.json();
+      installFace(name, face);
+      return true;
+    } catch (error) {
+      console.warn(`3D typeface "${name}" could not be loaded; its text will be omitted.`, error);
+      return false;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      REQUESTS.delete(name);
+    }
+  })();
+  REQUESTS.set(name, request);
+  return request;
+}
+
 export function fontFor(key) {
-  const face = FACES[key] || FACES.paper;
-  if (!fonts.has(key)) fonts.set(key, new Font(face));
-  return fonts.get(key);
+  const name = faceKey(key);
+  if (!name) return null;
+  if (!fonts.has(name)) fonts.set(name, new Font(FACES[name]));
+  return fonts.get(name);
 }
 
 export function faceInfo(key) {
-  const face = FACES[key] || FACES.paper;
+  const name = faceKey(key);
+  if (!name) return null;
+  const face = FACES[name];
   return { resolution: face.resolution, capHeight: face.capHeight, glyphs: face.glyphs };
 }
 
+// A missing face is never reported as "no glyphs": names would be silently stripped while the face is in flight. Scenes
+// wait for the face instead (and omit text entirely if it failed).
 export function hasGlyphs(key, text) {
-  const { glyphs } = faceInfo(key);
-  return [...String(text)].every(ch => ch === ' ' || glyphs[ch]);
+  const face = faceInfo(key);
+  if (!face) return true;
+  return [...String(text)].every(ch => ch === ' ' || face.glyphs[ch]);
 }
 
 // Style per typeface: the pixel font must stay razor sharp (no bevel), the serif gets a soft bevel.
@@ -37,7 +91,9 @@ const STYLE = {
 
 function buildGlyph(key, ch, size, depth) {
   const style = STYLE[key] || STYLE.paper;
-  const { resolution, glyphs } = faceInfo(key);
+  const face = faceInfo(key);
+  if (!face) return null;
+  const { resolution, glyphs } = face;
   const glyph = glyphs[ch];
   if (!glyph) return null;
   const scale = size / resolution;
@@ -57,6 +113,7 @@ function buildGlyph(key, ch, size, depth) {
 // One glyph, centred on its own bounding box in X/Y and sitting on z = 0..depth, so letters can be mounted on block faces.
 export function glyphGeometry(key, ch, size = 40, depth = 8, baseline = false) {
   const id = `${key}|${ch}|${size}|${depth}|${baseline}`;
+  if (!faceReady(key)) return { geometry: null, advance: size * 0.4, width: 0, height: 0 };
   if (glyphCache.has(id)) return glyphCache.get(id);
   const built = buildGlyph(key, ch, size, depth);
   let result;
@@ -75,10 +132,12 @@ export function glyphGeometry(key, ch, size = 40, depth = 8, baseline = false) {
 // A whole word as one merged geometry, centred in X and on the cap-height line in Y.
 export function textGeometry(key, text, { size = 40, depth = 8, tracking, align = 'center' } = {}) {
   const id = `${key}|${text}|${size}|${depth}|${tracking}|${align}`;
+  const face = faceInfo(key);
+  if (!face) return { geometry: new BufferGeometry(), width: 0, capHeight: 0 };
   if (textCache.has(id)) return textCache.get(id);
   const style = STYLE[key] || STYLE.paper;
   const track = (tracking == null ? style.tracking : tracking) * size;
-  const { capHeight, resolution, glyphs } = faceInfo(key);
+  const { capHeight, resolution, glyphs } = face;
   const cap = (capHeight / resolution) * size;
   const parts = []; let cursor = 0;
   for (const ch of String(text).toUpperCase()) {
@@ -103,7 +162,9 @@ export function textGeometry(key, text, { size = 40, depth = 8, tracking, align 
 export function layoutWord(key, text, size = 40, tracking) {
   const style = STYLE[key] || STYLE.paper;
   const track = (tracking == null ? style.tracking : tracking) * size;
-  const { resolution, glyphs } = faceInfo(key);
+  const face = faceInfo(key);
+  if (!face) return { letters: [], total: 0 };
+  const { resolution, glyphs } = face;
   const letters = []; let cursor = 0;
   for (const ch of String(text).toUpperCase()) {
     const glyph = glyphs[ch];

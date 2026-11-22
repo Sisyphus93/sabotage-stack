@@ -9,6 +9,7 @@ import { faceInfo } from './text3d.js';
 // Tracking per typeface (the same breathing room text3d.js gives the solid lettering), plus a little extra so neighbouring brick
 // letters never fuse into one lump.
 const TRACKING = { paper: 0.045, sunset: 0.0, primetime: 0.05 };
+const DEFAULT_ROWS = 21;
 
 // ---- outlines ------------------------------------------------------------------------------------------------------
 // A glyph's `o` string is three.js's typeface format: `m x y` moves, `l x y` lines, `q x y cx cy` quadratics (end point first, then
@@ -84,11 +85,14 @@ export function splitSpan(x0, x1, len, shift) {
 //   -> { bricks: [{ x, y, w, h, letter, row, col }], letters: [{ ch, x0, x1, cx, rows }], width, capHeight, rowHeight, brickLength }
 // x is the centre of the brick measured from the middle of the word, y the centre of the brick above the baseline.
 export function brickWord(key, text, { capHeight = 112, rows = 0, rowHeight = 0, brickLength = 0, tracking, gap = 0, xScale = 1 } = {}) {
-  const face = faceInfo(key); const unit = capHeight / (face.capHeight / face.resolution) / face.resolution; // font units -> world units
+  const face = faceInfo(key);
+  // No face yet (or a failed fetch): an empty wall, never a half-built or name-stripped one. Scenes wait for the face.
+  if (!face) return { bricks: [], letters: [], width: 0, capHeight, rowHeight: rowHeight || capHeight / (rows || DEFAULT_ROWS), brickLength: brickLength || 0 };
+  const unit = capHeight / (face.capHeight / face.resolution) / face.resolution; // font units -> world units
   const size = unit * face.resolution;
   const pixelFont = key === 'sunset'; // Press Start 2P: every pixel is 125 font units; rows and bricks are cut on that grid
   const pixel = 125 * unit;
-  const rowH = rowHeight || (pixelFont ? pixel : capHeight / (rows || 21));
+  const rowH = rowHeight || (pixelFont ? pixel : capHeight / (rows || DEFAULT_ROWS));
   const brickLen = brickLength || (pixelFont ? pixel * 2 : rowH * 3.1);
   const track = ((tracking == null ? (TRACKING[key] ?? 0.04) : tracking) * size + gap) * xScale;
   const bricks = []; const letters = []; let cursor = 0; let letterIndex = 0;
