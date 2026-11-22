@@ -1,4 +1,4 @@
-// The tactile UI's behaviour (the keycap look itself is CSS, under html.has-3d):
+// The tactile UI's behaviour (the keycap look itself is CSS, under html:root):
 //  * a key on the keyboard presses the key on the screen that is named after it: Space sinks the DROP bar, 1 / 2 / 3 sink the vote
 //    keys, for as long as the finger holds them down (the layer adds and removes .is-pressed; the page's own handling is untouched)
 //  * the frosted decks (the menu, every side card, the results cards) tilt a couple of degrees towards the pointer while it is over

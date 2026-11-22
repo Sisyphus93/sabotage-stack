@@ -225,7 +225,7 @@ const fire = (page, target, type, init = {}, pointerType = 'mouse') => {
 describe('the pixel UI in the real page: the cursor trail (pixel-ui.js)', { skip: !boot && 'the jsdom harness is not available' }, () => {
   const setup = async (options = {}) => {
     const { installPixelUi } = await load('pixel-ui.js'); const page = await boot(HTML_PATH, { manualAnimationFrame: true });
-    const root = page.document.documentElement; root.classList.add('has-3d');
+    const root = page.document.documentElement;
     let t = 0; let frames = 0; const raf = page.window.requestAnimationFrame; page.window.requestAnimationFrame = cb => { if (cb && cb.name === 'draw') frames += 1; return raf(cb); }; // (the page's own game loop asks for frames too: count the trail's only)
     const told = { votes: [], primary: 0 };
     const pixel = installPixelUi({ doc: page.document, win: page.window, hover: true, now: () => t, hooks: { onVoteHover: i => told.votes.push(i), onPrimaryHover: () => { told.primary += 1; } }, ...options });
@@ -321,7 +321,7 @@ describe('the pixel UI in the real page: the cursor trail (pixel-ui.js)', { skip
   test('it is safe where there is no 2D canvas (getContext() is null): no trail, no jitter, no errors', async () => {
     const { installPixelUi } = await load('pixel-ui.js'); const page = await boot(HTML_PATH, { manualAnimationFrame: true });
     try {
-      page.window.HTMLCanvasElement.prototype.getContext = () => null; page.document.documentElement.classList.add('has-3d');
+      page.window.HTMLCanvasElement.prototype.getContext = () => null;
       const pixel = installPixelUi({ doc: page.document, win: page.window, hover: true, now: () => 0 });
       fire(page, page.document.body, 'pointermove', { clientX: 90, clientY: 90 }); fire(page, page.document.body, 'pointermove', { clientX: 190, clientY: 90 });
       fire(page, page.document.querySelector('.brand-word'), 'pointerover');
@@ -340,7 +340,7 @@ describe('the pixel UI in the real page: the cursor trail (pixel-ui.js)', { skip
       doc.dispatchEvent(new page.window.Event('fullscreenchange')); assert.equal(pixel.canvas.parentNode, stage, 'moved the moment fullscreen starts');
       dialog.setAttribute('open', ''); move(220, 100); assert.equal(pixel.canvas.parentNode, stage, 'fullscreen wins');
       Object.defineProperty(doc, 'fullscreenElement', { configurable: true, get: () => null }); dialog.removeAttribute('open'); doc.dispatchEvent(new page.window.Event('fullscreenchange')); assert.equal(pixel.canvas.parentNode, doc.body, 'and back when it ends');
-      assert.ok(root.classList.contains('has-3d')); assert.deepEqual(page.errors, []);
+      assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
 
@@ -361,7 +361,7 @@ describe('the pixel UI in the real page: the cursor trail (pixel-ui.js)', { skip
 describe('the pixel UI in the real page: rows, the wordmark and the hooks into the stage (pixel-ui.js)', { skip: !boot && 'the jsdom harness is not available' }, () => {
   const setup = async (options = {}) => {
     const { installPixelUi } = await load('pixel-ui.js'); const page = await boot(HTML_PATH, { manualAnimationFrame: true });
-    const doc = page.document; const root = doc.documentElement; root.classList.add('has-3d');
+    const doc = page.document; const root = doc.documentElement;
     const told = { votes: [], primary: 0 };
     // a scheduler by hand, and a text canvas that paints a known block: 80 x 10 px, i.e. 40 x 5 cells of 2 px, whatever fonts the machine has
     const sched = { fns: new Map(), n: 0, ms: 0, set(fn, ms) { this.n += 1; this.ms = ms; this.fns.set(this.n, fn); return this.n; }, clear(id) { this.fns.delete(id); }, tick() { for (const fn of [...this.fns.values()]) fn(); } };
@@ -846,16 +846,16 @@ describe('the pixel-grid CSS in the page', () => {
     primetime: { ...base, ...tokens(first(/html\[data-theme="primetime"\] \{([^}]*--paper:[^}]*)\}/)) }
   };
   const mine = {
-    paper: tokens(first(/html\.has-3d \{([^}]*--wipe-a:[^}]*)\}/)),
-    sunset: tokens(first(/html\.has-3d\[data-theme="sunset"\] \{([^}]*--wipe-a:[^}]*)\}/)),
-    primetime: tokens(first(/html\.has-3d\[data-theme="primetime"\] \{([^}]*--wipe-a:[^}]*)\}/))
+    paper: tokens(first(/html:root \{([^}]*--wipe-a:[^}]*)\}/)),
+    sunset: tokens(first(/html:root\[data-theme="sunset"\] \{([^}]*--wipe-a:[^}]*)\}/)),
+    primetime: tokens(first(/html:root\[data-theme="primetime"\] \{([^}]*--wipe-a:[^}]*)\}/))
   };
   const resolve = (name, value) => { const m = /^var\(--([\w-]+)\)$/.exec(String(value).trim()); return m ? resolve(name, mine[name][m[1]] || theme[name][m[1]]) : String(value).trim(); };
 
-  test('the section exists, and every rule in it belongs to the 3D layer (html.has-3d) or to Reduced Motion', () => {
+  test('the section exists, and every rule in it belongs to the 3D layer (html:root) or to Reduced Motion', () => {
     assert.ok(start > 0 && end > start && section.length > 3000, 'found it');
     const selectors = [...bare.matchAll(/(?:^|[}{;])\s*(html[^{}]*)\{/g)].map(m => m[1].trim()); assert.ok(selectors.length >= 20, `${selectors.length} rules`);
-    for (const list of selectors) for (const one of list.split(/,(?![^(]*\))/)) assert.match(one.trim(), /^html(\.has-3d|\[data-motion="reduced"\])/, `scoped: ${one.trim()}`); // (top-level commas only: :is(a, b) is one selector)
+    for (const list of selectors) for (const one of list.split(/,(?![^(]*\))/)) assert.match(one.trim(), /^html(:root|\[data-motion="reduced"\])/, `scoped: ${one.trim()}`); // (top-level commas only: :is(a, b) is one selector)
   });
 
   test('stepped, never eased; nothing blurs; nothing new has rounded corners', () => {
@@ -874,7 +874,7 @@ describe('the pixel-grid CSS in the page', () => {
     assert.doesNotMatch(outside, /:hover/, 'no :hover outside the media query'); assert.ok((inside.match(/:hover/g) || []).length >= 6);
     for (const must of ['.button-primary', '.button-secondary', '.vote-option', '.room-player-list li', '.score-tile']) assert.ok(inside.includes(must), `${must} is in there`);
     assert.doesNotMatch(bare, /\.drop-button|\.vote-key/, 'the live controls are not touched'); assert.doesNotMatch(bare, /:is\([^)]*\.button\b[^-]/, 'nor are the plain buttons');
-    assert.match(bare, /html\.has-3d\[data-motion="reduced"\] :is\(\.button-primary, \.button-secondary\) \{ transition-delay: 0s !important; \}/, 'Reduced Motion: the one delay is cleared (the page already makes every transition instant)');
+    assert.match(bare, /html:root\[data-motion="reduced"\] :is\(\.button-primary, \.button-secondary\) \{ transition-delay: 0s !important; \}/, 'Reduced Motion: the one delay is cleared (the page already makes every transition instant)');
     assert.match(html, /html\[data-motion="reduced"\] \*, html\[data-motion="reduced"\] \*::before, html\[data-motion="reduced"\] \*::after \{[^}]*transition-duration: \.01ms !important/, 'and that rule is still there');
   });
 

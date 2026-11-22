@@ -310,15 +310,15 @@ describe('home view: turning the scene (orbit) and the hover field', () => {
     } finally { page.close(); }
   });
   test('the page styles the controls, keeps pinch-zoom on the title screen and suppresses text selection only while dragging', async () => {
-    assert.match(html, /html\.has-3d #title-screen, html\.has-3d #solo-result-layout \.results-frame \{ touch-action: pan-y pinch-zoom; \}/);
+    assert.match(html, /html:root #title-screen, html:root #solo-result-layout \.results-frame \{ touch-action: pan-y pinch-zoom; \}/);
     assert.match(html, /html\.orbiting, html\.orbiting \* \{[^}]*user-select: none !important/);
     assert.match(html, /\.orbit-hud \{ position: fixed;[^}]*pointer-events: none;/);
     assert.match(html, /\.orbit-hud \.orbit-btn, \.orbit-hud \.toy-key \{ pointer-events: auto; \}/);
     // the keycap look exists only while the 3D layer runs, so the flat view is exactly what it was, and every theme has its own wall
-    assert.match(html, /html\.has-3d \.button:not\(:disabled\), html\.has-3d \.drop-button:not\(:disabled\), html\.has-3d \.vote-key \{/);
-    assert.match(html, /html\.has-3d\[data-theme="sunset"\] \{ --cap-wall:/); assert.match(html, /html\.has-3d\[data-theme="primetime"\] \{ --cap-wall:/);
-    assert.match(html, /html\.has-3d \.vote-option\.is-pressed \.vote-key/); assert.match(html, /html\.has-3d \.drop-button\.is-pressed/);
-    assert.doesNotMatch(html.replace(/html\.has-3d[^{]*\{[^}]*\}/g, ''), /--cap-depth/, 'no keycap rule outside html.has-3d');
+    assert.match(html, /html:root \.button:not\(:disabled\), html:root \.drop-button:not\(:disabled\), html:root \.vote-key \{/);
+    assert.match(html, /html:root\[data-theme="sunset"\] \{ --cap-wall:/); assert.match(html, /html:root\[data-theme="primetime"\] \{ --cap-wall:/);
+    assert.match(html, /html:root \.vote-option\.is-pressed \.vote-key/); assert.match(html, /html:root \.drop-button\.is-pressed/);
+    assert.doesNotMatch(html.replace(/html:root[^{]*\{[^}]*\}/g, ''), /--cap-depth/, 'no keycap rule outside html:root');
     assert.match(html, /\.orbit-hud\.is-rotated \.orbit-btn\[data-orbit="reset"\] \{ display: inline-flex; \}/);
   });
 });
@@ -505,7 +505,7 @@ describe('crown, lobby totems, sculpted glyphs and the turnable results', () => 
       assert.equal(hud.root.querySelectorAll('.toy-key').length, 0, 'no toy dock on the results'); assert.equal(hud.root.querySelectorAll('button[data-orbit]').length, 3);
       hud.dispose(); assert.equal(page.document.getElementById('orbit-hud-results'), null);
       assert.equal(createOrbitHud({ doc: page.document, hostId: 'no-such-screen' }), null);
-      assert.match(html, /html\.has-3d \.sound-toggle\[aria-pressed="false"\] \.speaker-on \{ display: none; \}/); assert.match(html, /html\.has-3d \.sound-toggle \.speaker-off \{ display: none; \}/);
+      assert.match(html, /html:root \.sound-toggle\[aria-pressed="false"\] \.speaker-on \{ display: none; \}/); assert.match(html, /html:root \.sound-toggle \.speaker-off \{ display: none; \}/);
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }
   });
@@ -639,7 +639,7 @@ describe('host bridge in the real page', skipReason ? { skip: skipReason } : {},
       page.window.eval(fs.readFileSync(path.join(ROOT, 'public', 'stack3d.js'), 'utf8')); await page.sleep(100);
       const notice = page.document.getElementById('webgl-required');
       assert.ok(notice, 'the notice is shown'); assert.equal(notice.getAttribute('role'), 'alert'); assert.match(notice.textContent, /needs WebGL 2/);
-      assert.equal(page.document.documentElement.classList.contains('has-3d'), false);
+      assert.equal(page.document.documentElement.classList.contains('needs-webgl'), true);
       assert.equal(page.document.getElementById('view-toggle'), null, 'there is no flat view to switch to');
       assert.deepEqual(page.errors, []);
     } finally { page.close(); }

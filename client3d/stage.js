@@ -84,7 +84,7 @@ export class Stage {
     this.engine.on('restored', () => this.buildTheme(this.theme, true));
     this.interaction.activate();
     this.applyTier(this.engine.tier);
-    // opening the link on the title screen: the menu is held back until SABOTAGE STACK has rained down (index.js adds has-3d in the same task)
+    // opening the link on the title screen: the menu is held back until SABOTAGE STACK has rained down (the page's 3D styles are always on)
     if (view.screen === 'title' && !view.reduced) { this.holdMenu = true; document.documentElement.dataset.intro = 'hold'; }
   }
 

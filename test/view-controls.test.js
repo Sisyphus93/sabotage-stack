@@ -141,13 +141,13 @@ describe('the game\'s view controls (client3d/orbit-hud.js)', () => {
 
 describe('the bottoms of the pages and the controls\' CSS (sabotage-stack.html)', () => {
   test('the strip under the home scene and the Drop row under the tower are rounded, padded glass (only while the 3D layer runs)', () => {
-    assert.match(html, /html\.has-3d \.home-bottom \{\s*min-height: 44px; height: auto; padding: 8px 18px;[^}]*border: 1px solid var\(--edge\); border-radius: 16px;/, 'the strip keeps its 44px on one line and only grows when its words wrap');
-    assert.match(html, /html\.has-3d \.control-row \{\s*width: auto; margin-top: 4px; padding: 9px 14px 11px; justify-content: center;[^}]*border-radius: 20px;/, 'one pill round the Drop key and its help');
-    assert.match(html, /html\.has-3d \.control-help \{ background: transparent;/, 'the pill is the glass; the help does not double it');
-    assert.match(html, /html\.has-3d \.play-card > \.position-audio-toggle \{ margin-top: 10px; \}/, 'the tone button has room of its own below the pill');
-    assert.match(html, /@media \(max-width: 700px\) \{\s*html\.has-3d \.home-bottom \{ justify-content: center; padding: 8px 14px; text-align: center; \}/);
+    assert.match(html, /html:root \.home-bottom \{\s*min-height: 44px; height: auto; padding: 8px 18px;[^}]*border: 1px solid var\(--edge\); border-radius: 16px;/, 'the strip keeps its 44px on one line and only grows when its words wrap');
+    assert.match(html, /html:root \.control-row \{\s*width: auto; margin-top: 4px; padding: 9px 14px 11px; justify-content: center;[^}]*border-radius: 20px;/, 'one pill round the Drop key and its help');
+    assert.match(html, /html:root \.control-help \{ background: transparent;/, 'the pill is the glass; the help does not double it');
+    assert.match(html, /html:root \.play-card > \.position-audio-toggle \{ margin-top: 10px; \}/, 'the tone button has room of its own below the pill');
+    assert.match(html, /@media \(max-width: 700px\) \{\s*html:root \.home-bottom \{ justify-content: center; padding: 8px 14px; text-align: center; \}/);
     // nothing of it leaks into the flat view
-    const outside = html.replace(/html\.has-3d[^{}]*\{[^{}]*\}/g, '');
+    const outside = html.replace(/html:root[^{}]*\{[^{}]*\}/g, '');
     assert.doesNotMatch(outside, /\.home-bottom \{[^}]*border-radius: 16px/); assert.doesNotMatch(outside, /\.control-row \{[^}]*border-radius: 20px/);
     // the layout contract the other tests pin stays as it was
     assert.match(html, /\.control-row \{ width: 100%; max-width: 420px; display: flex; align-items: center; gap: 12px; padding-top: 13px; touch-action: pan-y; \}/);

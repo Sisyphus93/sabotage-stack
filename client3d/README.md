@@ -144,12 +144,12 @@ hover lift and a press that sinks into the wall, by pointer, touch or the key it
 and the vote keys for 1 / 2 / 3). The page's sabotage icons have **thickness and a slow turn** (`icon-turn.js` wraps each one in a
 holder with darker copies behind it, kept in step with the real icon, so ids and the page's own queries are untouched). The brand
 emblem and the speaker are sculpted and baked like the 17 sabotage icons and swapped in.
-All of it is under `html.has-3d`.
+All of it is under `html:root`.
 
 ## The pixel-grid feel
 
 A crisp, stepped way of answering the pointer, after RASTER/27: hovers and fills move in whole steps (`steps()`, never an ease), nothing
-blurs, and everything new is square-cornered. All of it is under `html.has-3d` (the jsdom tests, which run without this layer, see the original page). The logic
+blurs, and everything new is square-cornered. All of it is under `html:root` (the jsdom tests, which run without this layer, see the original page). The logic
 is in pure, unit-tested modules; `pixel-ui.js` (`installPixelUi({ doc, win })` -> `{ dispose }`, installed next to `tactile.js` and
 `icon-turn.js` and disposed with them) is the thin DOM half, and the CSS is one block in `sabotage-stack.html` ("Pixel-grid feel").
 

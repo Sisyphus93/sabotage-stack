@@ -438,8 +438,8 @@ describe('Spotlight in play: no box, the name first, then the dark closes in, an
     assert.match(stage, /spotOpen\(effect\) \{[^}]*if \(this\.reduced\) return t < 0\.9 \? 1 : 0; return 1 - easeOutCubic\(clamp\(\(t - 0\.8\) \/ 0\.5\)\);/);
     assert.match(stage, /life: effect\.id === 'spotlight' \? \(this\.reduced \? 0\.9 : 1\.2\) : 1\.9/, 'a Spotlight\'s name is gone before the dark has closed in');
     assert.match(stage, /if \(open < 0\.999\) \{ const lamp = this\.emblemLight\(\)/);
-    assert.match(html, /html\.has-3d \.game-stage, html\.has-3d \.results-frame \{ background: transparent; border-color: transparent; box-shadow: none; \}/, 'the tower stands in the open world, not in a framed box');
-    assert.doesNotMatch(html, /html\.has-3d \.game-stage, html\.has-3d \.results-frame \{[^}]*var\(--edge\)/);
+    assert.match(html, /html:root \.game-stage, html:root \.results-frame \{ background: transparent; border-color: transparent; box-shadow: none; \}/, 'the tower stands in the open world, not in a framed box');
+    assert.doesNotMatch(html, /html:root \.game-stage, html:root \.results-frame \{[^}]*var\(--edge\)/);
   });
   test('the emblem sits in a medallion, turns face-on-first, and holds still under Reduced Motion', () => {
     const stage = fs.readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8');
@@ -512,26 +512,26 @@ describe('the floor mirror and the quality tiers (reflection.js)', () => {
 
 describe('the page rules that dress the opening and the panels', () => {
   test('the menu waits for the title (data-intro="hold"), then every panel swings in from depth; Reduced Motion gets no swing', () => {
-    assert.match(html, /html\.has-3d\[data-intro="hold"\] :is\(\.home-copy, \.home-bottom, \.orbit-hud\) \{ visibility: hidden; opacity: 0; \}/);
+    assert.match(html, /html:root\[data-intro="hold"\] :is\(\.home-copy, \.home-bottom, \.orbit-hud\) \{ visibility: hidden; opacity: 0; \}/);
     assert.match(html, /@keyframes panel-swing \{[^}]*translate3d\(.*?-640px\)[^}]*\}[^}]*\}/);
-    assert.match(html, /@media \(prefers-reduced-motion: no-preference\) \{\s*html\.has-3d:not\(\[data-motion="reduced"\]\):not\(\[data-intro="hold"\]\) :is\([^)]*\.home-copy[^)]*\.side-card[^)]*\.result-info[^)]*\) \{\s*animation: panel-swing/);
+    assert.match(html, /@media \(prefers-reduced-motion: no-preference\) \{\s*html:root:not\(\[data-motion="reduced"\]\):not\(\[data-intro="hold"\]\) :is\([^)]*\.home-copy[^)]*\.side-card[^)]*\.result-info[^)]*\) \{\s*animation: panel-swing/);
     assert.match(html, /body\[data-screen="game"\][^{]*\{ --swing-base: \.5s; \}/, 'on the other screens the panels arrive as the camera does');
   });
   test('glass panels face slightly inward (left ones one way, right ones the other) and the pointer tilt is added to that angle', () => {
-    assert.match(html, /html\.has-3d :is\(\.home-copy, \.side-card, \.result-info, \.multiplayer-results, \.preview-card\) \{\s*transform: perspective\(1200px\) rotateX\(calc\(var\(--tx\) \* 1deg\)\) rotateY\(calc\(var\(--face\) \+ var\(--ty\) \* 1deg\)\);/);
-    assert.match(html, /html\.has-3d :is\(\.home-copy, \.room-code-card\) \{ --face: 5\.5deg; --sign: 1; transform-origin: 0 50%; \}/);
-    assert.match(html, /html\.has-3d :is\(\.side-stack \.side-card, \.room-player-card, \.result-info, \.multiplayer-results, \.preview-card\) \{ --face: -5\.5deg; --sign: -1; transform-origin: 100% 50%; \}/);
-    assert.match(html, /@media \(min-width: 901px\) \{\s*html\.has-3d :is\(\.home-copy, \.room-code-card\)/, 'on a phone the cards stack, so they face the viewer');
+    assert.match(html, /html:root :is\(\.home-copy, \.side-card, \.result-info, \.multiplayer-results, \.preview-card\) \{\s*transform: perspective\(1200px\) rotateX\(calc\(var\(--tx\) \* 1deg\)\) rotateY\(calc\(var\(--face\) \+ var\(--ty\) \* 1deg\)\);/);
+    assert.match(html, /html:root :is\(\.home-copy, \.room-code-card\) \{ --face: 5\.5deg; --sign: 1; transform-origin: 0 50%; \}/);
+    assert.match(html, /html:root :is\(\.side-stack \.side-card, \.room-player-card, \.result-info, \.multiplayer-results, \.preview-card\) \{ --face: -5\.5deg; --sign: -1; transform-origin: 100% 50%; \}/);
+    assert.match(html, /@media \(min-width: 901px\) \{\s*html:root :is\(\.home-copy, \.room-code-card\)/, 'on a phone the cards stack, so they face the viewer');
   });
   test('headings are extruded in every theme\'s own colours, and the tagline is the menu\'s heading again', () => {
-    for (const theme of ['sunset', 'primetime']) assert.match(html, new RegExp(`html\\.has-3d\\[data-theme="${theme}"\\] \\{ --ext-1:`));
-    assert.match(html, /html\.has-3d :is\(#title-heading, \.screen-heading h2, \.result-info h2, \.multiplayer-results h2\) \{\s*text-shadow: 1px 1px 0 var\(--ext-1\)[^;]*var\(--ext-3\)[^;]*var\(--ext-drop\);/);
-    assert.match(html, /html\.has-3d :is\(\.side-card h3[^)]*\) \{\s*text-shadow:/); assert.doesNotMatch(html, /html\.has-3d #title-heading \{ position: absolute; width: 1px/, 'no longer hidden');
+    for (const theme of ['sunset', 'primetime']) assert.match(html, new RegExp(`html:root\\[data-theme="${theme}"\\] \\{ --ext-1:`));
+    assert.match(html, /html:root :is\(#title-heading, \.screen-heading h2, \.result-info h2, \.multiplayer-results h2\) \{\s*text-shadow: 1px 1px 0 var\(--ext-1\)[^;]*var\(--ext-3\)[^;]*var\(--ext-drop\);/);
+    assert.match(html, /html:root :is\(\.side-card h3[^)]*\) \{\s*text-shadow:/); assert.doesNotMatch(html, /html:root #title-heading \{ position: absolute; width: 1px/, 'no longer hidden');
   });
   test('the "chat voted" pill, the panel icons\' turn, and the hidden 2D toast are all there', () => {
     assert.match(html, /\.chat-caption \{\s*position: fixed;[^}]*pointer-events: none; opacity: 0;/); assert.match(html, /\.chat-caption\.is-on \{ opacity: 1;/);
-    assert.match(html, /html\.has-3d \.icon-turn \{ display: inline-grid;[^}]*transform-style: preserve-3d;/); assert.match(html, /html\.has-3d \.icon-turn > \.icon-back \{ transform: translateZ\(calc\(var\(--layer\) \* -1\.5px\)\)/);
-    assert.match(html, /@keyframes icon-turn \{[^}]*rotateY\(-46deg\)[^}]*\}[^}]*\}[^}]*\}/); assert.match(html, /html\.has-3d #perfect-banner, html\.has-3d #canvas-toast \{ display: none; \}/);
+    assert.match(html, /html:root \.icon-turn \{ display: inline-grid;[^}]*transform-style: preserve-3d;/); assert.match(html, /html:root \.icon-turn > \.icon-back \{ transform: translateZ\(calc\(var\(--layer\) \* -1\.5px\)\)/);
+    assert.match(html, /@keyframes icon-turn \{[^}]*rotateY\(-46deg\)[^}]*\}[^}]*\}[^}]*\}/); assert.match(html, /html:root #perfect-banner, html:root #canvas-toast \{ display: none; \}/);
   });
   test('the brick title replaced the demo: the stage has no demo tower, and the old classes are gone from the bundle sources', () => {
     const stage = fs.readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8'); const hero = fs.readFileSync(path.join(ROOT, 'client3d', 'hero.js'), 'utf8');

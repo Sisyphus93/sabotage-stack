@@ -60,7 +60,7 @@ function boot() {
       console.warn('3D could not start.', error);
       if (canvas) canvas.remove(); canvas = null; stage = null; return false;
     }
-    root.classList.add('has-3d'); host.setActive(true);
+    host.setActive(true);
     tactile = installTactileUi({ doc, win: window }); iconTurn = installIconTurn({ doc });
     pixel = installPixelUi({ doc, win: window, hooks: { onVoteHover: index => { if (stage) stage.setVoteHover(index); }, onPrimaryHover: () => { if (stage) stage.tickPattern(); } } });
     stage.gridTrail = () => Boolean(pixel && pixel.trailActive); // one trail, not two: the stage's sparkles step aside while the grid trail is on
@@ -76,7 +76,7 @@ function boot() {
     if (stage) { try { stage.dispose(); } catch (_) { /* context already gone */ } }
     if (canvas) canvas.remove();
     stage = null; canvas = null; iconTheme = ''; window.__stack3d = null;
-    root.classList.remove('has-3d'); restoreFlatIcons(doc); host.setActive(false);
+    restoreFlatIcons(doc); host.setActive(false);
     document.documentElement.style.cursor = '';
   }
 

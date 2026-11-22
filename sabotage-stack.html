@@ -830,64 +830,65 @@ html:is([data-theme]) .dev-actions .button { min-height: 50px; }
 }
   /* ===== 3D layer (client3d -> public/stack3d.js) ===================================================================
    The world is a fixed WebGL canvas behind the whole app; panels turn to glass and the stage frames become transparent
-   so the 3D tower lands inside the stage frames the page lays out. All rules live under html.has-3d. */
+   so the 3D tower lands inside the stage frames the page lays out. All rules start with html:root, which keeps the
+   specificity they had when they hung off the old html.has-3d class, so they still outrank the base and theme rules. */
 #stage3d { position: fixed; inset: 0; z-index: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 #webgl-required { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; text-align: center; background: var(--paper); color: var(--ink); }
 #webgl-required h1 { margin: 0; font-size: 28px; }
 #webgl-required p { margin: 0; max-width: 460px; }
-html.has-3d { --glass: rgba(244,237,223,.82); --edge: rgba(42,37,32,.3); }
-@supports (background: color-mix(in srgb, red, blue)) { html.has-3d { --glass: color-mix(in srgb, var(--paper) 80%, transparent); --edge: color-mix(in srgb, var(--ink) 32%, transparent); } }
-html.has-3d body { background: transparent; }
-html.has-3d body::after { opacity: .03; }
-html.has-3d .topbar { border-bottom-color: transparent; padding: 0 10px; border-radius: 0 0 16px 16px; background: linear-gradient(to bottom, var(--glass), transparent); }
-html.has-3d .home-copy, html.has-3d .home-bottom, html.has-3d .side-card, html.has-3d .result-info, html.has-3d .multiplayer-results,
-html.has-3d .screen-heading, html.has-3d .canvas-hint, html.has-3d .control-row, html.has-3d .control-help {
+html:root { --glass: rgba(244,237,223,.82); --edge: rgba(42,37,32,.3); }
+@supports (background: color-mix(in srgb, red, blue)) { html:root { --glass: color-mix(in srgb, var(--paper) 80%, transparent); --edge: color-mix(in srgb, var(--ink) 32%, transparent); } }
+html:root body { background: transparent; }
+html:root body::after { opacity: .03; }
+html:root .topbar { border-bottom-color: transparent; padding: 0 10px; border-radius: 0 0 16px 16px; background: linear-gradient(to bottom, var(--glass), transparent); }
+html:root .home-copy, html:root .home-bottom, html:root .side-card, html:root .result-info, html:root .multiplayer-results,
+html:root .screen-heading, html:root .canvas-hint, html:root .control-row, html:root .control-help {
   background: var(--glass); -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25);
 }
-html.has-3d .home-copy { padding: 22px 24px; border-radius: 22px; }
-html.has-3d .screen-heading { padding: 8px 14px; border-radius: 16px; }
-html.has-3d .canvas-hint { padding: 4px 12px; border-radius: 999px; }
-html.has-3d .play-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-html.has-3d .game-stage, html.has-3d .results-frame { background: transparent; border-color: transparent; box-shadow: none; } /* no box: the tower stands in the open world (the border keeps its width, so the layout and the camera's framing do not move) */
-html.has-3d .home-aside { display: none; }
-html.has-3d .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
-html.has-3d #perfect-banner, html.has-3d #canvas-toast { display: none; } /* PERFECT!, TIMBER! and the sabotage's name are 3D lettering in the world */
+html:root .home-copy { padding: 22px 24px; border-radius: 22px; }
+html:root .screen-heading { padding: 8px 14px; border-radius: 16px; }
+html:root .canvas-hint { padding: 4px 12px; border-radius: 999px; }
+html:root .play-card { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+html:root .game-stage, html:root .results-frame { background: transparent; border-color: transparent; box-shadow: none; } /* no box: the tower stands in the open world (the border keeps its width, so the layout and the camera's framing do not move) */
+html:root .home-aside { display: none; }
+html:root .home-grid { grid-template-columns: minmax(300px, 520px) 1fr; }
+html:root #perfect-banner, html:root #canvas-toast { display: none; } /* PERFECT!, TIMBER! and the sabotage's name are 3D lettering in the world */
 /* The bottoms of the pages. The strip under the home scene and the Drop row under the tower were flat, square-cornered pale boxes with their text on the
    very edge, lying on the 3D floor. They are rounded, padded glass now, in the family of the headings. The strip keeps its 44px on one line and only grows
    when its words wrap (a phone). The row's glass is one pill round the Drop key and its help (the content keeps the width it always had, so the help never
    re-wraps), and the tone button has room of its own below it instead of sitting on the pill's edge. */
-html.has-3d .home-bottom {
+html:root .home-bottom {
   min-height: 44px; height: auto; padding: 8px 18px; column-gap: 24px; row-gap: 2px;
   border: 1px solid var(--edge); border-radius: 16px; box-shadow: 0 12px 26px -18px rgba(12, 6, 2, .5);
 }
-html.has-3d .home-bottom > span:first-child strong { padding: 1px 7px 2px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); box-shadow: 0 2px 0 var(--edge); }
-html.has-3d .control-row {
+html:root .home-bottom > span:first-child strong { padding: 1px 7px 2px; border: 1px solid var(--edge); border-radius: 6px; background: var(--paper); box-shadow: 0 2px 0 var(--edge); }
+html:root .control-row {
   width: auto; margin-top: 4px; padding: 9px 14px 11px; justify-content: center;
   border: 1px solid var(--edge); border-radius: 20px; box-shadow: 0 12px 26px -18px rgba(12, 6, 2, .5);
 }
-html.has-3d .control-help { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; } /* the row is the glass; a second layer behind the help only doubled it */
-html.has-3d .play-card > .position-audio-toggle { margin-top: 10px; }
+html:root .control-help { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; } /* the row is the glass; a second layer behind the help only doubled it */
+html:root .play-card > .position-audio-toggle { margin-top: 10px; }
 @media (max-width: 700px) {
-  html.has-3d .home-bottom { justify-content: center; padding: 8px 14px; text-align: center; }
-  html.has-3d .control-row { padding: 8px 10px 10px; border-radius: 18px; }
+  html:root .home-bottom { justify-content: center; padding: 8px 14px; text-align: center; }
+  html:root .control-row { padding: 8px 10px 10px; border-radius: 18px; }
 }
 /* Multiplayer results: the 3D podium of final towers owns the open space, the cards become a glass column beside it. */
-html.has-3d .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
+html:root .multiplayer-results { padding: 18px 22px 20px; border: 1px solid var(--edge); border-radius: 22px; }
 @media (min-width: 981px) {
-  html.has-3d .multiplayer-results { width: min(560px, 44vw); max-width: none; margin: 14px 0 24px auto; }
-  html.has-3d .multiplayer-result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-  html.has-3d .multiplayer-result-card canvas, html.has-3d .teamwork-result-canvas { display: none; }
+  html:root .multiplayer-results { width: min(560px, 44vw); max-width: none; margin: 14px 0 24px auto; }
+  html:root .multiplayer-result-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  html:root .multiplayer-result-card canvas, html:root .teamwork-result-canvas { display: none; }
 }
 @media (max-width: 980px) {
-  html.has-3d .multiplayer-results { margin-top: min(40vh, 340px); }
+  html:root .multiplayer-results { margin-top: min(40vh, 340px); }
 }
 @media (max-width: 900px) {
-  html.has-3d #title-screen { padding-top: min(54vh, 480px); }
-  html.has-3d .home-grid { grid-template-columns: 1fr; }
+  html:root #title-screen { padding-top: min(54vh, 480px); }
+  html:root .home-grid { grid-template-columns: 1fr; }
 }
 /* Turning the home scene: hold the left or right mouse button on it and drag (a finger swipes sideways; vertical swipes still scroll).
    The hint and the buttons are created by the 3D layer inside #title-screen and sit in the corner of the 3D region. */
-html.has-3d #title-screen, html.has-3d #solo-result-layout .results-frame { touch-action: pan-y pinch-zoom; }
+html:root #title-screen, html:root #solo-result-layout .results-frame { touch-action: pan-y pinch-zoom; }
 html.orbiting, html.orbiting * { -webkit-user-select: none !important; user-select: none !important; }
 .orbit-hud { position: fixed; z-index: 4; transform: translate(-100%, -100%); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: calc(100vw - 20px); pointer-events: none; }
 .orbit-row, .toy-dock { display: flex; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
@@ -924,34 +925,34 @@ html.orbiting #game-canvas { cursor: grabbing; }
 /* Tactile 3D UI (only while the 3D layer runs): buttons, the vote keys and the Space bar are keycaps. Each has a side wall of real
    depth (a box-shadow in a darker shade, a different one per theme), rests a little proud, lifts on hover and sinks into its wall
    when pressed: by pointer, by touch, or by the keyboard key it is named after (the layer adds .is-pressed for Space and 1 / 2 / 3). */
-html.has-3d { --cap-depth: 5px; --cap-wall: #2A2520; --cap-strong: #0D0B09; --cap-shine: rgba(255, 255, 255, .42); }
-html.has-3d[data-theme="sunset"] { --cap-wall: #8A1F78; --cap-strong: #170B33; --cap-shine: rgba(255, 255, 255, .3); }
-html.has-3d[data-theme="primetime"] { --cap-wall: #7A5200; --cap-strong: #8A5A00; --cap-shine: rgba(255, 255, 255, .45); }
-html.has-3d .button:not(:disabled), html.has-3d .drop-button:not(:disabled), html.has-3d .vote-key {
+html:root { --cap-depth: 5px; --cap-wall: #2A2520; --cap-strong: #0D0B09; --cap-shine: rgba(255, 255, 255, .42); }
+html:root[data-theme="sunset"] { --cap-wall: #8A1F78; --cap-strong: #170B33; --cap-shine: rgba(255, 255, 255, .3); }
+html:root[data-theme="primetime"] { --cap-wall: #7A5200; --cap-strong: #8A5A00; --cap-shine: rgba(255, 255, 255, .45); }
+html:root .button:not(:disabled), html:root .drop-button:not(:disabled), html:root .vote-key {
   --cap-now: var(--cap-wall); transform: translateY(-1px);
   box-shadow: 0 var(--cap-depth) 0 var(--cap-now), 0 calc(var(--cap-depth) + 3px) 10px rgba(12, 6, 2, .28), inset 0 1.5px 0 var(--cap-shine);
   transition: transform .09s cubic-bezier(.3, .7, .4, 1), box-shadow .09s cubic-bezier(.3, .7, .4, 1), background-color .18s ease, color .18s ease, opacity .16s ease;
 }
-html.has-3d .button-primary:not(:disabled), html.has-3d .drop-button:not(:disabled) { --cap-now: var(--cap-strong); --cap-depth: 6px; }
-html.has-3d .vote-key { --cap-depth: 3px; }
-html.has-3d .button:hover:not(:disabled), html.has-3d .drop-button:hover:not(:disabled) {
+html:root .button-primary:not(:disabled), html:root .drop-button:not(:disabled) { --cap-now: var(--cap-strong); --cap-depth: 6px; }
+html:root .vote-key { --cap-depth: 3px; }
+html:root .button:hover:not(:disabled), html:root .drop-button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 calc(var(--cap-depth) + 1px) 0 var(--cap-now), 0 calc(var(--cap-depth) + 5px) 14px rgba(12, 6, 2, .3), inset 0 1.5px 0 var(--cap-shine);
 }
-html.has-3d .button:active:not(:disabled), html.has-3d .drop-button:active:not(:disabled), html.has-3d .button.is-pressed, html.has-3d .drop-button.is-pressed,
-html.has-3d .vote-option:active:not(:disabled) .vote-key, html.has-3d .vote-option.is-pressed .vote-key {
+html:root .button:active:not(:disabled), html:root .drop-button:active:not(:disabled), html:root .button.is-pressed, html:root .drop-button.is-pressed,
+html:root .vote-option:active:not(:disabled) .vote-key, html:root .vote-option.is-pressed .vote-key {
   transform: translateY(calc(var(--cap-depth) - 1px));
   box-shadow: 0 1px 0 var(--cap-now), 0 2px 4px rgba(12, 6, 2, .25), inset 0 1.5px 0 var(--cap-shine); transition-duration: .05s;
 }
-html.has-3d .vote-option.is-pressed { transform: translateY(1px); }
+html:root .vote-option.is-pressed { transform: translateY(1px); }
 /* the sculpted glyphs (brand emblem, speaker) replace the flat drawings: the speaker shows its waves while sound is on and a cross while it is off */
-html.has-3d .sound-toggle svg { width: 26px; height: 26px; }
-html.has-3d .brand-mark svg { width: 28px; height: 28px; }
-html.has-3d .sound-toggle .speaker-off { display: none; }
-html.has-3d .sound-toggle[aria-pressed="false"] .speaker-on { display: none; }
-html.has-3d .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; }
+html:root .sound-toggle svg { width: 26px; height: 26px; }
+html:root .brand-mark svg { width: 28px; height: 28px; }
+html:root .sound-toggle .speaker-off { display: none; }
+html:root .sound-toggle[aria-pressed="false"] .speaker-on { display: none; }
+html:root .sound-toggle[aria-pressed="false"] .speaker-off { display: inline; }
 /* the deck tilt is applied by the layer while the pointer is over a deck, and removed again when it leaves */
-html.has-3d .is-tilting { will-change: transform; transition: none; }
+html:root .is-tilting { will-change: transform; transition: none; }
 
 /* ===== Pixel-grid feel (3D layer only) =================================================================================
    Crisp, stepped interaction after RASTER/27: hovers and fills move in whole steps (steps(), never an ease), nothing blurs, and everything
@@ -959,107 +960,107 @@ html.has-3d .is-tilting { will-change: transform; transition: none; }
    hovered player row floods with); the rest is this CSS. Pointer-only rules sit in (hover: hover) and (pointer: fine), so a touch screen
    gets none of it. Reduced Motion needs nothing special: the page's own html[data-motion="reduced"] rule makes every transition instant,
    and the one delay used below is cleared for it. The tokens are the page's own, per theme; test/pixel-ui.test.js checks every pair against AA. */
-html.has-3d { --wipe-a: var(--amber); --wipe-a-fg: #2A2520; --wipe-b: var(--amber); --wipe-b-fg: #2A2520; --fg-amber: #2A2520; --fg-teal: #000000; --fg-blue: #2A2520; --fg-red: #000000; }
-html.has-3d[data-theme="sunset"] { --wipe-a: var(--teal); --wipe-a-fg: #170B33; --wipe-b: var(--amber); --wipe-b-fg: #170B33; --fg-amber: #170B33; --fg-teal: #170B33; --fg-blue: #000000; --fg-red: #170B33; }
-html.has-3d[data-theme="primetime"] { --wipe-a: var(--teal); --wipe-a-fg: #0A1A55; --wipe-b: var(--amber); --wipe-b-fg: #1A1200; --fg-amber: #0A1A55; --fg-teal: #0A1A55; --fg-blue: #0A1A55; --fg-red: #0A1A55; }
+html:root { --wipe-a: var(--amber); --wipe-a-fg: #2A2520; --wipe-b: var(--amber); --wipe-b-fg: #2A2520; --fg-amber: #2A2520; --fg-teal: #000000; --fg-blue: #2A2520; --fg-red: #000000; }
+html:root[data-theme="sunset"] { --wipe-a: var(--teal); --wipe-a-fg: #170B33; --wipe-b: var(--amber); --wipe-b-fg: #170B33; --fg-amber: #170B33; --fg-teal: #170B33; --fg-blue: #000000; --fg-red: #170B33; }
+html:root[data-theme="primetime"] { --wipe-a: var(--teal); --wipe-a-fg: #0A1A55; --wipe-b: var(--amber); --wipe-b-fg: #1A1200; --fg-amber: #0A1A55; --fg-teal: #0A1A55; --fg-blue: #0A1A55; --fg-red: #0A1A55; }
 /* the colour a row floods with, and the text on it: a vote row has its slot's colour (the one its .vote-fill already has), a score tile the theme's amber,
    a player row its player's own (pixel-ui.js writes that one, from the colour dot, when the pointer arrives; amber until then) */
-html.has-3d :is(.vote-option, .score-tile, .room-player-list li) { --row-accent: var(--amber); --row-fg: var(--fg-amber); }
-html.has-3d .vote-option[data-option-index="0"] { --row-accent: var(--teal); --row-fg: var(--fg-teal); }
-html.has-3d .vote-option[data-option-index="1"] { --row-accent: var(--dusty-blue); --row-fg: var(--fg-blue); }
-html.has-3d .vote-option[data-option-index="2"] { --row-accent: var(--vermilion); --row-fg: var(--fg-red); }
+html:root :is(.vote-option, .score-tile, .room-player-list li) { --row-accent: var(--amber); --row-fg: var(--fg-amber); }
+html:root .vote-option[data-option-index="0"] { --row-accent: var(--teal); --row-fg: var(--fg-teal); }
+html:root .vote-option[data-option-index="1"] { --row-accent: var(--dusty-blue); --row-fg: var(--fg-blue); }
+html:root .vote-option[data-option-index="2"] { --row-accent: var(--vermilion); --row-fg: var(--fg-red); }
 /* the cursor trail's canvas (made and removed by the layer), and the wordmark's pixels (shown in place of the text for 180 ms) */
-html.has-3d .pixel-trail { position: fixed; inset: 0; z-index: 70; width: 100%; height: 100%; pointer-events: none; image-rendering: pixelated; }
-html.has-3d .brand { position: relative; }
-html.has-3d .brand.is-pixelating .brand-word { visibility: hidden; }
-html.has-3d .brand-pixels { display: block; shape-rendering: crispEdges; }
+html:root .pixel-trail { position: fixed; inset: 0; z-index: 70; width: 100%; height: 100%; pointer-events: none; image-rendering: pixelated; }
+html:root .brand { position: relative; }
+html:root .brand.is-pixelating .brand-word { visibility: hidden; }
+html:root .brand-pixels { display: block; shape-rendering: crispEdges; }
 /* text links (the page has none today): a 1px underline that is drawn from the left in six steps */
-html.has-3d a[href]:not(.button) { position: relative; text-decoration: none; }
-html.has-3d a[href]:not(.button)::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 0 50%; transition: transform 180ms steps(6); }
-html.has-3d a[href]:not(.button):focus-visible::after { transform: scaleX(1); }
+html:root a[href]:not(.button) { position: relative; text-decoration: none; }
+html:root a[href]:not(.button)::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: 0 50%; transition: transform 180ms steps(6); }
+html:root a[href]:not(.button):focus-visible::after { transform: scaleX(1); }
 @media (hover: hover) and (pointer: fine) {
-  html.has-3d a[href]:not(.button):hover::after { transform: scaleX(1); }
+  html:root a[href]:not(.button):hover::after { transform: scaleX(1); }
   /* Primary and secondary buttons: the keycap lift and press are the same, only stepped (the DROP bar and the vote keys keep their own feel), and an accent wipes
      in from the left in six steps, the label flipping at the half-way mark. The host clips the wipe to its own shape; the wipe itself has no corners to round. */
-  html.has-3d :is(.button-primary, .button-secondary):not(:disabled) {
+  html:root :is(.button-primary, .button-secondary):not(:disabled) {
     position: relative; isolation: isolate; overflow: hidden;
     transition: transform .09s steps(3), box-shadow .09s steps(3), background-color .09s steps(3), color 0s steps(1) 120ms, opacity .16s steps(4);
   }
-  html.has-3d .button-primary:not(:disabled) { --wipe: var(--wipe-a); --wipe-fg: var(--wipe-a-fg); }
-  html.has-3d .button-secondary:not(:disabled) { --wipe: var(--wipe-b); --wipe-fg: var(--wipe-b-fg); }
-  html.has-3d :is(.button-primary, .button-secondary):not(:disabled)::before {
+  html:root .button-primary:not(:disabled) { --wipe: var(--wipe-a); --wipe-fg: var(--wipe-a-fg); }
+  html:root .button-secondary:not(:disabled) { --wipe: var(--wipe-b); --wipe-fg: var(--wipe-b-fg); }
+  html:root :is(.button-primary, .button-secondary):not(:disabled)::before {
     content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background: var(--wipe);
     transform: scaleX(0); transform-origin: 0 50%; transition: transform 240ms steps(6, start);
   }
-  html.has-3d :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible)::before { transform: scaleX(1); }
-  html.has-3d :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible) { color: var(--wipe-fg); }
+  html:root :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible)::before { transform: scaleX(1); }
+  html:root :is(.button-primary, .button-secondary):not(:disabled):is(:hover, :focus-visible) { color: var(--wipe-fg); }
   /* Rows flood at once, solid, to their own colour (no fade); the text flips to whichever reads, and the progress bar flips with it so it stays seen.
      Nothing changes size or position. A vote row floods for the keys 1 / 2 / 3 too (tactile.js adds .is-pressed). */
-  html.has-3d :is(.vote-option, .score-tile, .room-player-list li) { transition: none; }
-  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
-  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) :is(.vote-name, .vote-count, .vote-description, .vote-pick) { color: var(--row-fg); }
-  html.has-3d .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) .vote-fill { background: var(--row-fg); }
-  html.has-3d .room-player-list li:hover { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
-  html.has-3d .room-player-list li:hover :is(strong, .player-connection) { color: var(--row-fg); }
-  html.has-3d .score-tile:hover { background: var(--row-accent); color: var(--row-fg); }
-  html.has-3d .score-tile:hover :is(span, strong) { color: var(--row-fg); }
+  html:root :is(.vote-option, .score-tile, .room-player-list li) { transition: none; }
+  html:root .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
+  html:root .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) :is(.vote-name, .vote-count, .vote-description, .vote-pick) { color: var(--row-fg); }
+  html:root .vote-option:not(:disabled):is(:hover, :focus-visible, .is-pressed) .vote-fill { background: var(--row-fg); }
+  html:root .room-player-list li:hover { border-color: var(--ink); background: var(--row-accent); color: var(--row-fg); }
+  html:root .room-player-list li:hover :is(strong, .player-connection) { color: var(--row-fg); }
+  html:root .score-tile:hover { background: var(--row-accent); color: var(--row-fg); }
+  html:root .score-tile:hover :is(span, strong) { color: var(--row-fg); }
 }
-html.has-3d[data-motion="reduced"] :is(.button-primary, .button-secondary) { transition-delay: 0s !important; }
+html:root[data-motion="reduced"] :is(.button-primary, .button-secondary) { transition-delay: 0s !important; }
 
 /* ===== Panels and text (3D layer) =====================================================================================
    The menu and every side card are frosted glass that faces slightly inward (the left ones turn their far edge away, the right ones
    the same the other way) and tilts a little with the pointer. Headings are extruded in each theme's own colours. The menu is held
    back while SABOTAGE STACK rains down, then (like every panel of every screen, as the camera arrives) swings in from depth. */
-html.has-3d { --face: 0deg; --sign: 1; --tx: 0; --ty: 0; --swing-base: .05s; --ext-1: #D5472F; --ext-2: #A8301E; --ext-3: #6E1F14; --ext-drop: rgba(42, 37, 32, .3); }
-html.has-3d[data-theme="sunset"] { --ext-1: #FF4FD8; --ext-2: #B22A9C; --ext-3: #5E1470; --ext-drop: rgba(8, 0, 24, .6); }
-html.has-3d[data-theme="primetime"] { --ext-1: #FFC83D; --ext-2: #C8921A; --ext-3: #7A5200; --ext-drop: rgba(2, 8, 40, .65); }
-html.has-3d body[data-screen="game"], html.has-3d body[data-screen="results"], html.has-3d body[data-screen="lobby"] { --swing-base: .5s; }
-html.has-3d :is(.home-copy, .side-card, .result-info, .multiplayer-results, .preview-card) {
+html:root { --face: 0deg; --sign: 1; --tx: 0; --ty: 0; --swing-base: .05s; --ext-1: #D5472F; --ext-2: #A8301E; --ext-3: #6E1F14; --ext-drop: rgba(42, 37, 32, .3); }
+html:root[data-theme="sunset"] { --ext-1: #FF4FD8; --ext-2: #B22A9C; --ext-3: #5E1470; --ext-drop: rgba(8, 0, 24, .6); }
+html:root[data-theme="primetime"] { --ext-1: #FFC83D; --ext-2: #C8921A; --ext-3: #7A5200; --ext-drop: rgba(2, 8, 40, .65); }
+html:root body[data-screen="game"], html:root body[data-screen="results"], html:root body[data-screen="lobby"] { --swing-base: .5s; }
+html:root :is(.home-copy, .side-card, .result-info, .multiplayer-results, .preview-card) {
   transform: perspective(1200px) rotateX(calc(var(--tx) * 1deg)) rotateY(calc(var(--face) + var(--ty) * 1deg));
 }
 @media (min-width: 901px) {
-  html.has-3d :is(.home-copy, .room-code-card) { --face: 5.5deg; --sign: 1; transform-origin: 0 50%; }
-  html.has-3d :is(.side-stack .side-card, .room-player-card, .result-info, .multiplayer-results, .preview-card) { --face: -5.5deg; --sign: -1; transform-origin: 100% 50%; }
+  html:root :is(.home-copy, .room-code-card) { --face: 5.5deg; --sign: 1; transform-origin: 0 50%; }
+  html:root :is(.side-stack .side-card, .room-player-card, .result-info, .multiplayer-results, .preview-card) { --face: -5.5deg; --sign: -1; transform-origin: 100% 50%; }
 }
 @keyframes panel-swing {
   from { opacity: 0; transform: perspective(1200px) translate3d(calc(var(--sign) * -150px), 48px, -640px) rotateX(14deg) rotateY(calc(var(--face) + var(--sign) * 36deg)); }
   to { opacity: 1; transform: perspective(1200px) translate3d(0, 0, 0) rotateX(0deg) rotateY(var(--face)); }
 }
 @media (prefers-reduced-motion: no-preference) {
-  html.has-3d:not([data-motion="reduced"]):not([data-intro="hold"]) :is(.home-copy, .home-bottom, .side-card, .result-info, .multiplayer-results, .screen-heading, .play-card, .room-lobby-layout > *) {
+  html:root:not([data-motion="reduced"]):not([data-intro="hold"]) :is(.home-copy, .home-bottom, .side-card, .result-info, .multiplayer-results, .screen-heading, .play-card, .room-lobby-layout > *) {
     animation: panel-swing .95s cubic-bezier(.17, .84, .28, 1) calc(var(--swing-base) + var(--swing-delay, 0s)) backwards;
   }
 }
-html.has-3d .screen-heading { --swing-delay: 0s; }
-html.has-3d .play-card, html.has-3d .home-bottom { --swing-delay: .14s; }
-html.has-3d .side-stack > :nth-child(1), html.has-3d .room-lobby-layout > :nth-child(1) { --swing-delay: .16s; }
-html.has-3d .side-stack > :nth-child(2), html.has-3d .room-lobby-layout > :nth-child(2) { --swing-delay: .25s; }
-html.has-3d .side-stack > :nth-child(3), html.has-3d .result-info { --swing-delay: .34s; }
-html.has-3d .side-stack > :nth-child(4), html.has-3d .multiplayer-results { --swing-delay: .43s; }
-html.has-3d .side-stack > :nth-child(n+5) { --swing-delay: .5s; }
+html:root .screen-heading { --swing-delay: 0s; }
+html:root .play-card, html:root .home-bottom { --swing-delay: .14s; }
+html:root .side-stack > :nth-child(1), html:root .room-lobby-layout > :nth-child(1) { --swing-delay: .16s; }
+html:root .side-stack > :nth-child(2), html:root .room-lobby-layout > :nth-child(2) { --swing-delay: .25s; }
+html:root .side-stack > :nth-child(3), html:root .result-info { --swing-delay: .34s; }
+html:root .side-stack > :nth-child(4), html:root .multiplayer-results { --swing-delay: .43s; }
+html:root .side-stack > :nth-child(n+5) { --swing-delay: .5s; }
 @keyframes hud-in { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: no-preference) { html.has-3d:not([data-motion="reduced"]):not([data-intro="hold"]) .orbit-hud { animation: hud-in .8s ease .4s backwards; } }
-html.has-3d[data-intro="hold"] :is(.home-copy, .home-bottom, .orbit-hud) { visibility: hidden; opacity: 0; }
+@media (prefers-reduced-motion: no-preference) { html:root:not([data-motion="reduced"]):not([data-intro="hold"]) .orbit-hud { animation: hud-in .8s ease .4s backwards; } }
+html:root[data-intro="hold"] :is(.home-copy, .home-bottom, .orbit-hud) { visibility: hidden; opacity: 0; }
 /* headings stand off the glass: a stack of solid layers, in the theme's colours, over a soft shadow */
-html.has-3d :is(#title-heading, .screen-heading h2, .result-info h2, .multiplayer-results h2) {
+html:root :is(#title-heading, .screen-heading h2, .result-info h2, .multiplayer-results h2) {
   text-shadow: 1px 1px 0 var(--ext-1), 2px 2px 0 var(--ext-1), 3px 3px 0 var(--ext-2), 4px 4px 0 var(--ext-2), 5px 5px 0 var(--ext-3), 6px 6px 0 var(--ext-3), 7px 10px 13px var(--ext-drop);
 }
-html.has-3d :is(.side-card h3, .multiplayer-results h3, .preview-heading span:first-child) {
+html:root :is(.side-card h3, .multiplayer-results h3, .preview-heading span:first-child) {
   text-shadow: 1px 1px 0 var(--ext-1), 2px 2px 0 var(--ext-2), 3px 3px 0 var(--ext-3), 4px 6px 8px var(--ext-drop);
 }
-html.has-3d #title-heading { margin: 6px 6px 14px 0; font-size: clamp(23px, 2.35vw, 32px); line-height: 1.14; letter-spacing: .005em; padding-bottom: 6px; }
-html.has-3d #title-heading span { --ext-1: #9A2F1D; --ext-2: #70200F; --ext-3: #45120A; }
-html.has-3d[data-theme="sunset"] #title-heading { font-size: clamp(13px, 1.3vw, 18px); line-height: 1.55; }
-html.has-3d[data-theme="sunset"] #title-heading span { --ext-1: #FF8A3D; --ext-2: #B24A1A; --ext-3: #5A1E0A; }
-html.has-3d[data-theme="primetime"] #title-heading { font-size: clamp(25px, 2.6vw, 36px); line-height: 1.08; }
-html.has-3d[data-theme="primetime"] #title-heading span { --ext-1: #FFE28A; --ext-2: #C8921A; --ext-3: #7A5200; }
-@media (max-width: 900px) { html.has-3d #title-heading { font-size: clamp(22px, 6vw, 30px); } html.has-3d[data-theme="sunset"] #title-heading { font-size: clamp(12px, 3.4vw, 17px); } }
+html:root #title-heading { margin: 6px 6px 14px 0; font-size: clamp(23px, 2.35vw, 32px); line-height: 1.14; letter-spacing: .005em; padding-bottom: 6px; }
+html:root #title-heading span { --ext-1: #9A2F1D; --ext-2: #70200F; --ext-3: #45120A; }
+html:root[data-theme="sunset"] #title-heading { font-size: clamp(13px, 1.3vw, 18px); line-height: 1.55; }
+html:root[data-theme="sunset"] #title-heading span { --ext-1: #FF8A3D; --ext-2: #B24A1A; --ext-3: #5A1E0A; }
+html:root[data-theme="primetime"] #title-heading { font-size: clamp(25px, 2.6vw, 36px); line-height: 1.08; }
+html:root[data-theme="primetime"] #title-heading span { --ext-1: #FFE28A; --ext-2: #C8921A; --ext-3: #7A5200; }
+@media (max-width: 900px) { html:root #title-heading { font-size: clamp(22px, 6vw, 30px); } html:root[data-theme="sunset"] #title-heading { font-size: clamp(12px, 3.4vw, 17px); } }
 /* panel icons: a thick token that turns slowly (icon-turn.js wraps each <svg> in a holder and adds the darker copies behind it) */
-html.has-3d .icon-turn { display: inline-grid; place-items: center; transform-style: preserve-3d; transform: perspective(210px) rotateY(-14deg); }
-html.has-3d .icon-turn > svg { grid-area: 1 / 1; }
-html.has-3d .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1.5px)); filter: brightness(calc(1 - var(--layer) * .13)) saturate(.9); pointer-events: none; }
+html:root .icon-turn { display: inline-grid; place-items: center; transform-style: preserve-3d; transform: perspective(210px) rotateY(-14deg); }
+html:root .icon-turn > svg { grid-area: 1 / 1; }
+html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1.5px)); filter: brightness(calc(1 - var(--layer) * .13)) saturate(.9); pointer-events: none; }
 @keyframes icon-turn { 0%, 100% { transform: perspective(210px) rotateY(-46deg); } 50% { transform: perspective(210px) rotateY(46deg); } }
-@media (prefers-reduced-motion: no-preference) { html.has-3d:not([data-motion="reduced"]) .icon-turn { animation: icon-turn 10.5s ease-in-out infinite; animation-delay: var(--turn-delay, 0s); } }
+@media (prefers-reduced-motion: no-preference) { html:root:not([data-motion="reduced"]) .icon-turn { animation: icon-turn 10.5s ease-in-out infinite; animation-delay: var(--turn-delay, 0s); } }
 /* "Chat voted: Earthquake": the pill under the title while chat is sabotaging it */
 .chat-caption {
   position: fixed; z-index: 3; left: 50%; top: 90%; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100vw - 24px); padding: 7px 20px 7px 9px;
