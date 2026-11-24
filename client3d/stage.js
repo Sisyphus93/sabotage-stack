@@ -380,7 +380,11 @@ export class Stage {
     this.leave(this.towers.play, play, flies); this.leave(this.towers.lobby, mode === 'lobby', flies);
     this.totems.group.visible = mode === 'lobby';
     this.crown.visible = false;
-    for (const t of this.arena) t.root.visible = mode === 'arena' || mode === 'celebrate';
+    const arenaWanted = mode === 'arena' || mode === 'celebrate';
+    for (const t of this.arena) {
+      if (arenaWanted) t.root.visible = true;
+      else if (t.root.visible) { t.root.visible = false; t.clear(); }
+    }
     for (const l of this.labels) l.mesh.visible = false;
     this.ruler.group.visible = play;
     this.plinthGoal = mode === 'celebrate' ? null : [mode === 'arena' ? 2.3 : hero ? 2.2 : play ? 1.4 : 1, mode === 'arena' ? 0.62 : hero ? 1.5 : 1];
@@ -401,13 +405,19 @@ export class Stage {
   leave(tower, wanted, flies) {
     if (!tower) return; const root = tower.root;
     if (wanted) { this.unsink(tower); root.visible = true; return; }
-    if (flies && root.visible) this.sinking.set(root, 0); else root.visible = false;
+    if (flies && root.visible) this.sinking.set(root, 0);
+    else { root.visible = false; tower.clear(); } // room exit: release the round's plaque textures and materials now
   }
   unsink(tower) { if (!tower) return; this.sinking.delete(tower.root); tower.root.position.y = 0; }
   updateLeaving(dt) {
     for (const [root, t] of this.sinking) {
       const k = t + dt / 0.75;
-      if (k >= 1) { root.visible = false; root.position.y = 0; this.sinking.delete(root); } else { this.sinking.set(root, k); root.position.y = -k * k * 420; }
+      if (k >= 1) {
+        root.visible = false; root.position.y = 0; this.sinking.delete(root);
+        const play = this.towers.play; const lobby = this.towers.lobby;
+        const tower = play && root === play.root ? play : lobby && root === lobby.root ? lobby : null;
+        if (tower) tower.clear();
+      } else { this.sinking.set(root, k); root.position.y = -k * k * 420; }
     }
     // the rubble of the title that was blown up keeps tumbling on the new screen until it has gone
     const title = this.title;
