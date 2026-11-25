@@ -1,7 +1,7 @@
 // One tower: the stack, the moving block, tumbling debris and collapse. It mirrors a plain "tower state" (see stage.js)
 // and never decides gameplay: positions come straight from the game (board px -> world units, board x 0..360 is centred on 0).
 import * as THREE from 'three';
-import { BLOCK_H, BLOCK_T, BLOCK_D, BOARD_W } from './blocks.js';
+import { BLOCK_H, BLOCK_T, BLOCK_D, BOARD_W, EDGE_OPACITY } from './blocks.js';
 import { PhysicsWorld, makeBody, stageFloor, quatFromEuler } from './physics.js';
 import { EffectRig } from './effects3d.js';
 import { clamp, damp, rng, sign, hexToRgb01 } from './util.js';
@@ -12,7 +12,6 @@ const MAX_BODIES = 70;
 // The moving block counts as gone below this opacity, exactly as the flat renderer draws nothing at or under it (Peekaboo).
 export const MOVER_MIN_ALPHA = 0.01;
 const CENTRE_TICK_H = 7; // board units, as tall as the 2D tick was
-const EDGE_OPACITY = 0.85; // the Sunset outline of a block
 
 export class Tower {
   constructor(kit, fx, { scale = 1, depth = BLOCK_D, name = '', color = '#2F8478', interactive = false } = {}) {
@@ -29,6 +28,7 @@ export class Tower {
     this.height = 0; this.topLevel = 0; this.timeScale = 1; this.lastEdge = [0, 0];
     this.listeners = { land: [], perfect: [], collapse: [], piece: [], impact: [] };
     this.collapseQueue = [];
+    this.plaques = new Map(); // rendered plaque text -> { texture, material }, shared by every block of this round
     this.alpha = 1;
     this.tick = this.makeCentreTick();
   }
@@ -61,24 +61,36 @@ export class Tower {
   }
 
   clear(keepState = false) {
-    for (const mesh of this.meshes) this.disposeMesh(mesh);
+    for (const mesh of this.meshes) this.detachMesh(mesh);
     this.meshes.length = 0; this.count = 0;
-    for (const body of this.world.bodies) if (body.data && body.data.mesh) this.disposeMesh(body.data.mesh);
+    for (const body of this.world.bodies) if (body.data && body.data.mesh) this.detachMesh(body.data.mesh);
     this.world.clear();
-    if (this.mover) { this.body.remove(this.mover); this.mover = null; }
+    if (this.mover) { this.disposeMoverEdges(); this.body.remove(this.mover); this.mover = null; }
     if (this.decoy) { this.body.remove(this.decoy); this.decoy = null; }
     for (const c of this.portalClones) this.body.remove(c);
     this.portalClones.length = 0; this.collapseQueue.length = 0;
+    this.clearPlaques();
     if (this.moverMaterial) { this.moverMaterial.dispose(); this.moverMaterial = null; }
     if (!keepState) { this.stateId = null; this.lastFallen = 0; this.lastCollapsed = false; }
     else { this.lastFallen = 0; }
   }
 
-  disposeMesh(mesh) {
+  detachMesh(mesh) {
     if (!mesh) return;
+    // Plaque and block-edge resources belong to the kit/tower caches: never dispose them per mesh while other live
+    // blocks still reference the same objects.
     if (mesh.parent) mesh.parent.remove(mesh);
-    if (mesh.userData.plaque) { mesh.userData.plaque.material.map.dispose(); mesh.userData.plaque.material.dispose(); mesh.userData.plaque.geometry.dispose(); }
-    if (mesh.userData.edges) mesh.userData.edges.material.dispose();
+  }
+
+  clearPlaques() {
+    for (const { texture, material } of this.plaques.values()) { texture.dispose(); material.dispose(); }
+    this.plaques.clear();
+  }
+
+  disposeMoverEdges() {
+    const edges = this.mover && this.mover.userData.edges;
+    if (!edges) return;
+    edges.material.dispose(); this.mover.userData.edges = null;
   }
 
   // -------------------------------------------------------------------------------------------------------------------
@@ -96,16 +108,22 @@ export class Tower {
 
   addPlaque(mesh, block) {
     const text = String(block.placer).slice(0, 12);
-    const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 72;
-    const ctx = canvas.getContext('2d'); const p = this.kit.palette;
-    const font = this.kit.theme === 'sunset' ? '30px VT323, monospace' : this.kit.theme === 'primetime' ? '700 34px "Barlow Condensed", sans-serif' : '700 30px "DM Sans", sans-serif';
-    ctx.fillStyle = this.kit.theme === 'paper' ? 'rgba(42,37,32,0.88)' : 'rgba(6,10,36,0.9)';
-    if (this.kit.theme === 'sunset') ctx.fillRect(2, 2, 252, 68); else { ctx.beginPath(); ctx.roundRect(2, 2, 252, 68, 16); ctx.fill(); }
-    ctx.strokeStyle = p.amber; ctx.lineWidth = 3; ctx.stroke();
-    ctx.fillStyle = this.kit.theme === 'paper' ? '#F4EDDF' : '#ffffff'; ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(text, 128, 38, 232);
-    const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
-    const plane = new THREE.Mesh(new THREE.PlaneGeometry(52, 14.6), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }));
+    const key = `${this.kit.theme}|${text}`;
+    let plaque = this.plaques.get(key);
+    if (!plaque) {
+      const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 72;
+      const ctx = canvas.getContext('2d'); const p = this.kit.palette;
+      const font = this.kit.theme === 'sunset' ? '30px VT323, monospace' : this.kit.theme === 'primetime' ? '700 34px "Barlow Condensed", sans-serif' : '700 30px "DM Sans", sans-serif';
+      ctx.fillStyle = this.kit.theme === 'paper' ? 'rgba(42,37,32,0.88)' : 'rgba(6,10,36,0.9)';
+      if (this.kit.theme === 'sunset') ctx.fillRect(2, 2, 252, 68); else { ctx.beginPath(); ctx.roundRect(2, 2, 252, 68, 16); ctx.fill(); }
+      ctx.strokeStyle = p.amber; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = this.kit.theme === 'paper' ? '#F4EDDF' : '#ffffff'; ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, 128, 38, 232);
+      const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; texture.anisotropy = 4;
+      plaque = { texture, material: new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false }) };
+      this.plaques.set(key, plaque);
+    }
+    const plane = new THREE.Mesh(this.kit.plaqueGeometry, plaque.material);
     const onLeft = block.left > BOARD_W * 0.56; const w = mesh.userData.width;
     plane.position.set(onLeft ? -w / 2 - 28 : w / 2 + 28, 0, this.depth / 2 + 2);
     plane.rotation.y = this.facing; mesh.add(plane); mesh.userData.plaque = plane;
@@ -178,7 +196,7 @@ export class Tower {
     const color = m.color || '#2F8478';
     const baseWidth = Math.max(4, m.width);
     if (!this.mover || this.mover.userData.color !== color || this.mover.userData.theme !== this.kit.theme || baseWidth / this.mover.userData.baseW > 1.22 || baseWidth / this.mover.userData.baseW < 0.82) {
-      if (this.mover) this.body.remove(this.mover);
+      if (this.mover) { this.disposeMoverEdges(); this.body.remove(this.mover); }
       if (this.moverMaterial) this.moverMaterial.dispose();
       this.moverMaterial = this.kit.uniqueMaterial(color);
       // Born transparent, and it stays so. three compiles a material whose `transparent` is false into an OPAQUE shader (the fragment alpha is forced
@@ -190,7 +208,7 @@ export class Tower {
       const quant = this.mover.geometry.parameters ? this.mover.geometry.parameters.width : baseWidth;
       this.mover.userData = { color, theme: this.kit.theme, baseW: quant, level: m.level };
       if (this.kit.theme === 'sunset') {
-        const edges = new THREE.LineSegments(this.kit.edges(quant, this.depth), new THREE.LineBasicMaterial({ color: this.kit.palette.ink, transparent: true, opacity: EDGE_OPACITY }));
+        const edges = new THREE.LineSegments(this.kit.edges(quant, this.depth), this.kit.uniqueEdgeMaterial());
         this.mover.add(edges); this.mover.userData.edges = edges;
       }
       this.body.add(this.mover);
@@ -286,7 +304,7 @@ export class Tower {
   trimBodies() {
     while (this.world.bodies.length > MAX_BODIES) {
       const oldest = this.world.bodies.find(b => b.asleep) || this.world.bodies[0];
-      this.disposeMesh(oldest.data.mesh); this.world.remove(oldest);
+      this.detachMesh(oldest.data.mesh); this.world.remove(oldest);
     }
   }
 

@@ -8,6 +8,7 @@ export const BLOCK_H = 22;          // level pitch (matches the 2D board)
 export const BLOCK_T = 21.2;        // visible thickness, leaving a hairline seam between levels
 export const BLOCK_D = 120;         // depth of every block
 export const BOARD_W = 360;
+export const EDGE_OPACITY = 0.85;   // the Sunset outline of a block
 
 let grainTexture = null;
 function makeGrain() {
@@ -49,14 +50,22 @@ export class BlockKit {
 
   setTheme(theme) {
     this.theme = theme; this.palette = paletteFor(theme);
+    this.disposeShared();
+    this.edgeMaterial = new THREE.LineBasicMaterial({ color: this.palette.ink, transparent: true, opacity: EDGE_OPACITY }); // one outline for every static block
+    this.plaqueGeometry = new THREE.PlaneGeometry(52, 14.6); // one plane shared by every name plaque
+    this.starMaterial = new THREE.MeshStandardMaterial({ color: this.palette.ink, emissive: this.theme === 'paper' ? '#000000' : this.palette.amber, emissiveIntensity: this.theme === 'paper' ? 0 : 1.6, roughness: 0.5, metalness: this.theme === 'primetime' ? 0.6 : 0 });
+  }
+
+  disposeShared() {
     for (const m of this.materials.values()) m.dispose();
     this.materials.clear();
     for (const g of this.geometries.values()) g.dispose();
     this.geometries.clear();
     for (const g of this.edgeGeometries.values()) g.dispose();
     this.edgeGeometries.clear();
-    if (this.starMaterial) this.starMaterial.dispose();
-    this.starMaterial = new THREE.MeshStandardMaterial({ color: this.palette.ink, emissive: this.theme === 'paper' ? '#000000' : this.palette.amber, emissiveIntensity: this.theme === 'paper' ? 0 : 1.6, roughness: 0.5, metalness: this.theme === 'primetime' ? 0.6 : 0 });
+    if (this.edgeMaterial) { this.edgeMaterial.dispose(); this.edgeMaterial = null; }
+    if (this.plaqueGeometry) { this.plaqueGeometry.dispose(); this.plaqueGeometry = null; }
+    if (this.starMaterial) { this.starMaterial.dispose(); this.starMaterial = null; }
   }
 
   radius(width) {
@@ -104,6 +113,8 @@ export class BlockKit {
 
   // Clone per mesh when a single block needs unique state (opacity, clipping, glow).
   uniqueMaterial(hex) { return this.material(hex).clone(); }
+  // The moving block animates its outline opacity, so it needs its own copy of the shared static outline.
+  uniqueEdgeMaterial() { return this.edgeMaterial.clone(); }
 
   mesh(block, { depth = BLOCK_D, shadow = true } = {}) {
     const width = Math.max(1, (block.right != null ? block.right - block.left : block.width));
@@ -112,7 +123,7 @@ export class BlockKit {
     mesh.scale.x = width / geometry.userData.quantWidth;
     mesh.castShadow = shadow; mesh.receiveShadow = true;
     if (this.theme === 'sunset') {
-      const edges = new THREE.LineSegments(this.edges(width, depth), new THREE.LineBasicMaterial({ color: this.palette.ink, transparent: true, opacity: 0.85 }));
+      const edges = new THREE.LineSegments(this.edges(width, depth), this.edgeMaterial);
       mesh.add(edges); mesh.userData.edges = edges;
     }
     mesh.userData.width = width;
@@ -128,9 +139,7 @@ export class BlockKit {
   }
 
   dispose() {
-    for (const m of this.materials.values()) m.dispose();
-    for (const g of this.geometries.values()) g.dispose();
-    for (const g of this.edgeGeometries.values()) g.dispose();
-    this.star.dispose(); if (this.starMaterial) this.starMaterial.dispose();
+    this.disposeShared();
+    this.star.dispose();
   }
 }
