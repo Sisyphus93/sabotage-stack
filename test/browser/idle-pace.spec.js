@@ -28,10 +28,10 @@ test('an Idle Scene caps render calls after quiet and input restores full rate',
     await expect(page.locator('#stage3d')).toBeAttached();
     await expect.poll(() => page.evaluate(() => Boolean(window.__stack3d?.pace))).toBe(true);
 
-    // Count real draws by wrapping the engine, and turn the cap right down: a software-rendered browser here runs at a
-    // low rAF rate, so a tiny target makes the difference between idle and awake unmistakable.
+    // Count real draws by wrapping the engine, and turn the cap right down: a software-rendered CI browser can run at
+    // barely more than 1 rAF/s, so the idle target must sit well below that for the difference to be unmistakable.
     await page.evaluate(() => {
-      const stage = window.__stack3d; stage.pace.targetFps = 1;
+      const stage = window.__stack3d; stage.pace.targetFps = 0.25;
       const engine = stage.engine; window.__renders = 0; const real = engine.render.bind(engine);
       engine.render = (...args) => { window.__renders += 1; return real(...args); };
     });
@@ -55,7 +55,7 @@ test('an Idle Scene caps render calls after quiet and input restores full rate',
     const awakeRenders = await page.evaluate(() => window.__renders);
     expect(awakeRenders / 2).toBeGreaterThan(idleRate * 2, `awake drew ${awakeRenders} times in 2 s (idle ${idleRate}/s)`);
 
-    expect(await page.evaluate(() => window.__stack3d.pace.targetFps)).toBe(1);
+    expect(await page.evaluate(() => window.__stack3d.pace.targetFps)).toBe(0.25);
     expect(await page.evaluate(() => window.cspViolations)).toEqual([]);
     expect(errors).toEqual([]);
   } finally { await context.close(); }
