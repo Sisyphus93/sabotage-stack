@@ -184,14 +184,17 @@ function originIsSameHost(request) {
 // forge; until one is known the resolver returns null and those budgets fall back to a single shared bucket.
 //   (unset or 'none')  -> null, the fail-safe default
 //   'socket'           -> the TCP peer address (direct connections only, e.g. a LAN or a local run)
-//   'header:<name>'    -> that header, for a proxy known to overwrite it (never the leftmost X-Forwarded-For)
+//   'header:<name>'    -> that header, for a proxy that sets it at the edge (never the leftmost X-Forwarded-For)
+// Production uses 'header:cf-connecting-ip': Render serves through Cloudflare, which sets CF-Connecting-IP at its
+// edge and rejects a caller-supplied value with 403/error 1000 (verified live on HTTP and the WebSocket upgrade,
+// #42). X-Forwarded-For is append-only, so its leftmost entry is caller-controlled and is refused below.
 function clientKeyResolver(source = process.env.CLIENT_IP_SOURCE) {
   const setting = typeof source === 'string' ? source.trim().toLowerCase() : '';
   if (setting === 'socket') return request => request.socket.remoteAddress || null;
   if (setting.startsWith('header:') && setting.length > 'header:'.length) {
     const name = setting.slice('header:'.length);
     // A forwarded list may be appended to a client-supplied value, so the leftmost entry is not identity.
-    // Until the deployment's trustworthy header is established (V-1), refuse the list header outright.
+    // Refuse the list header outright: it is never a trustworthy client key (V-1).
     if (name === 'x-forwarded-for') return () => null;
     return request => {
       const value = request.headers[name];
