@@ -5,7 +5,7 @@ const net = require('node:net');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const WebSocket = require('ws');
-const { createGameServer } = require('../server');
+const { createGameServer, clientKeyResolver } = require('../server');
 const { RoomManager } = require('../server/room-manager');
 const { rng } = require('./helpers/rng');
 
@@ -851,6 +851,67 @@ describe('Connections and messages are budgeted per client (P1-3)', () => {
       assert.equal(results[2].status, 503);
       results.filter(r => r.ws).forEach(r => r.ws.terminate());
     } finally { await app.close(); }
+  });
+
+  test('the configured header resolver gives each client its own room, join and socket budgets', async () => {
+    const roomManager = new RoomManager({
+      now: () => 1_000_000,
+      random: rng(53),
+      roomsPerClient: 1,
+      roomCreateLimit: 10,
+      joinFailureLimit: 2,
+      connectionJoinFailureLimit: 60,
+      sharedJoinFailureLimit: 1000
+    });
+    const app = createGameServer({
+      onError: () => {},
+      roomManager,
+      clientKeyFor: clientKeyResolver('header:cf-connecting-ip'),
+      clientsPerKey: 2
+    });
+    await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
+    const url = `ws://127.0.0.1:${app.server.address().port}/ws`;
+    const open = key => connect(url, { 'cf-connecting-ip': key });
+    const attempt = key => new Promise(resolve => {
+      const ws = new WebSocket(url, { headers: { 'cf-connecting-ip': key } });
+      ws.on('open', () => resolve({ ok: true, ws }));
+      ws.on('unexpected-response', (request, response) => { response.resume(); ws.terminate(); resolve({ ok: false, status: response.statusCode }); });
+      ws.on('error', () => resolve({ ok: false, status: 0 }));
+    });
+    const clients = [];
+    let refused;
+    try {
+      const a1 = await open('198.51.100.1'); clients.push(a1);
+      const a2 = await open('198.51.100.1'); clients.push(a2);
+      refused = await attempt('198.51.100.1');
+      assert.equal(refused.ok, false, 'the third socket from one header value is refused');
+      assert.equal(refused.status, 503);
+      const b1 = await open('198.51.100.2'); clients.push(b1);
+
+      a1.send({ type: 'room.create', mode: 'teamwork' }); await sleep(100);
+      assert.ok(a1.inbox.some(m => m.type === 'room.created'), 'A can create its first room');
+      a2.send({ type: 'room.create', mode: 'teamwork' }); await sleep(100);
+      assert.equal((a2.inbox.find(m => m.type === 'error') || {}).code, 'ROOM_LIMIT', 'A cannot hold a second room');
+      b1.send({ type: 'room.create', mode: 'teamwork' }); await sleep(100);
+      assert.ok(b1.inbox.some(m => m.type === 'room.created'), 'B is unaffected by A\'s room budget');
+
+      // normalizeCode strips digits, so '0000' can never collide with a generated room code.
+      a2.send({ type: 'room.join', code: '0000', name: 'A' }); await sleep(60);
+      a2.send({ type: 'room.join', code: '0000', name: 'A' }); await sleep(60);
+      a2.send({ type: 'room.join', code: '0000', name: 'A' }); await sleep(60);
+      const aCodes = a2.inbox.filter(m => m.type === 'error').map(m => m.code);
+      assert.ok(aCodes.includes('JOIN_RATE_LIMITED'), `A is throttled after its failures: ${aCodes.join(', ')}`);
+
+      const b2 = await open('198.51.100.2'); clients.push(b2);
+      b2.send({ type: 'room.join', code: '0000', name: 'B' }); await sleep(60);
+      const bError = b2.inbox.find(m => m.type === 'error');
+      assert.equal(bError && bError.code, 'ROOM_NOT_FOUND', 'B still gets a normal lookup, not A\'s throttle');
+    } finally {
+      for (const client of clients) client.ws.terminate();
+      if (refused && refused.ws) refused.ws.terminate();
+      await sleep(100);
+      await app.close();
+    }
   });
 });
 
