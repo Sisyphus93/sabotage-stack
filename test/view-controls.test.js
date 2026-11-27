@@ -134,7 +134,7 @@ describe('the game\'s view controls (client3d/orbit-hud.js)', () => {
     assert.match(stageSource, /this\.interaction\.dispose\(\)/);
     assert.match(stageSource, /this\.interaction\.placeHud\('play', rect\.x \+ rect\.w - 10, rect\.y \+ rect\.h - 12, dt\)/);
     assert.match(stageSource, /const ceiling = sr && sr\.height > 4 && sr\.top < H \? sr\.top - 10 : Infinity;/);
-    assert.match(stageSource, /yaw: this\.rig\.yaw \+ uv\.yaw, pitch: this\.rig\.pitch \+ uv\.pitch, zoom: this\.rig\.zoom \* uv\.zoom/);
+    assert.match(stageSource, /this\.placeCameraAt\([^;]*this\.rig\.yaw \+ uv\.yaw, this\.rig\.pitch \+ uv\.pitch, this\.rig\.zoom \* uv\.zoom, roll, shake\);/);
     assert.match(html, /elements\.gameCanvas\.addEventListener\('pointerdown'[^]*?event\.pointerType === 'mouse' && event\.button !== 0/);
   });
 });
@@ -209,12 +209,12 @@ describe('the lobby and the podium turn and zoom like every other scene', () => 
     const podium = stageSource.slice(stageSource.indexOf('  update_celebrate(dt, view) {'), stageSource.indexOf('  // The lobby: one block of every colour'));
     for (const [name, text] of [['lobby', lobby], ['podium', podium]]) {
       assert.match(text, /const uv = this\.userView\(dt, [^;]*\{ idleReset: true \}\); this\.facing = uv\.yaw;/, `${name}: a scene on show returns to its default view by itself`);
-      assert.match(text, /yaw: px \* uv\.par \+ [^;]*\+ uv\.yaw, pitch: 0\.1 \+ py \* uv\.par \+ uv\.pitch, zoom: uv\.zoom \}\);/, `${name}: the visitor's turn and zoom are added to the scene's camera, and the pointer's parallax steps aside while turning`);
+      assert.match(text, /this\.placeCameraAt\([^;]*px \* uv\.par \+ [^;]*\+ uv\.yaw, 0\.1 \+ py \* uv\.par \+ uv\.pitch, uv\.zoom\);/, `${name}: the visitor's turn and zoom are added to the scene's camera, and the pointer's parallax steps aside while turning`);
       assert.match(text, /this\.world\.setViewYaw\(uv\.yaw\);/, `${name}: the crowd's galleries, the lights and the sky turn with the camera`);
     }
     assert.match(lobby, /tower\.setFacing\(uv\.yaw\)/); assert.match(podium, /tower\.setFacing\(uv\.yaw\)/, 'the Teamwork plaques turn too');
     assert.match(lobby, /this\.reduced, uv\.yaw\);/, 'the totems turn to face the viewer');
-    assert.match(lobby, /const anchorY = lerp\(230, 70, zk\);[^]*?screen: \{ x: free\.x \+ free\.w \/ 2, y: screenY - \(anchorY - 230\) \* ppu1 \}/, 'zooming in closes in on the totems, not on the air above them');
+    assert.match(lobby, /const anchorY = lerp\(230, 70, zk\);[^]*?free\.x \+ free\.w \/ 2, screenY - \(anchorY - 230\) \* ppu1, free, 620, wide \? 760 : 640/, 'zooming in closes in on the totems, not on the air above them');
     assert.match(lobby, /this\.placeLobbyHud\(W, H, dt\)/); assert.match(podium, /this\.interaction\.placeHud\('results', wide \? W - 16 : free\.x \+ free\.w - 14, wide \? H - 14 : free\.y \+ free\.h - 12, dt\)/);
   });
 

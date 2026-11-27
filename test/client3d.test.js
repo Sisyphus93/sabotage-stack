@@ -781,3 +781,45 @@ describe('host bridge in the real page', skipReason ? { skip: skipReason } : {},
     assert.doesNotMatch(html, /function drawResults\(/);
   });
 });
+
+describe('per-frame hot paths reuse their scratch objects (#52)', () => {
+  test('the stage keeps one post descriptor, tower list and camera call', async () => {
+    const stageSource = fs.readFileSync(path.join(ROOT, 'client3d', 'stage.js'), 'utf8');
+    assert.equal((stageSource.match(/this\.post = \{ spots: \[\], \.\.\.POST_DEFAULTS \}/g) || []).length, 1, 'the post descriptor is allocated once, in the constructor');
+    assert.match(stageSource, /const post = this\.post;\s*\n\s*post\.spots\.length = 0;\s*\n\s*Object\.assign\(post, POST_DEFAULTS\);/);
+    assert.doesNotMatch(stageSource, /Object\.values\(this\.towers\)/);
+    assert.match(stageSource, /this\.towerList\.push\(tower\)/);
+    assert.match(stageSource, /const camSpec = this\.camSpec \|\| \(this\.camSpec = \{\}\);/);
+    assert.match(stageSource, /const call = this\.cameraCall \|\| \(this\.cameraCall = \{ anchor: new THREE\.Vector3\(\), screen: \{ x: 0, y: 0 \}, shake: \[0, 0, 0\] \}\);/);
+
+    const { Stage } = await load('stage.js');
+    const stage = { cameraCall: null, placeCamera(call) { return call; } };
+    const anchor = { x: 0, y: 0, z: 0, copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; } };
+    const rect = { x: 0, y: 0, w: 640, h: 480 };
+    Stage.prototype.placeCameraAt.call(stage, anchor, 320, 240, rect, 360, 520);
+    const call = stage.cameraCall;
+    anchor.x = 99;
+    Stage.prototype.placeCameraAt.call(stage, anchor, 100, 200, rect, 720, 520, 0.4, 0.2, 1.5, 0.1);
+    assert.equal(stage.cameraCall, call, 'the same camera call object is refilled');
+    assert.notEqual(call.anchor, anchor, 'the stage copies the anchor into its own scratch vector');
+    assert.deepEqual([call.anchor.x, call.screen.x, call.screen.y, call.zoom], [99, 100, 200, 1.5]);
+    const towerList = ['play']; const arena = ['arena'];
+    assert.equal(Stage.prototype.activeTowers.call({ mode: 'play', towerList, arena }), towerList);
+    assert.equal(Stage.prototype.activeTowers.call({ mode: 'arena', towerList, arena }), arena);
+  });
+
+  test('the engine and floor mirror reuse their fallback colors and hidden list', () => {
+    const engine = fs.readFileSync(path.join(ROOT, 'client3d', 'engine.js'), 'utf8');
+    const render = engine.slice(engine.indexOf('  render(dt'), engine.indexOf('  dispose()'));
+    assert.match(engine, /const WHITE_RGB = Object\.freeze\(\[1, 1, 1\]\);/);
+    assert.doesNotMatch(render, /hexToRgb01/, 'render does not convert a colour every frame');
+    assert.match(render, /post\.tint \|\| WHITE_RGB/);
+    assert.match(render, /post\.fadeColor \|\| this\.fadeColor \|\| WHITE_RGB/);
+    assert.match(engine, /this\.fadeColor = hexToRgb01/);
+
+    const reflection = fs.readFileSync(path.join(ROOT, 'client3d', 'reflection.js'), 'utf8');
+    assert.match(reflection, /this\.hidden = \[\];/);
+    assert.match(reflection, /const hidden = this\.hidden; hidden\.length = 0;/);
+    assert.doesNotMatch(reflection, /this\.hide\.filter/, 'the mirror list is refilled instead of filtered every render');
+  });
+});

@@ -2835,6 +2835,9 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       }
       if (message.type === 'game.state') {
         if (multiplayer.room && message.game) {
+          // The room is mutated in place, so the old baseline stops being valid
+          // until applyRoomSnapshot adopts this rebuilt state below.
+          multiplayer.deltaBaseline = null;
           multiplayer.room.game = message.game;
           multiplayer.room.phase = message.game.phase;
           applyRoomSnapshot(multiplayer.room);
@@ -2966,6 +2969,9 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
     function applyRemotePosition(message) {
       if (!game || !game.multiplayer) return;
       if (Number.isFinite(Number(message.roundNumber)) && Number(message.roundNumber) !== Number(game.roundNumber)) return;
+      // The game view aliases room players and may share nested mover objects, so
+      // detach before the first position tick of a delta epoch applies anything.
+      detachDeltaBaseline();
       if (multiplayer.mode === 'teamwork') {
         if (game.moving && multiplayer.room && multiplayer.room.game && multiplayer.room.game.team && message.turnId === game.currentTurnId) {
           if (message.playerId !== multiplayer.playerId) game.moving.left = Number(message.x);
@@ -3014,11 +3020,24 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
         applyRemotePosition({ ...mover, roundNumber: message.roundNumber, turnId: message.turnId });
       }
     }
+    // A freshly received snapshot is already a detached JSON value, so it becomes
+    // the delta baseline itself instead of being cloned a second time. The first
+    // live mutation of the room view detaches a private copy first (see
+    // detachDeltaBaseline), which keeps prediction and position ticks out of the
+    // baseline while ordinary deltas pay for exactly one reconstruction clone.
+    function adoptDeltaBaseline(state) {
+      multiplayer.deltaBaseline = Number.isInteger(state.revision) ? state : null;
+    }
+    function detachDeltaBaseline() {
+      if (multiplayer.room && multiplayer.deltaBaseline === multiplayer.room) {
+        multiplayer.deltaBaseline = Replication.captureBaseline(multiplayer.room);
+      }
+    }
     function applyRoomSnapshot(state) {
       if (!state || typeof state !== 'object') return;
       const keepLobby = multiplayer.lobbyViewPhase !== null && multiplayer.lobbyViewPhase === state.phase;
       if (!keepLobby) multiplayer.lobbyViewPhase = null;
-      multiplayer.deltaBaseline = Replication.captureBaseline(state);
+      adoptDeltaBaseline(state);
       multiplayer.syncPending = false;
       multiplayer.room = state;
       refreshMotionState();
@@ -3196,6 +3215,11 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       }
       adoptRoomEffects(game, expiry.effects, active);
     }
+    // Local prediction mutates the mover it is given, including its decoy, so the
+    // view gets its own mover object rather than sharing one with the room baseline.
+    function copyMover(moving) {
+      return moving ? { ...moving, ...(moving.decoy ? { decoy: { ...moving.decoy } } : {}) } : null;
+    }
     function applyMultiplayerGame(remote) {
       if (!remote) return;
       multiplayer.remoteGame = remote;
@@ -3231,7 +3255,7 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
         lastVote: remote.lastVote || null, statusMessage: remote.paused ? 'The round is paused.' : '',
         stack: team ? team.stack : competitor ? competitor.blocks : [],
         fallenPieces: team ? team.fallen : competitor ? competitor.fallen : [],
-        moving: team && team.moving ? { ...team.moving } : competitor && competitor.moving ? { ...competitor.moving } : null,
+        moving: team ? copyMover(team.moving) : copyMover(competitor && competitor.moving),
         perfects: team ? team.perfects : competitor ? competitor.perfects : 0,
         score: team ? team.score : competitor ? competitor.height : 0,
         bestAtStart: multiplayer.sessionBest || 0,
@@ -4089,11 +4113,13 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       const ring = elements.autoDropRing;
       const show = Boolean(game && !game.devMode && !game.multiplayer && game.phase === 'playing' && game.moving && game.autoDropSeconds > 0
         && (Number(game.blockClock) || 0) >= SOLO_AUTO_DROP_RING_AFTER);
-      ring.classList.toggle('is-on', show);
+      if (ring.classList.contains('is-on') !== show) ring.classList.toggle('is-on', show);
       if (!show) return;
       const left = Math.max(0, game.autoDropSeconds - (Number(game.blockClock) || 0));
-      elements.autoDropLeft.style.strokeDashoffset = String(1 - Math.min(1, left / game.autoDropSeconds));
-      ring.classList.toggle('is-urgent', left <= 1);
+      const offset = String(1 - Math.min(1, left / game.autoDropSeconds));
+      if (elements.autoDropLeft.style.strokeDashoffset !== offset) elements.autoDropLeft.style.strokeDashoffset = offset;
+      const urgent = left <= 1;
+      if (ring.classList.contains('is-urgent') !== urgent) ring.classList.toggle('is-urgent', urgent);
     }
     function syncGameOverlays() {
       syncAutoDropRing();
@@ -4214,6 +4240,42 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       resultScale = Math.min(1, 338 / totalHeight);
       elements.resultScale.textContent = resultScale < .999 ? `Stack fitted to ${(resultScale * 100).toFixed(1)}% so every block stays in frame. Fallen pieces are drawn beneath the shared baseline.` : 'Full-size block geometry. The collapse point and fallen pieces are shown below.';
     }
+    // The HUD re-runs several times a second, so it only touches the DOM when a
+    // rendered value actually changes. Unchanged writes dirty layout, and the 3D
+    // layer reads that layout later in the same frame. `force` (set by syncHud)
+    // keeps its old meaning: refresh even if the DOM already looks current.
+    let hudForceWrites = false;
+    function setText(element, value) {
+      const text = String(value);
+      if (hudForceWrites || element.textContent !== text) element.textContent = text;
+    }
+    function setHidden(element, hidden) {
+      const next = Boolean(hidden);
+      if (hudForceWrites || element.hidden !== next) element.hidden = next;
+    }
+    function setAttr(element, name, value) {
+      const text = String(value);
+      if (hudForceWrites || element.getAttribute(name) !== text) element.setAttribute(name, text);
+    }
+    function removeAttr(element, name) { if (hudForceWrites || element.hasAttribute(name)) element.removeAttribute(name); }
+    function toggleClass(element, name, value) {
+      const next = Boolean(value);
+      if (hudForceWrites || element.classList.contains(name) !== next) element.classList.toggle(name, next);
+    }
+    function setWidth(element, value) {
+      const width = String(value);
+      if (hudForceWrites || element.style.width !== width) element.style.width = width;
+    }
+    function setTabIndex(element, value) {
+      if (hudForceWrites || element.tabIndex !== value) element.tabIndex = value;
+    }
+    function setDisabled(element, value) {
+      const next = Boolean(value);
+      if (hudForceWrites || element.disabled !== next) element.disabled = next;
+    }
+    function setHtml(element, value) {
+      if (hudForceWrites || element.innerHTML !== value) element.innerHTML = value;
+    }
     function syncVotePanel() {
       if (!game) return;
       const voting = Boolean(game.vote && game.phase === 'playing');
@@ -4221,8 +4283,8 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       const { counts, total, pick } = voteTally() || { counts: {}, total: 0, pick: null };
       const soloChoice = pick;
       const hostChoice = voting && remoteVote && game.mode === 'competitive' && multiplayer.role === 'host' ? game.vote.hostChoice : null;
-      elements.stageVoteStrip.hidden = !voting;
-      elements.stageVoteStrip.setAttribute('aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
+      setHidden(elements.stageVoteStrip, !voting);
+      setAttr(elements.stageVoteStrip, 'aria-label', remoteVote && game.mode === 'teamwork' ? 'Teamwork vote options' : 'Chat vote options');
       for (const button of [...elements.voteButtons, ...elements.stageVoteButtons]) {
         const index = Number(button.dataset.optionIndex);
         const id = voting ? game.vote.options[index] : null;
@@ -4237,287 +4299,294 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
         const isSoloPick = Boolean(id && soloChoice === id);
         const isCompetitivePick = Boolean(id && hostChoice === id);
         const icon = button.querySelector('.vote-icon-use, .stage-vote-icon-use');
-        if (icon) icon.setAttribute('href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
+        if (icon) setAttr(icon, 'href', `#sabotage-symbol-${sabotage ? sabotage.id : 'empty'}`);
         const name = button.querySelector('.vote-name, .stage-vote-name');
         const count = button.querySelector('.vote-count, .stage-vote-count');
         const fill = button.querySelector('.vote-fill');
         const description = button.querySelector('.vote-description');
         const pickTag = button.querySelector('.vote-pick');
-        if (description) { description.textContent = sabotage ? sabotage.hint : ''; description.hidden = !sabotage; }
-        if (pickTag) { pickTag.hidden = !(isSoloPick || isCompetitivePick); pickTag.textContent = isCompetitivePick ? 'Your pick' : `Your pick ×${Core.SOLO_PICK_WEIGHT}`; }
-        name.textContent = sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote';
+        if (description) { setText(description, sabotage ? sabotage.hint : ''); setHidden(description, !sabotage); }
+        if (pickTag) { setHidden(pickTag, !(isSoloPick || isCompetitivePick)); setText(pickTag, isCompetitivePick ? 'Your pick' : `Your pick ×${Core.SOLO_PICK_WEIGHT}`); }
+        setText(name, sabotage ? (button.classList.contains('stage-vote-chip') ? compactSabotageName(sabotage) : sabotage.name) : 'Waiting for vote');
         const votes = sabotage && counts[sabotage.id] ? counts[sabotage.id] : 0;
-        count.textContent = String(votes);
-        if (fill) fill.style.width = `${total ? (votes / total) * 100 : 0}%`;
-        button.disabled = !voting || !canChoose || Boolean(game.soloPaused);
-        button.classList.toggle('is-host-tiebreak', Boolean(isHostTieBreak));
-        button.classList.toggle('is-your-pick', isSoloPick || isCompetitivePick);
-        if (voting && (!remoteVote || (game.mode === 'competitive' && multiplayer.role === 'host'))) button.setAttribute('aria-pressed', String(isSoloPick || isCompetitivePick));
-        else button.removeAttribute('aria-pressed');
+        setText(count, votes);
+        if (fill) setWidth(fill, `${total ? (votes / total) * 100 : 0}%`);
+        setDisabled(button, !voting || !canChoose || Boolean(game.soloPaused));
+        toggleClass(button, 'is-host-tiebreak', isHostTieBreak);
+        toggleClass(button, 'is-your-pick', isSoloPick || isCompetitivePick);
+        if (voting && (!remoteVote || (game.mode === 'competitive' && multiplayer.role === 'host'))) setAttr(button, 'aria-pressed', String(isSoloPick || isCompetitivePick));
+        else removeAttr(button, 'aria-pressed');
         const choiceLabel = teamworkVote
           ? hostCanChooseTieBreak ? 'Set the tie-break to' : multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId ? 'Unavailable while you are on turn:' : 'Vote for'
           : remoteVote && multiplayer.role !== 'host' ? 'Host vote option' : 'Vote for';
-        button.setAttribute('aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${sabotage.hint} ${votes} votes${isSoloPick ? `, your pick worth ${Core.countWord(Core.SOLO_PICK_WEIGHT)} votes` : isCompetitivePick ? ', your pick' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
-        if (button.classList.contains('stage-vote-chip')) button.title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
+        setAttr(button, 'aria-label', sabotage ? `${choiceLabel} ${sabotage.name}. ${sabotage.hint} ${votes} votes${isSoloPick ? `, your pick worth ${Core.countWord(Core.SOLO_PICK_WEIGHT)} votes` : isCompetitivePick ? ', your pick' : ''}${isHostTieBreak ? ', selected as host tie-break' : ''}` : `Option ${index + 1}, voting closed`);
+        if (button.classList.contains('stage-vote-chip')) {
+          const title = sabotage ? `${sabotage.name}${isHostTieBreak ? ' · Host tie-break' : ''}` : '';
+          if (button.title !== title) button.title = title;
+        }
       }
       if (voting) {
         const seconds = Math.max(0, Math.ceil(game.vote.remaining));
-        elements.voteCountdown.textContent = `Closes in ${seconds}s`;
+        setText(elements.voteCountdown, `Closes in ${seconds}s`);
         if (remoteVote && game.mode === 'teamwork') {
           if (multiplayer.role === 'host') {
-            elements.voteHelp.textContent = 'Set a tie-break choice. It applies only if player votes tie; change it until the vote closes.';
+            setText(elements.voteHelp, 'Set a tie-break choice. It applies only if player votes tie; change it until the vote closes.');
             const tiebreak = game.vote.hostTiebreak ? effectById(game.vote.hostTiebreak) : null;
-            elements.voteSubtitle.textContent = tiebreak ? `Host tie-break set to ${tiebreak.name}. It applies only if player votes tie.` : 'The tower pauses between turns. Players vote; choose a tie-break, even if no one votes.';
+            setText(elements.voteSubtitle, tiebreak ? `Host tie-break set to ${tiebreak.name}. It applies only if player votes tie.` : 'The tower pauses between turns. Players vote; choose a tie-break, even if no one votes.');
           } else if (multiplayer.role === 'spectator') {
-            elements.voteHelp.textContent = 'Spectators can watch the vote but cannot vote.';
-            elements.voteSubtitle.textContent = 'The tower pauses between turns while players vote.';
+            setText(elements.voteHelp, 'Spectators can watch the vote but cannot vote.');
+            setText(elements.voteSubtitle, 'The tower pauses between turns while players vote.');
           } else if (game.currentPlayerId === multiplayer.playerId) {
-            elements.voteHelp.textContent = 'You are taking a turn and cannot vote in this pause. Watch your teammates decide.';
-            elements.voteSubtitle.textContent = 'The tower pauses between turns. You are currently taking a turn, so watch the vote.';
+            setText(elements.voteHelp, 'You are taking a turn and cannot vote in this pause. Watch your teammates decide.');
+            setText(elements.voteSubtitle, 'The tower pauses between turns. You are currently taking a turn, so watch the vote.');
           } else if (!multiplayer.connected) {
-            elements.voteHelp.textContent = 'Reconnect to vote during the between-turn pause.';
-            elements.voteSubtitle.textContent = 'The tower pauses between turns. Reconnecting…';
+            setText(elements.voteHelp, 'Reconnect to vote during the between-turn pause.');
+            setText(elements.voteSubtitle, 'The tower pauses between turns. Reconnecting…');
           } else {
-            elements.voteHelp.textContent = 'Choose one option. You can change your vote until the vote closes.';
-            elements.voteSubtitle.textContent = multiplayer.room && !multiplayer.room.hostConnected ? 'The tower pauses between turns. Host disconnected; tied votes are random.' : 'The tower pauses between turns. Pick one option for the room.';
+            setText(elements.voteHelp, 'Choose one option. You can change your vote until the vote closes.');
+            setText(elements.voteSubtitle, multiplayer.room && !multiplayer.room.hostConnected ? 'The tower pauses between turns. Host disconnected; tied votes are random.' : 'The tower pauses between turns. Pick one option for the room.');
           }
           const tiebreak = game.vote.hostTiebreak ? ` · Host tie-break: ${effectById(game.vote.hostTiebreak)?.name || 'selected'}` : '';
-          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`;
+          setText(elements.voteState, `${total} ${total === 1 ? 'vote' : 'votes'} counted${tiebreak}`);
         } else {
-          elements.voteHelp.textContent = remoteVote
+          setText(elements.voteHelp, remoteVote
             ? multiplayer.role === 'host' ? 'You have one vote. Click a choice or press 1, 2, or 3; change it until the vote closes.' : 'The host has one changeable vote. The block keeps moving.'
-            : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
-          elements.voteSubtitle.textContent = hostChoice
+            : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.');
+          setText(elements.voteSubtitle, hostChoice
             ? `Vote counted: ${effectById(hostChoice)?.name || 'your pick'}. You can change it.`
             : !remoteVote && soloChoice
             ? `Vote counted: ${effectById(soloChoice)?.name || 'your pick'} ×${Core.SOLO_PICK_WEIGHT}. You can change it.`
             : multiplayer.active && multiplayer.role !== 'host'
               ? 'The block keeps moving. The host is choosing the room vote.'
-              : 'The block keeps moving. Pick one to cast a vote.';
-          elements.voteState.textContent = `${total} ${total === 1 ? 'vote' : 'votes'} counted`;
+              : 'The block keeps moving. Pick one to cast a vote.');
+          setText(elements.voteState, `${total} ${total === 1 ? 'vote' : 'votes'} counted`);
         }
-        elements.voteProgress.style.width = `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`;
+        setWidth(elements.voteProgress, `${Math.max(0, Math.min(100, (game.vote.remaining / game.vote.duration) * 100))}%`);
       } else if (game.phase === 'playing') {
         const seconds = Math.max(0, Math.ceil(game.nextVoteAt - game.elapsed));
         const hostAwayCompetitive = remoteVote && game.mode === 'competitive' && multiplayer.room && !multiplayer.room.hostConnected;
-        elements.voteCountdown.textContent = hostAwayCompetitive ? 'Voting paused' : `Next vote in ${seconds}s`;
+        setText(elements.voteCountdown, hostAwayCompetitive ? 'Voting paused' : `Next vote in ${seconds}s`);
         const teamworkRoomVote = remoteVote && game.mode === 'teamwork';
-        elements.voteSubtitle.textContent = game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage
+        setText(elements.voteSubtitle, game.statusMessage && game.statusMessage.startsWith('Vote') ? game.statusMessage
           : teamworkRoomVote ? (multiplayer.room && !multiplayer.room.hostConnected ? 'Host disconnected. Players vote; tied votes are random.' : 'Between turns, the tower pauses for a five-second vote. Players choose; the host breaks ties.')
-          : hostAwayCompetitive ? 'Host disconnected. Competitive votes are skipped until the host returns.' : 'Pick a sabotage when voting opens.';
-        elements.voteHelp.textContent = teamworkRoomVote
+          : hostAwayCompetitive ? 'Host disconnected. Competitive votes are skipped until the host returns.' : 'Pick a sabotage when voting opens.');
+        setText(elements.voteHelp, teamworkRoomVote
           ? multiplayer.role === 'host' ? 'Players get one changeable vote. Set a tie-break only if their votes tie.' : multiplayer.role === 'spectator' ? 'Spectators watch the vote; only players can vote.' : 'Vote once during a between-turn pause; change your choice until it closes.'
           : remoteVote ? (multiplayer.role === 'host' ? 'You have one vote; change it until voting closes.' : 'The host has one changeable vote.')
-          : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.';
-        elements.voteState.textContent = hostAwayCompetitive ? 'Voting paused while host is away' : `Vote opens in ${seconds} seconds`;
-        elements.voteProgress.style.width = '0%';
+          : 'Click a choice or press 1, 2, or 3. One choice per person; in Solo your choice carries four chat votes. Change it any time.');
+        setText(elements.voteState, hostAwayCompetitive ? 'Voting paused while host is away' : `Vote opens in ${seconds} seconds`);
+        setWidth(elements.voteProgress, '0%');
       } else {
-        elements.voteCountdown.textContent = 'Closed';
-        elements.voteSubtitle.textContent = 'This run has ended.';
-        elements.voteState.textContent = 'Votes closed';
-        elements.voteProgress.style.width = '0%';
+        setText(elements.voteCountdown, 'Closed');
+        setText(elements.voteSubtitle, 'This run has ended.');
+        setText(elements.voteState, 'Votes closed');
+        setWidth(elements.voteProgress, '0%');
       }
     }
     function syncHud(force = false) {
       if (!game) return;
-      elements.pause.hidden = Boolean(game.multiplayer || game.devMode || game.phase !== 'playing');
-      elements.pause.textContent = game.soloPaused ? 'Resume' : 'Pause';
-      elements.gameStage.classList.toggle('competitive-host', watchingArena());
+      const previousForce = hudForceWrites;
+      hudForceWrites = Boolean(force);
+      try { syncHudNow(); } finally { hudForceWrites = previousForce; }
+    }
+    function syncHudNow() {
+      setHidden(elements.pause, game.multiplayer || game.devMode || game.phase !== 'playing');
+      setText(elements.pause, game.soloPaused ? 'Resume' : 'Pause');
+      toggleClass(elements.gameStage, 'competitive-host', watchingArena());
       if (game.devMode) {
-        elements.stageVoteStrip.hidden = true;
+        setHidden(elements.stageVoteStrip, true);
         const normal = devSelectedId === 'normal';
         const sabotage = effectById(devSelectedId);
         const previewName = normal ? 'Normal' : sabotage ? sabotage.name : 'a sabotage';
-        elements.devPanel.hidden = false;
-        elements.mpCard.hidden = true;
-        elements.voteCard.hidden = true;
-        elements.statsCard.hidden = true;
-        elements.effectCard.hidden = true;
-        elements.controlRow.hidden = false;
-        elements.drop.hidden = false;
-        elements.canvasHint.hidden = false;
-        elements.drop.disabled = false;
-        elements.dropLabel.textContent = 'TEST DROP';
-        elements.dropKey.hidden = false;
-        elements.drop.setAttribute('aria-label', 'Manually test-drop the sample block. No score is saved.');
-        elements.controlHelp.textContent = 'Manual test drop. No score saved.';
-        elements.canvasHint.textContent = 'Tap the stage or press Space to test-drop';
-        elements.gameCanvas.setAttribute('role', 'button');
-        elements.gameCanvas.tabIndex = 0;
-        elements.gameCanvas.setAttribute('aria-disabled', 'false');
-        elements.gameCanvas.setAttribute('aria-label', `Practice: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
-        elements.gameModeKicker.textContent = 'Practice · offline';
-        elements.gameHeading.textContent = 'Test every sabotage.';
-        elements.roundStatus.textContent = 'PRACTICE';
-        elements.modeLabel.textContent = 'Practice · offline';
-        elements.menu.textContent = 'Exit practice';
-        elements.menu.setAttribute('aria-label', 'Exit practice');
-        elements.height.textContent = String(heightOf(game));
-        elements.motion.textContent = normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'PRACTICE PREVIEW';
-        elements.devPanelTitle.textContent = normal ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'Choose a sabotage.';
-        elements.devPanelDescription.textContent = `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'is full'}. Exit with Menu or Esc.`;
-        elements.devEffectDescription.textContent = normal ? 'Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.' : sabotage ? sabotage.effect : 'Pick any effect to see its mechanic and preview.';
-        elements.devDrop.textContent = devSelectedId === 'superglue' ? 'Test +10 px snap' : 'Simulate clean drop';
-        elements.devDrop.setAttribute('aria-label', devSelectedId === 'superglue' ? 'Automatically test a landing ten pixels off-centre' : `Automatically simulate a landing with ${previewName}`);
+        setHidden(elements.devPanel, false);
+        setHidden(elements.mpCard, true);
+        setHidden(elements.voteCard, true);
+        setHidden(elements.statsCard, true);
+        setHidden(elements.effectCard, true);
+        setHidden(elements.controlRow, false);
+        setHidden(elements.drop, false);
+        setHidden(elements.canvasHint, false);
+        setDisabled(elements.drop, false);
+        setText(elements.dropLabel, 'TEST DROP');
+        setHidden(elements.dropKey, false);
+        setAttr(elements.drop, 'aria-label', 'Manually test-drop the sample block. No score is saved.');
+        setText(elements.controlHelp, 'Manual test drop. No score saved.');
+        setText(elements.canvasHint, 'Tap the stage or press Space to test-drop');
+        setAttr(elements.gameCanvas, 'role', 'button');
+        setTabIndex(elements.gameCanvas, 0);
+        setAttr(elements.gameCanvas, 'aria-disabled', 'false');
+        setAttr(elements.gameCanvas, 'aria-label', `Practice: ${normal ? 'Normal mode with no sabotage' : sabotage ? sabotage.name : 'sabotage'} sample. Press Space or tap to test-drop.`);
+        setText(elements.gameModeKicker, 'Practice · offline');
+        setText(elements.gameHeading, 'Test every sabotage.');
+        setText(elements.roundStatus, 'PRACTICE');
+        setText(elements.modeLabel, 'Practice · offline');
+        setText(elements.menu, 'Exit practice');
+        setAttr(elements.menu, 'aria-label', 'Exit practice');
+        setText(elements.height, heightOf(game));
+        setText(elements.motion, normal ? `NORMAL · ${Math.round(gameSpeed())} PX/S` : sabotage ? `PREVIEW · ${sabotage.name.toUpperCase()} · ${Math.round(gameSpeed())} PX/S` : 'PRACTICE PREVIEW');
+        setText(elements.devPanelTitle, normal ? 'Normal (no sabotage)' : sabotage ? sabotage.name : 'Choose a sabotage.');
+        setText(elements.devPanelDescription, `Local and scoreless—no votes or multiplayer messages. The sample starts lined up for a quick manual drop. Motion ${reducedMotion ? 'is reduced' : 'is full'}. Exit with Menu or Esc.`);
+        setText(elements.devEffectDescription, normal ? 'Baseline: ordinary speed, width, camera, and placement rules; no sabotage is active.' : sabotage ? sabotage.effect : 'Pick any effect to see its mechanic and preview.');
+        setText(elements.devDrop, devSelectedId === 'superglue' ? 'Test +10 px snap' : 'Simulate clean drop');
+        setAttr(elements.devDrop, 'aria-label', devSelectedId === 'superglue' ? 'Automatically test a landing ten pixels off-centre' : `Automatically simulate a landing with ${previewName}`);
         syncDevSelection();
         return;
       }
-      elements.devPanel.hidden = true;
-      elements.voteCard.hidden = false;
-      elements.statsCard.hidden = false;
-      elements.effectCard.hidden = false;
-      elements.controlRow.hidden = false;
-      elements.drop.hidden = false;
-      elements.canvasHint.hidden = false;
-      elements.controlHelp.innerHTML = game.multiplayer && multiplayer.role === 'spectator' ? 'Watching the room.<br>Spectators do not play or vote.'
+      setHidden(elements.devPanel, true);
+      setHidden(elements.voteCard, false);
+      setHidden(elements.statsCard, false);
+      setHidden(elements.effectCard, false);
+      setHidden(elements.controlRow, false);
+      setHidden(elements.drop, false);
+      setHidden(elements.canvasHint, false);
+      setHtml(elements.controlHelp, game.multiplayer && multiplayer.role === 'spectator' ? 'Watching the room.<br>Spectators do not play or vote.'
         : game.multiplayer && multiplayer.role === 'host'
         ? (game.mode === 'teamwork' ? 'Take turns building.<br>Only tied votes come to you.' : 'Watch the stacks.<br>Choose one sabotage per vote.')
         : game.multiplayer && game.mode === 'teamwork' ? 'Take turns building.<br>Vote on your phone between turns.'
-        : 'One press, one drop.<br>Keep stacking during votes.';
-      elements.canvasHint.textContent = 'Tap anywhere to drop';
-      elements.drop.setAttribute('aria-label', 'Drop the moving block');
-      elements.mpCard.hidden = !game.multiplayer;
+        : 'One press, one drop.<br>Keep stacking during votes.');
+      setText(elements.canvasHint, game.soloPaused ? 'Paused · use Resume to continue' : 'Tap anywhere to drop');
+      setAttr(elements.drop, 'aria-label', 'Drop the moving block');
+      setHidden(elements.mpCard, !game.multiplayer);
       if (!game.multiplayer) {
-        elements.gameCanvas.setAttribute('role', 'button');
-        elements.gameCanvas.tabIndex = 0;
-        elements.gameCanvas.setAttribute('aria-disabled', String(Boolean(game.soloPaused)));
-        elements.gameCanvas.setAttribute('aria-label', game.soloPaused ? 'Game paused. Use Resume to continue.' : 'Stacking game. Press Space to drop the moving block.');
-        if (game.soloPaused) elements.canvasHint.textContent = 'Paused · use Resume to continue';
-        elements.dropKey.hidden = false;
-        elements.gameHeading.textContent = 'Make it stack.';
-        elements.gameModeKicker.textContent = game.assisted ? 'Single player · Assisted' : 'Single player';
-        elements.menu.textContent = 'Menu';
-        elements.menu.setAttribute('aria-label', 'Return to menu');
-        elements.modeLabel.textContent = 'Offline solo';
+        setAttr(elements.gameCanvas, 'role', 'button');
+        setTabIndex(elements.gameCanvas, 0);
+        setAttr(elements.gameCanvas, 'aria-disabled', String(Boolean(game.soloPaused)));
+        setAttr(elements.gameCanvas, 'aria-label', game.soloPaused ? 'Game paused. Use Resume to continue.' : 'Stacking game. Press Space to drop the moving block.');
+        setHidden(elements.dropKey, false);
+        setText(elements.gameHeading, 'Make it stack.');
+        setText(elements.gameModeKicker, game.assisted ? 'Single player · Assisted' : 'Single player');
+        setText(elements.menu, 'Menu');
+        setAttr(elements.menu, 'aria-label', 'Return to menu');
+        setText(elements.modeLabel, 'Offline solo');
       }
       const height = heightOf(game);
-      elements.height.textContent = String(height);
-      elements.statHeight.textContent = String(height);
-      elements.statPerfects.textContent = String(game.perfects);
-      elements.statSpeed.textContent = String(Math.round(gameSpeed()));
-      elements.bestInline.textContent = String(game.multiplayer ? multiplayer.sessionBest : sessionBest);
-      elements.roundStatus.textContent = game.soloPaused ? 'Paused' : game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete';
+      setText(elements.height, height);
+      setText(elements.statHeight, height);
+      setText(elements.statPerfects, game.perfects);
+      setText(elements.statSpeed, Math.round(gameSpeed()));
+      setText(elements.bestInline, game.multiplayer ? multiplayer.sessionBest : sessionBest);
+      setText(elements.roundStatus, game.soloPaused ? 'Paused' : game.phase === 'playing' ? 'Round live' : game.phase === 'collapse' ? 'Tower down' : 'Run complete');
       if (game.multiplayer) {
-        elements.mpCard.hidden = false;
+        setHidden(elements.mpCard, false);
         const turnName = game.currentPlayerName || 'Next player';
         const ownTurn = multiplayer.role === 'player' && game.currentPlayerId === multiplayer.playerId;
-        elements.mpTurnHeading.textContent = game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack';
+        setText(elements.mpTurnHeading, game.mode === 'teamwork' ? (game.vote ? 'Room vote' : ownTurn ? 'Your turn' : `${turnName}'s turn`) : multiplayer.role !== 'player' ? 'Room standings' : 'Your stack');
         if (game.paused) {
-          elements.mpTurnStatus.textContent = game.pauseReason === 'all-players-idle' ? 'All players are idle. Waiting for someone to return.' : 'Everyone is disconnected. The round is paused.';
-          elements.mpTurnTimer.textContent = 'Paused';
+          setText(elements.mpTurnStatus, game.pauseReason === 'all-players-idle' ? 'All players are idle. Waiting for someone to return.' : 'Everyone is disconnected. The round is paused.');
+          setText(elements.mpTurnTimer, 'Paused');
         } else if (!multiplayer.connected) {
-          elements.mpTurnStatus.textContent = 'Connection lost. Rejoining automatically…';
-          elements.mpTurnTimer.textContent = '—';
+          setText(elements.mpTurnStatus, 'Connection lost. Rejoining automatically…');
+          setText(elements.mpTurnTimer, '—');
         } else if (game.mode === 'teamwork') {
-          elements.mpTurnStatus.textContent = game.vote ? 'Vote between turns. Teammates decide; the host breaks ties.'
-            : ownTurn ? 'Drop before time runs out or your turn will be skipped.' : 'Shared tower · idle players are skipped until ready.';
-          elements.mpTurnTimerLabel.textContent = game.vote ? 'Vote closes' : 'Turn timer';
-          elements.mpTurnTimer.textContent = game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
-            : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`;
+          setText(elements.mpTurnStatus, game.vote ? 'Vote between turns. Teammates decide; the host breaks ties.'
+            : ownTurn ? 'Drop before time runs out or your turn will be skipped.' : 'Shared tower · idle players are skipped until ready.');
+          setText(elements.mpTurnTimerLabel, game.vote ? 'Vote closes' : 'Turn timer');
+          setText(elements.mpTurnTimer, game.vote ? `${Math.max(0, Math.ceil(game.vote.remaining || 0))}s`
+            : game.awaitingAutoDrop ? `${Math.max(0, Math.ceil(game.autoDropRemaining || 0))}s` : `${Math.max(0, Math.ceil(game.turnRemaining || 0))}s`);
         } else {
-          elements.mpTurnTimerLabel.textContent = 'Round timer';
+          setText(elements.mpTurnTimerLabel, 'Round timer');
           const self = (game.remotePlayers || []).find(player => player.playerId === multiplayer.playerId);
-          elements.mpTurnStatus.textContent = multiplayer.role !== 'player' ? 'Everyone builds independently. Room votes hit every active stack.'
-            : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.';
-          elements.mpTurnTimer.textContent = `${Math.max(0, Math.ceil(game.remainingSeconds || 0))}s`;
+          setText(elements.mpTurnStatus, multiplayer.role !== 'player' ? 'Everyone builds independently. Room votes hit every active stack.'
+            : self && (self.ended || self.collapsed) ? 'Your stack is finished. You can watch the room.' : 'Build your own tower. Room votes hit every active stack.');
+          setText(elements.mpTurnTimer, `${Math.max(0, Math.ceil(game.remainingSeconds || 0))}s`);
         }
         const selfTeamPlayer = game.mode === 'teamwork' ? (game.remotePlayers || []).find(player => player.id === multiplayer.playerId) : null;
-        elements.teamReady.hidden = !(selfTeamPlayer && selfTeamPlayer.idle && multiplayer.connected && game.phase === 'playing');
-        elements.teamSkip.hidden = !(game.mode === 'teamwork' && multiplayer.role === 'host' && multiplayer.connected && !game.paused && !game.vote && game.currentPlayerId && game.phase === 'playing');
+        setHidden(elements.teamReady, !(selfTeamPlayer && selfTeamPlayer.idle && multiplayer.connected && game.phase === 'playing'));
+        setHidden(elements.teamSkip, !(game.mode === 'teamwork' && multiplayer.role === 'host' && multiplayer.connected && !game.paused && !game.vote && game.currentPlayerId && game.phase === 'playing'));
         const hostView = multiplayer.role !== 'player';
         const activePlayer = canDropMultiplayer();
-        elements.dropKey.hidden = hostView;
-        elements.gameCanvas.setAttribute('role', hostView ? 'img' : 'button');
-        elements.gameCanvas.tabIndex = hostView ? -1 : 0;
-        elements.gameCanvas.setAttribute('aria-disabled', String(hostView || !activePlayer));
-        elements.gameCanvas.setAttribute('aria-label', hostView
+        setHidden(elements.dropKey, hostView);
+        setAttr(elements.gameCanvas, 'role', hostView ? 'img' : 'button');
+        setTabIndex(elements.gameCanvas, hostView ? -1 : 0);
+        setAttr(elements.gameCanvas, 'aria-disabled', String(hostView || !activePlayer));
+        setAttr(elements.gameCanvas, 'aria-label', hostView
           ? (game.mode === 'teamwork' ? 'Live Teamwork shared tower. Players take turns on their phones.' : 'Live Competitive scoreboard showing each player’s independent stack.')
           : game.mode === 'teamwork' && !activePlayer ? `Shared tower. Waiting for ${turnName} to take their turn.` : 'Stacking game. Press Space or tap to drop the moving block.');
-        elements.canvasHint.hidden = hostView;
-        elements.canvasHint.textContent = hostView ? 'Live room view · players drop on their phones'
-          : game.mode === 'teamwork' && !activePlayer ? `Waiting for ${turnName}…` : 'Tap anywhere to drop';
+        setHidden(elements.canvasHint, hostView);
+        setText(elements.canvasHint, hostView ? 'Live room view · players drop on their phones'
+          : game.mode === 'teamwork' && !activePlayer ? `Waiting for ${turnName}…` : 'Tap anywhere to drop');
         if (game.phase !== 'playing') {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'ROUND OVER';
-          elements.motion.textContent = 'RESULTS READY';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, 'ROUND OVER');
+          setText(elements.motion, 'RESULTS READY');
         } else if (!multiplayer.connected) {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'RECONNECTING';
-          elements.motion.textContent = 'WAITING FOR SERVER';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, 'RECONNECTING');
+          setText(elements.motion, 'WAITING FOR SERVER');
         } else if (game.paused) {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'ROUND PAUSED';
-          elements.motion.textContent = 'WAITING FOR PLAYERS';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, 'ROUND PAUSED');
+          setText(elements.motion, 'WAITING FOR PLAYERS');
         } else if (multiplayer.role !== 'player') {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = multiplayer.role === 'host' ? 'HOST VIEW' : 'SPECTATOR';
-          elements.motion.textContent = game.vote ? 'ROOM VOTE LIVE' : 'WATCH THE TOWER';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, multiplayer.role === 'host' ? 'HOST VIEW' : 'SPECTATOR');
+          setText(elements.motion, game.vote ? 'ROOM VOTE LIVE' : 'WATCH THE TOWER');
         } else if (multiplayer.dropPending) {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = 'DROPPING…';
-          elements.motion.textContent = 'DROP SENT';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, 'DROPPING…');
+          setText(elements.motion, 'DROP SENT');
         } else if (canDropMultiplayer()) {
-          elements.drop.disabled = false;
-          elements.dropLabel.textContent = 'DROP';
+          setDisabled(elements.drop, false);
+          setText(elements.dropLabel, 'DROP');
           const speed = Math.round(gameSpeed());
           const id = game.activeEffect && game.activeEffect.id;
           const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
-          elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
+          setText(elements.motion, game.vote ? `VOTE LIVE · ${motion}` : motion);
         } else {
-          elements.drop.disabled = true;
-          elements.dropLabel.textContent = game.mode === 'teamwork' ? 'WAIT YOUR TURN' : 'STACK FINISHED';
-          elements.motion.textContent = game.mode === 'teamwork' ? `NEXT · ${turnName.toUpperCase()}` : 'SPECTATING';
+          setDisabled(elements.drop, true);
+          setText(elements.dropLabel, game.mode === 'teamwork' ? 'WAIT YOUR TURN' : 'STACK FINISHED');
+          setText(elements.motion, game.mode === 'teamwork' ? `NEXT · ${turnName.toUpperCase()}` : 'SPECTATING');
         }
         const displayedEffect = game.activeEffect || game.pendingEffect;
         if (displayedEffect) {
           const sabotage = effectById(displayedEffect.id);
-          elements.effectIconUse.setAttribute('href', `#sabotage-symbol-${sabotage.id}`);
-          elements.effectName.textContent = sabotage.name;
-          elements.effectCaption.textContent = sabotage.caption;
-          elements.effectTime.textContent = (displayedEffect === game.pendingEffect ? 'Pending · ' : '') + effectCountdownText(displayedEffect);
-          elements.effectMeter.style.width = displayedEffect.untilDrop ? (Number.isInteger(displayedEffect.dropsRemaining) ? `${displayedEffect.dropsRemaining / 3 * 100}%` : '100%') : `${Math.max(0, Math.min(100, displayedEffect.remaining / displayedEffect.duration * 100))}%`;
+          setAttr(elements.effectIconUse, 'href', `#sabotage-symbol-${sabotage.id}`);
+          setText(elements.effectName, sabotage.name);
+          setText(elements.effectCaption, sabotage.caption);
+          setText(elements.effectTime, (displayedEffect === game.pendingEffect ? 'Pending · ' : '') + effectCountdownText(displayedEffect));
+          setWidth(elements.effectMeter, displayedEffect.untilDrop ? (Number.isInteger(displayedEffect.dropsRemaining) ? `${displayedEffect.dropsRemaining / 3 * 100}%` : '100%') : `${Math.max(0, Math.min(100, displayedEffect.remaining / displayedEffect.duration * 100))}%`);
         } else {
-          elements.effectIconUse.setAttribute('href', '#sabotage-symbol-empty');
-          elements.effectName.textContent = game.lastVote ? 'Sabotage over' : 'No sabotage active';
-          elements.effectCaption.textContent = game.mode === 'teamwork' ? 'Sabotage is scheduled between turns. First vote at 8s, then every 10s (7s from height 25).' : 'First vote at 8s, then every 10s (7s from height 25). Results are ranked at 90s.';
-          elements.effectTime.textContent = 'Ready';
-          elements.effectMeter.style.width = '0%';
+          setAttr(elements.effectIconUse, 'href', '#sabotage-symbol-empty');
+          setText(elements.effectName, game.lastVote ? 'Sabotage over' : 'No sabotage active');
+          setText(elements.effectCaption, game.mode === 'teamwork' ? 'Sabotage is scheduled between turns. First vote at 8s, then every 10s (7s from height 25).' : 'First vote at 8s, then every 10s (7s from height 25). Results are ranked at 90s.');
+          setText(elements.effectTime, 'Ready');
+          setWidth(elements.effectMeter, '0%');
         }
-        if (game.activeEffect && game.phase === 'playing' && !game.paused && multiplayer.connected) elements.motion.textContent = stageEffectStatus(game.activeEffect);
+        if (game.activeEffect && game.phase === 'playing' && !game.paused && multiplayer.connected) setText(elements.motion, stageEffectStatus(game.activeEffect));
         syncVotePanel();
         return;
       }
       if (game.soloPaused) {
-        elements.drop.disabled = true;
-        elements.dropLabel.textContent = 'PAUSED';
-        elements.motion.textContent = 'PAUSED';
+        setDisabled(elements.drop, true);
+        setText(elements.dropLabel, 'PAUSED');
+        setText(elements.motion, 'PAUSED');
       } else if (game.phase !== 'playing') {
-        elements.drop.disabled = true;
-        elements.dropLabel.textContent = game.phase === 'collapse' ? 'TOWER DOWN' : 'RUN OVER';
-        elements.motion.textContent = 'STACK COLLAPSED';
+        setDisabled(elements.drop, true);
+        setText(elements.dropLabel, game.phase === 'collapse' ? 'TOWER DOWN' : 'RUN OVER');
+        setText(elements.motion, 'STACK COLLAPSED');
       } else {
-        elements.drop.disabled = false;
-        elements.dropLabel.textContent = 'DROP';
+        setDisabled(elements.drop, false);
+        setText(elements.dropLabel, 'DROP');
         const speed = Math.round(gameSpeed());
         const id = game.activeEffect && game.activeEffect.id;
         const motion = id ? `${effectById(id).name.toUpperCase()} · ${speed} PX/S` : `${speed} PX/S`;
-        elements.motion.textContent = game.vote ? `VOTE LIVE · ${motion}` : motion;
+        setText(elements.motion, game.vote ? `VOTE LIVE · ${motion}` : motion);
       }
       if (game.activeEffect) {
         const sabotage = effectById(game.activeEffect.id);
-        elements.effectIconUse.setAttribute('href', `#sabotage-symbol-${sabotage.id}`);
-        elements.effectName.textContent = sabotage.name;
-        elements.effectCaption.textContent = sabotage.caption;
-        elements.effectTime.textContent = effectCountdownText(game.activeEffect);
-        elements.effectMeter.style.width = `${Math.max(0, Math.min(100, game.activeEffect.remaining / game.activeEffect.duration * 100))}%`;
+        setAttr(elements.effectIconUse, 'href', `#sabotage-symbol-${sabotage.id}`);
+        setText(elements.effectName, sabotage.name);
+        setText(elements.effectCaption, sabotage.caption);
+        setText(elements.effectTime, effectCountdownText(game.activeEffect));
+        setWidth(elements.effectMeter, `${Math.max(0, Math.min(100, game.activeEffect.remaining / game.activeEffect.duration * 100))}%`);
       } else {
-        elements.effectIconUse.setAttribute('href', '#sabotage-symbol-empty');
-        elements.effectName.textContent = game.lastVote ? 'Sabotage over' : 'No sabotage active';
-        elements.effectCaption.textContent = game.lastVote ? 'The tower lives to wobble another day.' : 'First vote at 8s, then every 10s (7s from height 25). Keep stacking.';
-        elements.effectTime.textContent = 'Ready';
-        elements.effectMeter.style.width = '0%';
+        setAttr(elements.effectIconUse, 'href', '#sabotage-symbol-empty');
+        setText(elements.effectName, game.lastVote ? 'Sabotage over' : 'No sabotage active');
+        setText(elements.effectCaption, game.lastVote ? 'The tower lives to wobble another day.' : 'First vote at 8s, then every 10s (7s from height 25). Keep stacking.');
+        setText(elements.effectTime, 'Ready');
+        setWidth(elements.effectMeter, '0%');
       }
-      if (game.activeEffect && game.phase === 'playing' && !game.soloPaused) elements.motion.textContent = stageEffectStatus(game.activeEffect);
+      if (game.activeEffect && game.phase === 'playing' && !game.soloPaused) setText(elements.motion, stageEffectStatus(game.activeEffect));
       syncVotePanel();
     }
 
@@ -4642,7 +4711,7 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
       return stack;
     }
     function syncDevSelection() {
-      for (const button of devEffectButtons) button.setAttribute('aria-pressed', String(button.dataset.devEffect === devSelectedId));
+      for (const button of devEffectButtons) setAttr(button, 'aria-pressed', String(button.dataset.devEffect === devSelectedId));
     }
     function resetDevSandbox(id = devSelectedId) {
       const normal = id === 'normal';
@@ -4959,7 +5028,7 @@ html:root .icon-turn > .icon-back { transform: translateZ(calc(var(--layer) * -1
     syncSoundButton();
     applyTheme(currentTheme, false);
     updateBestLabels();
-    window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(THEME_INK)), getTheme: () => currentTheme, setTheme: name => applyTheme(name) });
+    window.SabotageStack = Object.freeze({ Core, sabotages: SABOTAGES, voteEngine, voteAdapter: manualVoteAdapter, themes: Object.freeze(Object.keys(THEME_INK)), getTheme: () => currentTheme, setTheme: name => applyTheme(name), syncHud });
     const savedMultiplayerSession = mpSessionRead();
     if (savedMultiplayerSession) {
       multiplayer.active = true;

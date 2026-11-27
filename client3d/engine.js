@@ -12,6 +12,11 @@ import { clamp, damp, hexToRgb01 } from './util.js';
 import { paletteFor } from './palette.js';
 import { applyShaderGuards, guardBloomPass } from './shader-guards.js';
 
+// Shared immutable fallbacks: the render path runs every frame and must not allocate
+// a fresh colour array just to express "no tint". Anything that retains a uniform
+// value keeps these constants, which are never mutated.
+const WHITE_RGB = Object.freeze([1, 1, 1]);
+
 export const TIERS = Object.freeze([
   Object.freeze({ name: 'low', dpr: 1, msaa: 0, shadow: 1024, shadowBias: -0.0012, bloom: false, blur: false, crowd: 0.35, particles: 0.4, reflect: 0, soft: false }),
   Object.freeze({ name: 'medium', dpr: 1.25, msaa: 0, shadow: 1024, shadowBias: -0.0010, bloom: true, blur: false, crowd: 0.65, particles: 0.7, reflect: 0.38, soft: true }),
@@ -124,6 +129,7 @@ export class Engine {
     b.uLevels.value = p.levels || 0;
     b.uSat.value = p.sat || 1; b.uContrast.value = p.contrast || 1;
     b.uVeilColor.value = hexToRgb01(p.ink);
+    this.fadeColor = hexToRgb01(p.paper === '#F4EDDF' ? '#F4EDDF' : p.skyZenith);
     b.uScan.value = p.pixel ? 0.16 : 0;
   }
 
@@ -178,10 +184,10 @@ export class Engine {
     a.uDesat.value = post.desat || 0;
     a.uPixel.value = p.pixel ? Math.max(2, Math.round(p.pixel * this.pixelRatio)) : (post.pixel || 0);
     b.uPixel.value = p.pixel ? Math.max(2, Math.round(p.pixel * this.pixelRatio)) : 1;
-    const tint = post.tint || [1, 1, 1]; a.uTint.value = tint;
+    const tint = post.tint || WHITE_RGB; a.uTint.value = tint;
     a.uFlash.value = post.flash || 0; if (post.flashColor) a.uFlashColor.value = post.flashColor;
     b.uFade.value = clamp(this.fade.value + (post.fade || 0));
-    b.uFadeColor.value = post.fadeColor || hexToRgb01(p.paper === '#F4EDDF' ? '#F4EDDF' : p.skyZenith);
+    b.uFadeColor.value = post.fadeColor || this.fadeColor || WHITE_RGB;
     b.uVignette.value = p.vignette + (post.vignette || 0);
     if (post.bloom != null && this.bloomPass.enabled) this.bloomPass.strength = post.bloom;
     const spots = post.spots || [];
