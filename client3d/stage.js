@@ -34,6 +34,13 @@ const EMBLEM_SCALE = 2.2; // (the Sunset pixel pass swallows detail: the sculptu
 const EMBLEM_X = BOARD_W / 2 + 118; // the running sabotage's emblem floats beside the tower, outside the lane: on a phone that is off the screen
 const DIGITS_X = -(BOARD_W / 2) - 116; // and your height stands as block digits on the other side
 const DUST = [0.82, 0.74, 0.6];
+// Per-frame post-processing inputs are refilled from these defaults; `spots` is a reused array and is reset separately.
+const POST_DEFAULTS = Object.freeze({
+  flash: 0, desat: 0, ca: 0, flashColor: null, fadeColor: null,
+  tint: null, zoomBlur: 0, wobble: 0, bloom: null,
+  fade: 0, blur: null, tiltCenter: null, tiltRange: null,
+  pixel: 0, vignette: 0
+});
 // How long a scripted sequence keeps an Idle Scene busy after it starts (see sceneSettled).
 const TITLE_RAIN_TAIL = 0.5; // after the last brick's own delay
 const RESULTS_REVEAL = 1.8; // the solo results camera reveal
@@ -76,8 +83,10 @@ export class Stage {
     this.raycaster = new THREE.Raycaster(); this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 40);
     this.rig = { yaw: 0, pitch: 0.1, zoom: 1, roll: 0, kick: new Spring(0, 220, 14), shakeAmp: 0, shakeT: 0, focusY: 220, intro: 0 };
     this.timeScale = 1; this.slowT = 0; this.flash = 0; this.desatPulse = 0; this.caPulse = 0;
-    this.towers = {}; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
+    this.towers = {}; this.towerList = []; this.arena = []; this.lastEffectKey = ''; this.badge = null; this.labels = [];
     this.sinking = new Map(); this.flight = null; this.camSpec = null; this.plinthGoal = null; this.lastDt = 0.016;
+    // Per-frame scratch: the post descriptor, camera inputs and shake are refilled every frame rather than reallocated.
+    this.post = { spots: [], ...POST_DEFAULTS }; this.cameraAnchor = new THREE.Vector3(); this.cameraCall = null;
     this.lobbyKey = ''; this.lobbyArrivalAt = 0;
     this.heroSeen = false; this.holdMenu = false; this.heroHover = -1; this.heroEffectN = 0; this.caption = null; this.captionKey = '';
     // Scene reactions use pointer observations; the interaction module owns controls.
@@ -171,7 +180,7 @@ export class Stage {
     if (this.arsenal) { this.scene.remove(this.arsenal.group); this.arsenal.dispose(); }
     const view = this.host.view();
     this.arsenal = new Arsenal(theme, this.palette, view.Core.SABOTAGE_CATALOGUE); this.scene.add(this.arsenal.group);
-    for (const tower of Object.values(this.towers)) tower.setKit(this.kit);
+    for (const tower of this.towerList) tower.setKit(this.kit);
     for (const tower of this.arena) tower.setKit(this.kit);
     this.removeBadge(); this.labels.forEach(l => { this.scene.remove(l.mesh); l.mesh.material.map.dispose(); l.mesh.material.dispose(); l.mesh.geometry.dispose(); }); this.labels.length = 0;
     this.applyTier(this.engine.tier);
@@ -180,7 +189,7 @@ export class Stage {
 
   getTower(name, options) {
     if (!this.towers[name]) {
-      const tower = new Tower(this.kit, this.fx, options); this.scene.add(tower.root); this.towers[name] = tower; this.wireTower(tower, name);
+      const tower = new Tower(this.kit, this.fx, options); this.scene.add(tower.root); this.towers[name] = tower; this.towerList.push(tower); this.wireTower(tower, name);
     }
     return this.towers[name];
   }
@@ -323,7 +332,9 @@ export class Stage {
     // global slow-motion beat (collapse): physics run slower, then ease back
     if (this.slowT > 0) { this.slowT -= dt; if (this.slowT <= 0) this.timeScale = 1; } else this.timeScale = damp(this.timeScale, 1, 6, dt);
     for (const tower of this.activeTowers()) tower.timeScale = this.timeScale;
-    this.post = { spots: [] };
+    const post = this.post;
+    post.spots.length = 0;
+    Object.assign(post, POST_DEFAULTS);
     this.engine.resize();
     this.watch(0, this.rig.focusY || 220, 0, 0.85); // the crowd looks at the tower unless a mode finds something better
     this.facing = 0; // (a scene the visitor can turn sets the yaw its labels, digits and plates turn by, to keep facing the camera)
@@ -364,7 +375,7 @@ export class Stage {
     }
   }
 
-  activeTowers() { return this.mode === 'arena' || this.mode === 'celebrate' ? this.arena : Object.values(this.towers); }
+  activeTowers() { return this.mode === 'arena' || this.mode === 'celebrate' ? this.arena : this.towerList; }
 
   enterMode(mode, view) {
     const previous = this.mode; this.mode = mode; this.modeTime = 0;
@@ -482,7 +493,9 @@ export class Stage {
     if (f) { const m = blendSpec(f.from, { ax, ay, az, sx, sy, ppu, yaw, pitch, roll }, f.t / f.dur, f); ({ ax, ay, sx, sy, ppu } = m); cyaw = m.yaw; cpitch = m.pitch; croll = m.roll; }
     const dist = H / (2 * ppu * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
     cpitch = Math.max(cpitch, Math.asin(clamp((FLOOR_CLEARANCE - ay) / dist, -0.99, 0.99))); // a turned or zoomed view never takes the camera under the floor
-    this.camSpec = { ax, ay, az, sx, sy, ppu, yaw: cyaw, pitch: cpitch, roll: croll };
+    const camSpec = this.camSpec || (this.camSpec = {});
+    camSpec.ax = ax; camSpec.ay = ay; camSpec.az = az; camSpec.sx = sx; camSpec.sy = sy; camSpec.ppu = ppu;
+    camSpec.yaw = cyaw; camSpec.pitch = cpitch; camSpec.roll = croll;
     const cp = Math.cos(cpitch); this.camDist = dist;
     cam.position.set(ax + Math.sin(cyaw) * cp * dist + shake[0], ay + Math.sin(cpitch) * dist + shake[1], az + Math.cos(cyaw) * cp * dist + shake[2]);
     cam.near = Math.max(4, dist * 0.05); cam.far = 30000;
@@ -490,6 +503,19 @@ export class Stage {
     cam.setViewOffset(W, H, -(sx - W / 2), -(sy - H / 2), W, H);
     cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
     return ppu;
+  }
+
+  // The stage's own call sites rebuild the camera arguments every frame. Fill stable
+  // scratch objects instead of allocating a spec, screen and anchor each time:
+  // placeCamera reads the numbers synchronously and keeps only its numeric camSpec.
+  placeCameraAt(anchor, screenX, screenY, rect, worldW, worldH, yaw = 0, pitch = 0.1, zoom = 1, roll = 0, shake = null) {
+    const call = this.cameraCall || (this.cameraCall = { anchor: new THREE.Vector3(), screen: { x: 0, y: 0 }, shake: [0, 0, 0] });
+    call.anchor.copy(anchor); call.screen.x = screenX; call.screen.y = screenY;
+    call.rect = rect; call.worldW = worldW; call.worldH = worldH;
+    call.yaw = yaw; call.pitch = pitch; call.zoom = zoom; call.roll = roll;
+    if (shake) { call.shake[0] = shake[0]; call.shake[1] = shake[1]; call.shake[2] = shake[2]; }
+    else { call.shake[0] = 0; call.shake[1] = 0; call.shake[2] = 0; }
+    return this.placeCamera(call);
   }
 
   // The camera sets off from where it stood to wherever the new screen wants it (placeCamera does the blending).
@@ -600,8 +626,9 @@ export class Stage {
     const topBlock = blocks[blocks.length - 1]; const topX = topBlock ? (topBlock.left + topBlock.right) / 2 - 180 : 0; const topY = topBlock ? levelY(topBlock.level) : 11;
     const stageEl = document.getElementById('game-stage'); const rect = this.rectOf(stageEl);
     const ppu1 = Math.min(rect.w / BOARD_W, rect.h / 520);
-    const anchor = new THREE.Vector3(lerp(0, topX, zk), lerp(this.rig.focusY, topY, zk), 30);
-    const screen = { x: rect.x + rect.w / 2 + lerp(0, topX * ppu1, zk), y: rect.y + rect.h / 2 - lerp(0, (topY - this.rig.focusY) * ppu1, zk) };
+    const anchor = this.cameraAnchor.set(lerp(0, topX, zk), lerp(this.rig.focusY, topY, zk), 30);
+    const screenX = rect.x + rect.w / 2 + lerp(0, topX * ppu1, zk);
+    const screenY = rect.y + rect.h / 2 - lerp(0, (topY - this.rig.focusY) * ppu1, zk);
     // camera life: gentle sway, pointer parallax, landing kick, earthquake / collapse shake, drunk roll
     const [px, py] = this.parallax(); const sway = this.reduced ? 0 : Math.sin(this.time * 0.23) * 0.05;
     this.rig.yaw = damp(this.rig.yaw, sway + px * uv.par, 4, dt); this.rig.pitch = damp(this.rig.pitch, 0.1 + py * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.17) * 0.012), 4, dt);
@@ -611,7 +638,7 @@ export class Stage {
     let roll = effectId === 'drunk' && !this.reduced ? Math.sin(this.time * 2.1) * 0.035 + Math.sin(this.time * 3.7) * 0.018 : 0;
     // The Pisa Tilt rolls the camera: the whole world leans, up to 16 degrees (the same angle the game's own view takes)
     if (effectId === 'pisa' && g.activeEffect && view.Core.pisaAngle) roll = view.Core.pisaAngle(g.activeEffect.elapsed, g.activeEffect.remaining, g.activeEffect.tiltDirection, this.reduced);
-    this.placeCamera({ anchor, screen, rect, worldW: BOARD_W, worldH: 520, yaw: this.rig.yaw + uv.yaw, pitch: this.rig.pitch + uv.pitch, zoom: this.rig.zoom * uv.zoom, roll, shake });
+    this.placeCameraAt(anchor, screenX, screenY, rect, BOARD_W, 520, this.rig.yaw + uv.yaw, this.rig.pitch + uv.pitch, this.rig.zoom * uv.zoom, roll, shake);
     this.world.setViewYaw(uv.yaw); this.placePlayHud(rect, dt);
     // the plinth shakes with the tower so nothing floats
     this.world.plinth.position.set(tower.shake.x, tower.shake.y, 0);
@@ -679,7 +706,7 @@ export class Stage {
 
   placeIdle(dt, view) {
     const rect = this.rectOf(document.getElementById('game-stage'));
-    this.placeCamera({ anchor: new THREE.Vector3(0, 220, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: BOARD_W, worldH: 520, pitch: 0.1 });
+    this.placeCameraAt(this.cameraAnchor.set(0, 220, 30), rect.x + rect.w / 2, rect.y + rect.h / 2, rect, BOARD_W, 520, 0, 0.1);
     this.updateWorld(dt, 220, 0, view);
   }
 
@@ -720,7 +747,7 @@ export class Stage {
     const shakeAmp = cam && !reduced ? cam.shake * 8 : 0;
     const shake = [shakeAmp ? Math.sin(this.time * 61) * shakeAmp : 0, this.rig.kick.step(dt) + (shakeAmp ? Math.cos(this.time * 53) * shakeAmp * 0.7 : 0), 0];
     const anchor = this.heroAnchor || (this.heroAnchor = new THREE.Vector3()); anchor.set(lerp(0, Lb.topOffsetX, focus), lerp(cyBase, title.topCenterY, focus), 0);
-    this.placeCamera({ anchor, screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h * 0.5 }, rect, worldW, worldH, yaw, pitch, zoom, roll: cam ? cam.roll : 0, shake });
+    this.placeCameraAt(anchor, rect.x + rect.w / 2, rect.y + rect.h * 0.5, rect, worldW, worldH, yaw, pitch, zoom, cam ? cam.roll : 0, shake);
     this.world.setViewYaw(uv.yaw); this.facing = yaw;
     title.toCamera.copy(this.camera.position).sub(tmpTitle.set(0, 150, 0)).normalize();
 
@@ -920,7 +947,7 @@ export class Stage {
     const topCrowd = (maxHeight + 1) * 22 * scale; const zk = clamp((uv.zoom - 1) / 0.85);
     const lowFocus = clamp(topCrowd * 0.55, 30, focusY); this.arenaFocus = this.arenaFocus == null || this.reduced ? lowFocus : damp(this.arenaFocus, lowFocus, 1 / 0.3, dt);
     const anchorY = lerp(focusY, this.arenaFocus, zk); const ppu1 = Math.min(rect.w / 720, rect.h / 520);
-    this.placeCamera({ anchor: new THREE.Vector3(0, anchorY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 - (anchorY - focusY) * ppu1 }, rect, worldW: 720, worldH: 520, yaw: px * 0.8 * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.2) * 0.04) + uv.yaw, pitch: 0.12 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.placeCameraAt(this.cameraAnchor.set(0, anchorY, 30), rect.x + rect.w / 2, rect.y + rect.h / 2 - (anchorY - focusY) * ppu1, rect, 720, 520, px * 0.8 * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.2) * 0.04) + uv.yaw, 0.12 + py * uv.par + uv.pitch, uv.zoom);
     this.world.setViewYaw(uv.yaw); this.placePlayHud(rect, dt);
     this.ruler.group.visible = false;
     this.world.crowd.clearBallot(); const ballot = this.ballotFrom(view); if (ballot) this.world.crowd.setBallot(ballot);
@@ -974,7 +1001,7 @@ export class Stage {
     const yaw = (Math.sin(this.time * 0.22) * 0.14 + px) * par + uv.yaw; const pitch = lerp(0.04, 0.13, reveal) + py * par + uv.pitch;
     this.world.setViewYaw(uv.yaw); this.facing = uv.yaw;
     this.interaction.setCursor(this.interaction.dragging ? 'grabbing' : p.inside && !p.overUi && !p.touch ? 'grab' : '');
-    this.placeCamera({ anchor: new THREE.Vector3(0, this.rig.focusY, 30), screen: { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 }, rect, worldW: 400, worldH, yaw, pitch, zoom: lerp(1.08, 1, reveal) * uv.zoom });
+    this.placeCameraAt(this.cameraAnchor.set(0, this.rig.focusY, 30), rect.x + rect.w / 2, rect.y + rect.h / 2, rect, 400, worldH, yaw, pitch, lerp(1.08, 1, reveal) * uv.zoom);
     // the height, as a monument
     if (!this.scoreShown && this.resultsT > 0.4) {
       this.scoreShown = true; this.bricks.show({ key: 'score', text: String(data.height), position: [0, standing * 22 + 52, 80], cap: 112, colors: ['#E3A33B'], rows: 15, style: 'hold', baseline: true, reduced: this.reduced });
@@ -1067,7 +1094,7 @@ export class Stage {
     const free = wide ? { x: 12, y: heading.y + heading.h + 8, w: Math.max(240, panel.x - 36), h: Math.max(240, H - heading.y - heading.h - 24) }
       : { x: 8, y: heading.y + heading.h + 6, w: W - 16, h: Math.max(200, panel.y - heading.y - heading.h - 14) };
     const focusY = topY * 0.5 + 40; const worldH = topY + 220; const [px, py] = this.parallax(1.2);
-    this.placeCamera({ anchor: new THREE.Vector3(0, focusY, 30), screen: { x: free.x + free.w / 2, y: free.y + free.h * 0.47 }, rect: free, worldW: worldW + 60, worldH, yaw: px * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.18) * 0.1) + uv.yaw, pitch: 0.1 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.placeCameraAt(this.cameraAnchor.set(0, focusY, 30), free.x + free.w / 2, free.y + free.h * 0.47, free, worldW + 60, worldH, px * uv.par + (this.reduced ? 0 : Math.sin(this.time * 0.18) * 0.1) + uv.yaw, 0.1 + py * uv.par + uv.pitch, uv.zoom);
     this.world.setViewYaw(uv.yaw);
     this.interaction.placeHud('results', wide ? W - 16 : free.x + free.w - 14, wide ? H - 14 : free.y + free.h - 12, dt);
     this.ruler.group.visible = false; this.world.crowd.clearBallot(); this.updateWorld(dt, focusY, 0.04, view); this.post.tiltCenter = 0.5; this.post.blur = 4;
@@ -1091,7 +1118,7 @@ export class Stage {
     const wide = W >= 900; const screenY = wide ? Math.max(free.y + free.h / 2, H * 0.69) : free.y + free.h / 2;
     // Zooming in closes in on the totems and the middle of the tower (the wide view is centred on the air above them), so they never leave the frame.
     const zk = clamp((uv.zoom - 1) / 0.85); const anchorY = lerp(230, 70, zk); const ppu1 = Math.min(free.w / 620, free.h / (wide ? 760 : 640));
-    this.placeCamera({ anchor: new THREE.Vector3(0, anchorY, 0), screen: { x: free.x + free.w / 2, y: screenY - (anchorY - 230) * ppu1 }, rect: free, worldW: 620, worldH: wide ? 760 : 640, yaw: px * uv.par + Math.sin(this.time * 0.2) * 0.1 + uv.yaw, pitch: 0.1 + py * uv.par + uv.pitch, zoom: uv.zoom });
+    this.placeCameraAt(this.cameraAnchor.set(0, anchorY, 0), free.x + free.w / 2, screenY - (anchorY - 230) * ppu1, free, 620, wide ? 760 : 640, px * uv.par + Math.sin(this.time * 0.2) * 0.1 + uv.yaw, 0.1 + py * uv.par + uv.pitch, uv.zoom);
     this.world.setViewYaw(uv.yaw);
     this.world.plinth.position.set(0, 0, 0); this.ruler.group.visible = false; this.world.crowd.clearBallot();
     // the players themselves: a totem each, in their colour, on a beacon ring, with a name plate; their eyes follow the pointer

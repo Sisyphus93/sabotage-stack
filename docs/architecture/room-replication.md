@@ -131,11 +131,23 @@ synchronization through the existing `syncPending` guard. Failed sends can retry
 a successfully sent pending request suppresses duplicates until a snapshot is
 adopted. Disconnect/reset behavior is unchanged.
 
-An apply outcome is passed through the existing `applyRoomSnapshot` path. That
-path captures a new isolated baseline and clears the pending flag. Its existing
-error recovery remains in place. The server answers `room.sync` with the exact
-last broadcast baseline, not a newly timed snapshot whose contents would no
-longer agree with subsequent deltas.
+An apply outcome is passed through the existing `applyRoomSnapshot` path. The
+reconstructed state is already a detached JSON value, so the receiver adopts that
+same object as both `multiplayer.room` and `multiplayer.deltaBaseline` instead of
+cloning it a second time. The gameplay view aliases parts of the room
+(`remotePlayers`, `team.stack`, `team.fallen`, mover positions). The first
+position tick in a delta epoch calls `detachDeltaBaseline()`, which clones a
+private baseline before ticks write through the shared mover objects. Local
+prediction instead receives its own copy of the mover and its decoy, so it
+cannot reach the baseline either. `game.state` adoption likewise drops the old
+baseline before replacing `room.game`, then re-adopts the rebuilt room. A
+successful delta therefore costs one reconstruction clone, not two; baseline
+isolation is copy-on-write and happens exactly when the view is mutated.
+
+The applied path clears the pending flag. Its existing error recovery remains in
+place. The server answers `room.sync` with the exact last broadcast baseline, not
+a newly timed snapshot whose contents would no longer agree with subsequent
+deltas.
 
 ## Compatibility limits / follow-up validation work
 
@@ -162,7 +174,8 @@ silently introduced in this change.
 `test/fixtures/legacy-replication.js` freezes the publisher/receiver from
 `f653a998`; do not update it to mirror production refactors. Tests compare legacy
 outcomes, JSON round trips over deterministic room traces, rejected-patch
-isolation, packet isolation, missing-baseline fallback, and exact recovery baselines.
+isolation, packet isolation, missing-baseline fallback, exact recovery baselines,
+and receiver baseline adoption/copy-on-write isolation under position ticks.
 Existing and extended real WebSocket tests cover recovery and request suppression.
 
 `test/publication.test.js` exercises recording sockets through RoomManager in

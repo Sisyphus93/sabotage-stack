@@ -27,6 +27,7 @@ export class FloorMirror {
   // hide: the objects that are left out of the mirror (sky, crowd, ground, decor)
   constructor(theme, palette, { hide = [], radius = 250 } = {}) {
     this.theme = theme; this.hide = hide; this.scale = 0; this.radius = radius; this.size = [0, 0];
+    this.hidden = [];
     const geometry = new THREE.CircleGeometry(radius - 4, 96); geometry.rotateX(-Math.PI / 2);
     this.mirror = new Reflector(geometry, { textureWidth: 256, textureHeight: 256, clipBias: 0.02, color: 0xffffff, multisample: 0, shader: SHADER });
     const mesh = this.mirror; mesh.name = 'floor-mirror'; mesh.position.y = 0.6; mesh.renderOrder = 2;
@@ -36,7 +37,9 @@ export class FloorMirror {
     mesh.onBeforeRender = (renderer, scene, camera) => {
       if (!this.scale) return;
       const alpha = renderer.getClearAlpha(); renderer.getClearColor(keep); renderer.setClearColor(0x000000, 0); // a clear picture, so only what stands on the floor is in it
-      const hidden = this.hide.filter(o => o && o.visible); for (const o of hidden) o.visible = false;
+      const hidden = this.hidden; hidden.length = 0;
+      for (const o of this.hide) if (o && o.visible) hidden.push(o);
+      for (const o of hidden) o.visible = false;
       before.call(mesh, renderer, scene, camera);
       for (const o of hidden) o.visible = true; renderer.setClearColor(keep, alpha);
     };

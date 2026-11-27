@@ -775,3 +775,96 @@ test('solo pause freezes an active sabotage timer (A-13)', skipReason ? { skip: 
     assert.deepEqual(page.errors, []);
   } finally { page.close(); }
 });
+
+describe('HUD and room hot paths (P9/P10)', skipReason ? { skip: skipReason } : {}, () => {
+  test('an unchanged HUD sync pass leaves the DOM untouched, and changed values still update', async () => {
+    const page = await boot(HTML, { manualAnimationFrame: true, storage: { 'sabotage-stack-solo-auto-drop-v1': 'off' }, seed: 2 });
+    try {
+      const { document: d, window: w } = page;
+      d.getElementById('start-button').click();
+      page.advanceAnimation(600);
+      d.getElementById('solo-pause-button').click(); // freeze every value the HUD reads
+      page.advanceAnimation(600); // let the paused HUD settle
+      const sync = w.SabotageStack.syncHud;
+      const observer = new w.MutationObserver(() => {});
+      observer.observe(d.body, { subtree: true, childList: true, characterData: true, attributes: true });
+      sync();
+      observer.takeRecords(); // the first pass may finish writing values from the click
+      sync();
+      assert.deepEqual(observer.takeRecords(), [], 'a second pass with unchanged values must not mutate the DOM');
+
+      const game = w.SabotageStackHost.view().game;
+      game.perfects += 1;
+      sync();
+      assert.ok(observer.takeRecords().length > 0, 'a changed HUD value still writes');
+      assert.equal(d.getElementById('stat-perfects').textContent, String(game.perfects));
+
+      d.getElementById('stat-perfects').textContent = 'stale';
+      sync();
+      assert.equal(d.getElementById('stat-perfects').textContent, String(game.perfects), 'a changed DOM value is corrected by the next pass');
+      observer.takeRecords();
+      sync(true);
+      assert.ok(observer.takeRecords().length > 0, 'force still refreshes unchanged values');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+
+  test('a delta adopts its reconstructed state once and prediction detaches the baseline', async () => {
+    const sockets = [];
+    class RecordingSocket {
+      constructor() { this.readyState = 0; this.handlers = {}; sockets.push(this); }
+      addEventListener(type, handler) { this.handlers[type] = handler; }
+      send() {}
+      close() { this.readyState = 3; if (this.handlers.close) this.handlers.close(); }
+      deliver(message) { this.handlers.message({ data: JSON.stringify(message) }); }
+    }
+    const page = await boot(HTML, { manualAnimationFrame: true, WebSocketImpl: RecordingSocket });
+    try {
+      const { document: d, window: w } = page;
+      const base = { left: 100, right: 260, width: 160, color: '#E3A33B', perfect: false, level: 0, placer: 'Base' };
+      const state = {
+        revision: 1, code: 'ABCD', mode: 'competitive', phase: 'playing', hostConnected: true, canStart: true,
+        canRematchWithoutHost: false, reducedMotion: false,
+        players: [{ id: 'me', name: 'Me', color: '#E3A33B', connected: true }, { id: 'p2', name: 'P2', color: '#2F8478', connected: true }],
+        game: {
+          mode: 'competitive', phase: 'playing', roundNumber: 1, elapsed: 10, nextVoteIn: 8, remainingSeconds: 80, results: null,
+          players: [
+            { playerId: 'me', name: 'Me', connected: true, ended: false, collapsed: false, blocks: [base], fallen: [], moving: { left: 100, width: 160, direction: 1, level: 1, decoy: { left: 130, width: 160, direction: -1, level: 1, decoy: true } }, height: 1, perfects: 0, motion: {} },
+            { playerId: 'p2', name: 'P2', connected: true, ended: false, collapsed: false, blocks: [base], fallen: [], moving: { left: 100, width: 160, direction: 1, level: 1 }, height: 1, perfects: 0, motion: {} }
+          ]
+        }
+      };
+      d.getElementById('teamwork-button').click();
+      const socket = sockets[0]; socket.readyState = 1; socket.handlers.open();
+      socket.deliver({ type: 'room.joined', code: 'ABCD', role: 'player', playerId: 'me', state });
+      const mp = w.SabotageStackHost.view().mp;
+      assert.equal(mp.room.revision, 1);
+      assert.equal(mp.deltaBaseline, mp.room, 'the reconstructed delta state is the baseline, not a second copy');
+      const roomMoverBefore = mp.room.game.players.find(player => player.playerId === 'me').moving;
+      const viewMover = w.SabotageStackHost.view().game.moving;
+      assert.notEqual(viewMover, roomMoverBefore, 'local prediction gets its own mover object');
+      assert.notEqual(viewMover.decoy, roomMoverBefore.decoy, 'the nested decoy is not shared with the baseline');
+      viewMover.decoy.left = 999;
+      assert.equal(roomMoverBefore.decoy.left, 130, 'prediction must not reach the adopted baseline');
+
+      const next = JSON.parse(JSON.stringify(mp.room)); next.revision = 2; next.game.players[0].connected = false;
+      socket.deliver(w.SabotageStackReplication.createDelta(mp.room, next));
+      assert.equal(mp.room.revision, 2);
+      assert.equal(mp.deltaBaseline, mp.room, 'applying a delta pays for one reconstruction copy only');
+
+      socket.deliver({ type: 'positions', roundNumber: 1, movers: [{ playerId: 'p2', x: 150, width: 160, direction: -1 }] });
+      assert.notEqual(mp.deltaBaseline, mp.room, 'a live position tick detaches the baseline before mutating the room');
+      const baselineMover = mp.deltaBaseline.game.players.find(player => player.playerId === 'p2').moving;
+      const roomMover = mp.room.game.players.find(player => player.playerId === 'p2').moving;
+      assert.equal(baselineMover.left, 100, 'prediction must not reach the baseline');
+      assert.equal(roomMover.left, 150);
+
+      const game = JSON.parse(JSON.stringify(mp.room.game)); game.elapsed = 20;
+      socket.deliver({ type: 'game.state', game });
+      assert.equal(mp.room.game.elapsed, 20, 'game.state replaces the room game');
+      assert.equal(mp.deltaBaseline, mp.room, 'game.state re-adopts the rebuilt room as the baseline');
+      assert.equal(w.SabotageStackHost.view().game.elapsed, 20, 'the gameplay view follows the new state');
+      assert.deepEqual(page.errors, []);
+    } finally { page.close(); }
+  });
+});
